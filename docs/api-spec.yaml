@@ -1,0 +1,852 @@
+openapi: 3.0.0
+info:
+  title: Quidnug Node API
+  description: API specification for interacting with Quidnug nodes
+  version: 1.0.0
+servers:
+  - url: https://api.quidnug.org/v1
+    description: Production Quidnug API
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /api/health:
+    get:
+      summary: Check node health status
+      description: Returns the health status of the node
+      responses:
+        '200':
+          description: Node is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  quidId:
+                    type: string
+                    example: "a1b2c3d4e5f6g7h8i9j0"
+
+  /api/info:
+    get:
+      summary: Get node information
+      description: Returns detailed information about the node
+      responses:
+        '200':
+          description: Node information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodeQuid:
+                    type: string
+                    example: "a1b2c3d4e5f6g7h8i9j0"
+                  managedDomains:
+                    type: array
+                    items:
+                      type: string
+                    example: ["example.com", "test.example.com"]
+                  blockHeight:
+                    type: integer
+                    example: 1024
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /api/quids:
+    post:
+      summary: Create a new quid
+      description: Generate a new quid identity
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                metadata:
+                  type: object
+                  example: {"name": "Example Quid", "description": "A test quid"}
+      responses:
+        '201':
+          description: Successfully created quid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quidId:
+                    type: string
+                    example: "a1b2c3d4e5f6g7h8i9j0"
+                  publicKey:
+                    type: string
+                    example: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA..."
+                  created:
+                    type: integer
+                    example: 1625097600
+
+  /api/transactions/trust:
+    post:
+      summary: Submit a trust transaction
+      description: Create a trust relationship between quids
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trustee:
+                  type: string
+                  description: QuidID receiving trust
+                  example: "b2c3d4e5f6g7h8i9j0k1"
+                domain:
+                  type: string
+                  description: Trust domain
+                  example: "example.com"
+                trustLevel:
+                  type: number
+                  description: Trust level from 0.0 to 1.0
+                  example: 0.8
+                validUntil:
+                  type: integer
+                  description: Unix timestamp when trust expires (optional)
+                  example: 1735689600
+                description:
+                  type: string
+                  description: Optional description
+                  example: "Professional colleague"
+                signature:
+                  type: string
+                  description: Cryptographic signature by truster
+                  example: "MEUCIQD0nDrL1xPbPSFR74Xg5..."
+      responses:
+        '201':
+          description: Trust transaction successfully submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  txId:
+                    type: string
+                    example: "tx_c3d4e5f6g7h8i9j0k1l2"
+                  message:
+                    type: string
+                    example: "Trust transaction submitted"
+
+  /api/transactions/identity:
+    post:
+      summary: Submit an identity transaction
+      description: Define attributes for a quid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subjectQuid:
+                  type: string
+                  description: QuidID being defined
+                  example: "b2c3d4e5f6g7h8i9j0k1"
+                domain:
+                  type: string
+                  description: Identity domain
+                  example: "example.com"
+                name:
+                  type: string
+                  description: Human-readable name
+                  example: "Example Entity"
+                description:
+                  type: string
+                  description: Optional description
+                  example: "A technology company"
+                attributes:
+                  type: object
+                  description: Custom attributes
+                  example: {
+                    "type": "organization",
+                    "location": "Austin, TX",
+                    "founded": 2020,
+                    "industry": "technology"
+                  }
+                signature:
+                  type: string
+                  description: Cryptographic signature by definer
+                  example: "MEUCIQD0nDrL1xPbPSFR74Xg5..."
+      responses:
+        '201':
+          description: Identity transaction successfully submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  txId:
+                    type: string
+                    example: "tx_d4e5f6g7h8i9j0k1l2m3"
+                  message:
+                    type: string
+                    example: "Identity transaction submitted"
+
+  /api/transactions/title:
+    post:
+      summary: Submit a title transaction
+      description: Establish ownership relationships between quids
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assetQuid:
+                  type: string
+                  description: QuidID of asset being owned
+                  example: "c3d4e5f6g7h8i9j0k1l2"
+                domain:
+                  type: string
+                  description: Title domain
+                  example: "real-estate.example.com"
+                ownershipMap:
+                  type: array
+                  description: List of owners and percentages
+                  items:
+                    type: object
+                    properties:
+                      ownerId:
+                        type: string
+                        example: "d4e5f6g7h8i9j0k1l2m3"
+                      percentage:
+                        type: number
+                        example: 75.0
+                      stakeType:
+                        type: string
+                        example: "direct"
+                prevTitleTxID:
+                  type: string
+                  description: ID of previous title transaction (for transfers)
+                  example: "tx_e5f6g7h8i9j0k1l2m3n4"
+                titleType:
+                  type: string
+                  description: Type of title
+                  example: "deed"
+                signature:
+                  type: string
+                  description: Cryptographic signature by issuer
+                  example: "MEUCIQD0nDrL1xPbPSFR74Xg5..."
+      responses:
+        '201':
+          description: Title transaction successfully submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  txId:
+                    type: string
+                    example: "tx_f6g7h8i9j0k1l2m3n4o5"
+                  message:
+                    type: string
+                    example: "Title transaction submitted"
+
+  /api/trust/{truster}/{trustee}:
+    get:
+      summary: Get trust level between quids
+      description: Returns the trust level between two quids in a domain
+      parameters:
+        - name: truster
+          in: path
+          required: true
+          description: QuidID of the truster
+          schema:
+            type: string
+        - name: trustee
+          in: path
+          required: true
+          description: QuidID of the trustee
+          schema:
+            type: string
+        - name: domain
+          in: query
+          required: true
+          description: Trust domain
+          schema:
+            type: string
+        - name: maxDepth
+          in: query
+          required: false
+          description: Maximum trust path depth (default 3)
+          schema:
+            type: integer
+            default: 3
+      responses:
+        '200':
+          description: Trust information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  truster:
+                    type: string
+                    example: "a1b2c3d4e5f6g7h8i9j0"
+                  trustee:
+                    type: string
+                    example: "b2c3d4e5f6g7h8i9j0k1"
+                  domain:
+                    type: string
+                    example: "example.com"
+                  trustLevel:
+                    type: number
+                    example: 0.75
+                  trustPath:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        from:
+                          type: string
+                        to:
+                          type: string
+                        level:
+                          type: number
+                    example: [
+                      {"from": "a1b2c3d4", "to": "e5f6g7h8", "level": 0.9},
+                      {"from": "e5f6g7h8", "to": "b2c3d4e5", "level": 0.85}
+                    ]
+
+  /api/identity/{quidId}:
+    get:
+      summary: Get quid identity
+      description: Returns identity information for a quid
+      parameters:
+        - name: quidId
+          in: path
+          required: true
+          description: QuidID to look up
+          schema:
+            type: string
+        - name: domain
+          in: query
+          required: false
+          description: Specific domain to query (optional)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Identity information
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      quidId:
+                        type: string
+                        example: "b2c3d4e5f6g7h8i9j0k1"
+                      identities:
+                        type: object
+                        additionalProperties:
+                          type: object
+                        example: {
+                          "example.com": {
+                            "name": "Example Entity",
+                            "attributes": {
+                              "type": "organization"
+                            }
+                          },
+                          "other-domain.com": {
+                            "name": "Different Name",
+                            "attributes": {
+                              "type": "vendor"
+                            }
+                          }
+                        }
+                  - type: object
+                    properties:
+                      txId:
+                        type: string
+                      type:
+                        type: string
+                      timestamp:
+                        type: integer
+                      trustDomain:
+                        type: string
+                      definerQuid:
+                        type: string
+                      subjectQuid:
+                        type: string
+                      name:
+                        type: string
+                      description:
+                        type: string
+                      attributes:
+                        type: object
+                      schemaVersion:
+                        type: string
+                      updateNonce:
+                        type: integer
+
+  /api/title/{assetId}:
+    get:
+      summary: Get asset ownership
+      description: Returns ownership information for an asset
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          description: QuidID of the asset
+          schema:
+            type: string
+        - name: domain
+          in: query
+          required: false
+          description: Specific domain to query (optional)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Title information
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      assetQuid:
+                        type: string
+                        example: "c3d4e5f6g7h8i9j0k1l2"
+                      titles:
+                        type: object
+                        additionalProperties:
+                          type: object
+                        example: {
+                          "real-estate.example.com": {
+                            "ownershipMap": [
+                              {"ownerId": "d4e5f6g7", "percentage": 75.0},
+                              {"ownerId": "h8i9j0k1", "percentage": 25.0}
+                            ]
+                          }
+                        }
+                  - type: object
+                    properties:
+                      txId:
+                        type: string
+                      type:
+                        type: string
+                      timestamp:
+                        type: integer
+                      trustDomain:
+                        type: string
+                      issuerQuid:
+                        type: string
+                      assetQuid:
+                        type: string
+                      ownershipMap:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ownerId:
+                              type: string
+                            percentage:
+                              type: number
+                            stakeType:
+                              type: string
+                      titleType:
+                        type: string
+
+  /api/domains:
+    get:
+      summary: Get managed domains
+      description: Returns domains managed by this node
+      responses:
+        '200':
+          description: List of managed domains
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        fullPath:
+                          type: string
+                          example: "example.com"
+                        parentDomain:
+                          type: string
+                          example: "com"
+                        subDomains:
+                          type: array
+                          items:
+                            type: string
+                          example: ["sub.example.com"]
+                        validatorQuids:
+                          type: array
+                          items:
+                            type: string
+                          example: ["a1b2c3d4e5f6g7h8i9j0"]
+                        trustThreshold:
+                          type: number
+                          example: 0.75
+    post:
+      summary: Register a new domain
+      description: Register a new trust domain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullPath:
+                  type: string
+                  example: "newdomain.example.com"
+                parentDomain:
+                  type: string
+                  example: "example.com"
+                validatorQuids:
+                  type: array
+                  items:
+                    type: string
+                  example: ["a1b2c3d4e5f6g7h8i9j0"]
+                trustThreshold:
+                  type: number
+                  example: 0.75
+      responses:
+        '201':
+          description: Domain successfully registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  message:
+                    type: string
+                    example: "Trust domain registered"
+                  domain:
+                    type: string
+                    example: "newdomain.example.com"
+
+  /api/domains/{domain}/query:
+    get:
+      summary: Query a specific domain
+      description: Send a domain-specific query
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          description: Domain to query
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: Query type (trust, identity, title)
+          schema:
+            type: string
+            enum: [trust, identity, title]
+        - name: param
+          in: query
+          required: true
+          description: Query parameter (depends on type)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/blocks:
+    get:
+      summary: Get blockchain data
+      description: Returns blocks from the blockchain
+      parameters:
+        - name: start
+          in: query
+          required: false
+          description: Starting block index
+          schema:
+            type: integer
+            default: 0
+        - name: count
+          in: query
+          required: false
+          description: Number of blocks to return
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Blockchain data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  blocks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:
+                          type: integer
+                        timestamp:
+                          type: integer
+                        transactions:
+                          type: array
+                          items:
+                            type: object
+                        trustProof:
+                          type: object
+                        prevHash:
+                          type: string
+                        hash:
+                          type: string
+                  startIndex:
+                    type: integer
+                  count:
+                    type: integer
+                  totalBlocks:
+                    type: integer
+
+  /api/nodes:
+    get:
+      summary: Get known nodes
+      description: Returns nodes known to this node
+      responses:
+        '200':
+          description: List of known nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        nodeQuid:
+                          type: string
+                          example: "e5f6g7h8i9j0k1l2m3n4"
+                        address:
+                          type: string
+                          example: "https://node2.quidnug.org"
+                        managedDomains:
+                          type: array
+                          items:
+                            type: string
+                          example: ["other-domain.com"]
+                        queryableDomains:
+                          type: array
+                          items:
+                            type: string
+                          example: ["other-domain.com", "sub.other-domain.com"]
+                        lastSeen:
+                          type: integer
+                          example: 1625097600
+                  count:
+                    type: integer
+                    example: 5
+
+components:
+  schemas:
+    Quid:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier derived from public key
+        publicKey:
+          type: string
+          description: Public key in PEM format
+        created:
+          type: integer
+          description: Unix timestamp of creation
+        metaData:
+          type: object
+          description: Optional metadata
+
+    TrustTransaction:
+      type: object
+      properties:
+        txId:
+          type: string
+          description: Transaction ID
+        type:
+          type: string
+          enum: [TRUST]
+        timestamp:
+          type: integer
+          description: Unix timestamp
+        trustDomain:
+          type: string
+          description: Domain for this trust relationship
+        signerQuid:
+          type: string
+          description: QuidID that signed this transaction
+        signature:
+          type: string
+          description: Cryptographic signature
+        truster:
+          type: string
+          description: QuidID extending trust
+        trustee:
+          type: string
+          description: QuidID receiving trust
+        trustLevel:
+          type: number
+          description: Trust level from 0.0 to 1.0
+        validUntil:
+          type: integer
+          description: Optional expiration timestamp
+
+    IdentityTransaction:
+      type: object
+      properties:
+        txId:
+          type: string
+        type:
+          type: string
+          enum: [IDENTITY]
+        timestamp:
+          type: integer
+        trustDomain:
+          type: string
+        signerQuid:
+          type: string
+        signature:
+          type: string
+        definerQuid:
+          type: string
+          description: QuidID making the definition
+        subjectQuid:
+          type: string
+          description: QuidID being defined
+        name:
+          type: string
+          description: Human-readable name
+        description:
+          type: string
+          description: Optional description
+        attributes:
+          type: object
+          description: Custom attributes
+        schemaVersion:
+          type: string
+          description: Schema version for attributes
+        updateNonce:
+          type: integer
+          description: Incremented for updates
+
+    TitleTransaction:
+      type: object
+      properties:
+        txId:
+          type: string
+        type:
+          type: string
+          enum: [TITLE]
+        timestamp:
+          type: integer
+        trustDomain:
+          type: string
+        signerQuid:
+          type: string
+        signature:
+          type: string
+        issuerQuid:
+          type: string
+          description: QuidID issuing the title
+        assetQuid:
+          type: string
+          description: QuidID of the asset
+        ownershipMap:
+          type: array
+          description: Map of owners and percentages
+          items:
+            type: object
+            properties:
+              ownerId:
+                type: string
+              percentage:
+                type: number
+              stakeType:
+                type: string
+        prevTitleTxID:
+          type: string
+          description: ID of previous title transaction
+        titleType:
+          type: string
+          description: Type of title (deed, license, etc.)
+
+    Block:
+      type: object
+      properties:
+        index:
+          type: integer
+        timestamp:
+          type: integer
+        transactions:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/TrustTransaction'
+              - $ref: '#/components/schemas/IdentityTransaction'
+              - $ref: '#/components/schemas/TitleTransaction'
+        trustProof:
+          type: object
+          properties:
+            trustDomain:
+              type: string
+            validatorQuid:
+              type: string
+            trustScore:
+              type: number
+            validatorSigs:
+              type: object
+              additionalProperties:
+                type: string
+            validationTime:
+              type: integer
+        prevHash:
+          type: string
+        hash:
+          type: string
+
+  securitySchemes:
+    QuidSig:
+      type: apiKey
+      in: header
+      name: X-Quid-Signature
+      description: Cryptographic signature proving quid ownership
+
+security:
+  - QuidSig: []
