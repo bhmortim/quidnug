@@ -1,6 +1,6 @@
-# Quidnug Node
+# Quidnug
 
-A cryptographically secured node implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
+A cryptographically secured implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
 
 ## What is Quidnug?
 
