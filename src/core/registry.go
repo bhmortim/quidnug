@@ -554,6 +554,12 @@ func buildEnhancedResult(observer, target string, bestTrust float64, bestPath []
 		pathDepth = len(bestPath) - 1
 	}
 
+	// Ensure VerificationGaps is never nil for JSON serialization
+	gaps := bestGaps
+	if gaps == nil {
+		gaps = []VerificationGap{}
+	}
+
 	return EnhancedTrustResult{
 		RelationalTrustResult: RelationalTrustResult{
 			Observer:   observer,
@@ -564,7 +570,7 @@ func buildEnhancedResult(observer, target string, bestTrust float64, bestPath []
 		},
 		Confidence:       confidence,
 		UnverifiedHops:   bestUnverifiedHops,
-		VerificationGaps: bestGaps,
+		VerificationGaps: gaps,
 	}
 }
 
