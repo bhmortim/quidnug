@@ -386,13 +386,17 @@ func (node *QuidnugNode) ValidateBlock(block Block) bool {
 	return true
 }
 
-// ValidateTrustProof validates a trust proof
+// ValidateTrustProof validates a trust proof using node-relative relational trust.
+// Each node validates based on its own trust assessment of the validator.
+// This means validation is subjective - different nodes may accept different blocks
+// based on their own trust relationships with the validator.
 func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
+	// Read domain data while holding the lock, then release before computing trust
 	node.TrustDomainsMutex.RLock()
-	defer node.TrustDomainsMutex.RUnlock()
+	domain, exists := node.TrustDomains[proof.TrustDomain]
+	node.TrustDomainsMutex.RUnlock()
 
 	// Check if the trust domain exists
-	domain, exists := node.TrustDomains[proof.TrustDomain]
 	if !exists {
 		return false
 	}
@@ -411,13 +415,25 @@ func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
 	}
 
 	// Validate signatures (in a real implementation, this would verify cryptographic signatures)
-	// For simplicity, we're just checking that signatures exist
 	if len(proof.ValidatorSigs) == 0 {
 		return false
 	}
 
-	// Check validator trust threshold for consensus
-	if proof.ValidatorTrustInCreator < domain.TrustThreshold {
+	// If this node IS the validator, it trusts itself fully
+	if proof.ValidatorID == node.NodeID {
+		return true
+	}
+
+	// Node-relative trust validation: compute relational trust from this node to the validator
+	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, 5)
+
+	// Check if this node has sufficient trust in the validator
+	if trustLevel < domain.TrustThreshold {
+		logger.Debug("Insufficient relational trust in validator",
+			"validator", proof.ValidatorID,
+			"trustLevel", trustLevel,
+			"threshold", domain.TrustThreshold,
+			"domain", proof.TrustDomain)
 		return false
 	}
 
