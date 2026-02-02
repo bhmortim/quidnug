@@ -12,6 +12,10 @@
       "default": "./quidnug-client.js"
     }
   },
+  "scripts": {
+    "test": "node --test quidnug-client.test.js",
+    "test:watch": "node --test --watch quidnug-client.test.js"
+  },
   "files": [
     "quidnug-client.js"
   ],
@@ -29,6 +33,6 @@
     "url": "https://github.com/quidnug/quidnug.git"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }

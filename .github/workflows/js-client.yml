@@ -1,0 +1,42 @@
+name: JS Client CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "clients/js/**"
+      - ".github/workflows/js-client.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "clients/js/**"
+      - ".github/workflows/js-client.yml"
+
+jobs:
+  test:
+    name: Test JS Client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients/js
+
+    strategy:
+      matrix:
+        node-version: ["18", "20"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: clients/js/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test

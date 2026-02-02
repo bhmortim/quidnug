@@ -1,5 +1,10 @@
 # Quidnug
 
+[![CI](https://github.com/quidnug/quidnug/actions/workflows/ci.yml/badge.svg)](https://github.com/quidnug/quidnug/actions/workflows/ci.yml)
+[![JS Client CI](https://github.com/quidnug/quidnug/actions/workflows/js-client.yml/badge.svg)](https://github.com/quidnug/quidnug/actions/workflows/js-client.yml)
+[![codecov](https://codecov.io/gh/quidnug/quidnug/branch/main/graph/badge.svg)](https://codecov.io/gh/quidnug/quidnug)
+[![Go Report Card](https://goreportcard.com/badge/github.com/quidnug/quidnug)](https://goreportcard.com/report/github.com/quidnug/quidnug)
+
 Quidnug is a Trust protocol. A cryptographically secured implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
 
 ## What is Quidnug?
