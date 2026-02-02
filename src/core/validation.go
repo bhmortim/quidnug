@@ -321,8 +321,9 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	return true
 }
 
-// ValidateBlock validates a block
-func (node *QuidnugNode) ValidateBlock(block Block) bool {
+// ValidateBlockCryptographic validates only cryptographic aspects (hash, signatures, chain).
+// This is universal - all honest nodes agree on this.
+func (node *QuidnugNode) ValidateBlockCryptographic(block Block) bool {
 	node.BlockchainMutex.RLock()
 	defer node.BlockchainMutex.RUnlock()
 
@@ -343,9 +344,15 @@ func (node *QuidnugNode) ValidateBlock(block Block) bool {
 		return false
 	}
 
-	// Verify trust proof (implement proof of trust validation)
-	if !node.ValidateTrustProof(block.TrustProof) {
-		return false
+	return true
+}
+
+// ValidateBlockTiered validates a block and returns tiered acceptance.
+// Separates cryptographic validation (universal) from trust validation (subjective).
+func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
+	// First, validate cryptographic aspects (universal)
+	if !node.ValidateBlockCryptographic(block) {
+		return BlockInvalid
 	}
 
 	// Validate all transactions in the block
@@ -379,18 +386,23 @@ func (node *QuidnugNode) ValidateBlock(block Block) bool {
 		}
 
 		if !isValid {
-			return false
+			return BlockInvalid
 		}
 	}
 
-	return true
+	// Trust validation (subjective - different nodes may have different views)
+	return node.ValidateTrustProofTiered(block.TrustProof)
 }
 
-// ValidateTrustProof validates a trust proof using node-relative relational trust.
-// Each node validates based on its own trust assessment of the validator.
-// This means validation is subjective - different nodes may accept different blocks
-// based on their own trust relationships with the validator.
-func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
+// ValidateBlock validates a block (backward compatibility wrapper).
+// Returns true only if the block is fully trusted.
+func (node *QuidnugNode) ValidateBlock(block Block) bool {
+	return node.ValidateBlockTiered(block) == BlockTrusted
+}
+
+// ValidateTrustProofTiered validates a trust proof and returns tiered acceptance.
+// Returns BlockInvalid if cryptographically invalid, otherwise returns acceptance tier based on trust.
+func (node *QuidnugNode) ValidateTrustProofTiered(proof TrustProof) BlockAcceptance {
 	// Read domain data while holding the lock, then release before computing trust
 	node.TrustDomainsMutex.RLock()
 	domain, exists := node.TrustDomains[proof.TrustDomain]
@@ -398,7 +410,7 @@ func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
 
 	// Check if the trust domain exists
 	if !exists {
-		return false
+		return BlockInvalid
 	}
 
 	// Verify validator is part of the domain
@@ -411,33 +423,54 @@ func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
 	}
 
 	if !validatorFound {
-		return false
+		return BlockInvalid
 	}
 
 	// Validate signatures (in a real implementation, this would verify cryptographic signatures)
 	if len(proof.ValidatorSigs) == 0 {
-		return false
+		return BlockInvalid
 	}
 
 	// If this node IS the validator, it trusts itself fully
 	if proof.ValidatorID == node.NodeID {
-		return true
+		return BlockTrusted
 	}
 
 	// Node-relative trust validation: compute relational trust from this node to the validator
 	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, 5)
 
-	// Check if this node has sufficient trust in the validator
-	if trustLevel < domain.TrustThreshold {
-		logger.Debug("Insufficient relational trust in validator",
+	// Return tier based on trust level
+	if trustLevel >= domain.TrustThreshold {
+		return BlockTrusted
+	}
+
+	if trustLevel > node.DistrustThreshold {
+		logger.Debug("Tentative trust in validator",
 			"validator", proof.ValidatorID,
 			"trustLevel", trustLevel,
 			"threshold", domain.TrustThreshold,
+			"distrustThreshold", node.DistrustThreshold,
 			"domain", proof.TrustDomain)
-		return false
+		return BlockTentative
 	}
 
-	return true
+	// trustLevel <= DistrustThreshold (includes trustLevel == 0)
+	logger.Debug("Insufficient relational trust in validator",
+		"validator", proof.ValidatorID,
+		"trustLevel", trustLevel,
+		"threshold", domain.TrustThreshold,
+		"distrustThreshold", node.DistrustThreshold,
+		"domain", proof.TrustDomain)
+	return BlockUntrusted
+}
+
+// ValidateTrustProof validates a trust proof using node-relative relational trust.
+// Each node validates based on its own trust assessment of the validator.
+// This means validation is subjective - different nodes may accept different blocks
+// based on their own trust relationships with the validator.
+// This is a backward compatibility wrapper - returns true only for BlockTrusted.
+func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
+	return node.ValidateTrustProofTiered(proof) == BlockTrusted
 }
 
 // areOwnershipStakesEqual is a helper function to compare ownership stakes
