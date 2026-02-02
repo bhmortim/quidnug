@@ -2,6 +2,27 @@
 
 This guide serves as a comprehensive resource for developers looking to build applications on top of the Quidnug platform. Quidnug provides a cryptographic identity, trust, and ownership infrastructure that can be leveraged by various applications.
 
+## Connecting to a Node
+
+Before using the client library, ensure you have a running Quidnug node:
+
+```bash
+# Local development
+SEED_NODES='[]' ./quidnug-node
+
+# The node will be available at http://localhost:8080
+```
+
+### Node Health Check
+
+Always verify node connectivity before operations:
+
+```javascript
+const response = await fetch('http://localhost:8080/api/health');
+const health = await response.json();
+// { status: "ok", node_id: "...", uptime: 123, version: "1.0.0" }
+```
+
 ## Core Concepts
 
 ### Quids

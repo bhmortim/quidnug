@@ -45,6 +45,30 @@ Quidnug is a security and encryption platform for establishing cryptographic tru
    Quid A declares that Asset C is owned by Quids D (60%) and E (40%) for domain X
    ```
 
+## Project Structure
+
+```
+quidnug/
+├── src/core/           # Go node implementation
+│   ├── node.go         # Main entry point, QuidnugNode struct
+│   ├── types.go        # Type definitions (transactions, blocks, domains)
+│   ├── config.go       # Configuration loading from environment
+│   ├── handlers.go     # HTTP API handlers
+│   ├── validation.go   # Transaction and block validation
+│   ├── crypto.go       # ECDSA signing and verification
+│   ├── network.go      # Node discovery and broadcasting
+│   ├── registry.go     # State registry operations
+│   ├── middleware.go   # Rate limiting, request validation
+│   └── persistence.go  # Pending transaction persistence
+├── clients/js/         # JavaScript client library
+├── docs/               # Documentation
+│   ├── api-spec.yaml   # OpenAPI 3.0 specification
+│   └── integration-guide.md
+├── go.mod              # Go module definition
+├── Makefile            # Build automation
+└── Dockerfile          # Container build
+```
+
 ## Features
 
 - **Cryptographically Secure**: All transactions are signed with quid private keys
@@ -107,11 +131,17 @@ type TrustDomain struct {
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/quidnug-node.git
-cd quidnug-node
+git clone https://github.com/quidnug/quidnug.git
+cd quidnug
+
+# Download dependencies
+go mod tidy
 
 # Build the node
-go build -o quidnug-node .
+go build -o quidnug-node ./src/core
+
+# Or use make
+make build  # Creates bin/quidnug
 ```
 
 ### Running a Node
@@ -125,6 +155,33 @@ PORT=9000 ./quidnug-node
 
 # Run with a specific domain
 DOMAIN="elections.williamson.counties.texas.us.gov" ./quidnug-node
+```
+
+## Configuration Reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | HTTP server port |
+| `SEED_NODES` | `["seed1.quidnug.net:8080","seed2.quidnug.net:8080"]` | JSON array of seed node addresses |
+| `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
+| `BLOCK_INTERVAL` | `60s` | How often to generate new blocks |
+| `RATE_LIMIT_PER_MINUTE` | `100` | Max requests per minute per IP |
+| `MAX_BODY_SIZE_BYTES` | `1048576` | Max request body size (1MB) |
+| `DATA_DIR` | `./data` | Directory for persisted data |
+| `SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
+
+### Standalone Mode
+
+For local development without external seed nodes:
+
+```bash
+# Windows PowerShell
+$env:SEED_NODES='[]'
+$env:LOG_LEVEL='debug'
+.\quidnug-node.exe
+
+# Linux/macOS
+SEED_NODES='[]' LOG_LEVEL=debug ./quidnug-node
 ```
 
 ### Docker Support

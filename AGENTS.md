@@ -29,3 +29,9 @@ This style guide is derived from the Quidnug protocol implementation, focusing o
 ### 5. API & Error Handling
 *   **Transaction Nonces:** For `IDENTITY` updates, use an `updateNonce` that must be strictly greater than the current registry value.
 *   **Result Persistence:** When creating local entities (like a Quid), always attempt to register with a node but fall back to "local-only" mode if the network is unreachable, providing a warning instead of a hard failure.
+
+### 6. Build and Test
+*   **Source Location:** All Go source files are in `src/core/`, not the project root.
+*   **Build Command:** Always use `go build ./src/core` or `make build`.
+*   **Test Command:** Use `go test -race ./...` or `make test`.
+*   **Binary Output:** The Makefile places binaries in `bin/`.
