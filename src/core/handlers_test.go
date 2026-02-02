@@ -16,11 +16,13 @@ func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
 	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
+	router.HandleFunc("/api/trust/edges/{quidId}", node.GetTrustEdgesHandler).Methods("GET")
 	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
 	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 	router.HandleFunc("/api/nodes", node.GetNodesHandler).Methods("GET")
 	router.HandleFunc("/api/blocks", node.GetBlocksHandler).Methods("GET")
+	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
 	router.HandleFunc("/api/domains", node.GetDomainsHandler).Methods("GET")
 	return router
 }
@@ -441,6 +443,346 @@ func TestGetDomainsHandler(t *testing.T) {
 	if _, ok := response["domains"]; !ok {
 		t.Error("Expected 'domains' key in response")
 	}
+}
+
+func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	// Set up verified trust edges: A -> B
+	node.AddVerifiedTrustEdge(TrustEdge{
+		Truster:       "observer_enhanced",
+		Trustee:       "target_enhanced1",
+		TrustLevel:    0.8,
+		SourceBlock:   "block123",
+		ValidatorQuid: node.NodeID,
+		Verified:      true,
+		Timestamp:     1000000,
+	})
+
+	t.Run("includeUnverified=true returns enhanced result", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/trust/observer_enhanced/target_enhanced1?includeUnverified=true", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Check for EnhancedTrustResult fields
+		if _, ok := response["confidence"]; !ok {
+			t.Error("Expected 'confidence' field in enhanced result")
+		}
+
+		if _, ok := response["unverifiedHops"]; !ok {
+			t.Error("Expected 'unverifiedHops' field in enhanced result")
+		}
+
+		if _, ok := response["verificationGaps"]; !ok {
+			t.Error("Expected 'verificationGaps' field in enhanced result")
+		}
+
+		if response["confidence"] != "high" {
+			t.Errorf("Expected confidence 'high' for verified path, got '%v'", response["confidence"])
+		}
+
+		if response["trustLevel"] != 0.8 {
+			t.Errorf("Expected trustLevel 0.8, got '%v'", response["trustLevel"])
+		}
+	})
+
+	t.Run("includeUnverified=false returns standard result", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/trust/observer_enhanced/target_enhanced1?includeUnverified=false", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		// Standard result should NOT have confidence field
+		if _, ok := response["confidence"]; ok {
+			t.Error("Standard result should not have 'confidence' field")
+		}
+	})
+}
+
+func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	// Set up verified trust edges
+	node.AddVerifiedTrustEdge(TrustEdge{
+		Truster:       "query_observer_01",
+		Trustee:       "query_target_001",
+		TrustLevel:    0.9,
+		SourceBlock:   "block456",
+		ValidatorQuid: node.NodeID,
+		Verified:      true,
+		Timestamp:     1000000,
+	})
+
+	t.Run("includeUnverified true in request body", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"observer":"query_observer_01","target":"query_target_001","includeUnverified":true}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		// Check for EnhancedTrustResult fields
+		if _, ok := response["confidence"]; !ok {
+			t.Error("Expected 'confidence' field in enhanced result")
+		}
+
+		if _, ok := response["unverifiedHops"]; !ok {
+			t.Error("Expected 'unverifiedHops' field in enhanced result")
+		}
+
+		if response["trustLevel"] != 0.9 {
+			t.Errorf("Expected trustLevel 0.9, got '%v'", response["trustLevel"])
+		}
+	})
+
+	t.Run("includeUnverified false returns standard result", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"observer":"query_observer_01","target":"query_target_001","includeUnverified":false}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		// Standard result should NOT have confidence field
+		if _, ok := response["confidence"]; ok {
+			t.Error("Standard result should not have 'confidence' field")
+		}
+	})
+}
+
+func TestGetTentativeBlocksHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	t.Run("empty domain returns empty blocks", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/blocks/tentative/nonexistent", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["domain"] != "nonexistent" {
+			t.Errorf("Expected domain 'nonexistent', got '%v'", response["domain"])
+		}
+	})
+
+	t.Run("domain with tentative blocks returns them", func(t *testing.T) {
+		// Store a tentative block
+		block := Block{
+			Index:        1,
+			Timestamp:    1234567890,
+			Transactions: []interface{}{},
+			PrevHash:     node.Blockchain[0].Hash,
+			TrustProof: TrustProof{
+				TrustDomain:   "testdomain",
+				ValidatorID:   "somevalidator123",
+				ValidatorSigs: []string{"sig"},
+			},
+		}
+		block.Hash = calculateBlockHash(block)
+
+		err := node.StoreTentativeBlock(block)
+		if err != nil {
+			t.Fatalf("Failed to store tentative block: %v", err)
+		}
+
+		req := httptest.NewRequest("GET", "/api/blocks/tentative/testdomain", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["domain"] != "testdomain" {
+			t.Errorf("Expected domain 'testdomain', got '%v'", response["domain"])
+		}
+
+		blocks, ok := response["blocks"].([]interface{})
+		if !ok {
+			t.Error("Expected 'blocks' to be an array")
+		} else if len(blocks) != 1 {
+			t.Errorf("Expected 1 tentative block, got %d", len(blocks))
+		}
+	})
+}
+
+func TestGetTrustEdgesHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	// Add verified edges
+	node.AddVerifiedTrustEdge(TrustEdge{
+		Truster:       "edges_quid_0001",
+		Trustee:       "edges_target_001",
+		TrustLevel:    0.85,
+		SourceBlock:   "block789",
+		ValidatorQuid: node.NodeID,
+		Verified:      true,
+		Timestamp:     1000000,
+	})
+
+	node.AddVerifiedTrustEdge(TrustEdge{
+		Truster:       "edges_quid_0001",
+		Trustee:       "edges_target_002",
+		TrustLevel:    0.7,
+		SourceBlock:   "block790",
+		ValidatorQuid: node.NodeID,
+		Verified:      true,
+		Timestamp:     1000001,
+	})
+
+	t.Run("returns verified edges with provenance", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/trust/edges/edges_quid_0001?includeUnverified=false", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["quidId"] != "edges_quid_0001" {
+			t.Errorf("Expected quidId 'edges_quid_0001', got '%v'", response["quidId"])
+		}
+
+		if response["includeUnverified"] != false {
+			t.Errorf("Expected includeUnverified false, got '%v'", response["includeUnverified"])
+		}
+
+		edges, ok := response["edges"].(map[string]interface{})
+		if !ok {
+			t.Error("Expected 'edges' to be a map")
+		} else if len(edges) != 2 {
+			t.Errorf("Expected 2 edges, got %d", len(edges))
+		}
+
+		// Check edge provenance fields
+		if edge1, ok := edges["edges_target_001"].(map[string]interface{}); ok {
+			if edge1["trustLevel"] != 0.85 {
+				t.Errorf("Expected trustLevel 0.85, got '%v'", edge1["trustLevel"])
+			}
+			if edge1["sourceBlock"] != "block789" {
+				t.Errorf("Expected sourceBlock 'block789', got '%v'", edge1["sourceBlock"])
+			}
+			if edge1["verified"] != true {
+				t.Errorf("Expected verified true, got '%v'", edge1["verified"])
+			}
+		} else {
+			t.Error("Expected edge to edges_target_001 to exist")
+		}
+	})
+
+	t.Run("includeUnverified returns both verified and unverified", func(t *testing.T) {
+		// Add an unverified edge
+		node.AddUnverifiedTrustEdge(TrustEdge{
+			Truster:       "edges_quid_0001",
+			Trustee:       "unverified_tgt01",
+			TrustLevel:    0.5,
+			SourceBlock:   "block999",
+			ValidatorQuid: "untrusted_val_01",
+			Verified:      false,
+			Timestamp:     1000002,
+		})
+
+		req := httptest.NewRequest("GET", "/api/trust/edges/edges_quid_0001?includeUnverified=true", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["includeUnverified"] != true {
+			t.Errorf("Expected includeUnverified true, got '%v'", response["includeUnverified"])
+		}
+
+		edges, ok := response["edges"].(map[string]interface{})
+		if !ok {
+			t.Error("Expected 'edges' to be a map")
+		} else if len(edges) != 3 {
+			t.Errorf("Expected 3 edges (2 verified + 1 unverified), got %d", len(edges))
+		}
+
+		// Check unverified edge
+		if unverifiedEdge, ok := edges["unverified_tgt01"].(map[string]interface{}); ok {
+			if unverifiedEdge["verified"] != false {
+				t.Errorf("Expected verified false for unverified edge, got '%v'", unverifiedEdge["verified"])
+			}
+		} else {
+			t.Error("Expected unverified edge to exist when includeUnverified=true")
+		}
+	})
+
+	t.Run("quid with no edges returns empty map", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/trust/edges/nonexistent_quid", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		edges, ok := response["edges"].(map[string]interface{})
+		if !ok {
+			t.Error("Expected 'edges' to be a map")
+		} else if len(edges) != 0 {
+			t.Errorf("Expected 0 edges for nonexistent quid, got %d", len(edges))
+		}
+	})
 }
 
 func TestRelationalTrustQueryHandler(t *testing.T) {

@@ -51,9 +51,11 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
 	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
+	router.HandleFunc("/api/trust/edges/{quidId}", node.GetTrustEdgesHandler).Methods("GET")
 	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
 	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
+	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
 
 	// Apply middleware: body size limit first, then rate limiting
 	rateLimiter := NewIPRateLimiter(rateLimitPerMinute)
@@ -462,6 +464,7 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 	target := vars["target"]
 	domain := r.URL.Query().Get("domain")
 	maxDepthStr := r.URL.Query().Get("maxDepth")
+	includeUnverifiedStr := r.URL.Query().Get("includeUnverified")
 
 	if domain == "" {
 		domain = "default"
@@ -474,24 +477,37 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
-
-	pathDepth := 0
-	if len(trustPath) > 1 {
-		pathDepth = len(trustPath) - 1
-	}
-
-	result := RelationalTrustResult{
-		Observer:   observer,
-		Target:     target,
-		TrustLevel: trustLevel,
-		TrustPath:  trustPath,
-		PathDepth:  pathDepth,
-		Domain:     domain,
-	}
+	includeUnverified := includeUnverifiedStr == "true"
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+
+	if includeUnverified {
+		result, err := node.ComputeRelationalTrustEnhanced(observer, target, maxDepth, true)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		result.Domain = domain
+		json.NewEncoder(w).Encode(result)
+	} else {
+		trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
+
+		pathDepth := 0
+		if len(trustPath) > 1 {
+			pathDepth = len(trustPath) - 1
+		}
+
+		result := RelationalTrustResult{
+			Observer:   observer,
+			Target:     target,
+			TrustLevel: trustLevel,
+			TrustPath:  trustPath,
+			PathDepth:  pathDepth,
+			Domain:     domain,
+		}
+
+		json.NewEncoder(w).Encode(result)
+	}
 }
 
 // RelationalTrustQueryHandler handles POST requests for relational trust queries
@@ -516,24 +532,35 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 		maxDepth = 5
 	}
 
-	trustLevel, trustPath, _ := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
-
-	pathDepth := 0
-	if len(trustPath) > 1 {
-		pathDepth = len(trustPath) - 1
-	}
-
-	result := RelationalTrustResult{
-		Observer:   query.Observer,
-		Target:     query.Target,
-		TrustLevel: trustLevel,
-		TrustPath:  trustPath,
-		PathDepth:  pathDepth,
-		Domain:     domain,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+
+	if query.IncludeUnverified {
+		result, err := node.ComputeRelationalTrustEnhanced(query.Observer, query.Target, maxDepth, true)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		result.Domain = domain
+		json.NewEncoder(w).Encode(result)
+	} else {
+		trustLevel, trustPath, _ := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
+
+		pathDepth := 0
+		if len(trustPath) > 1 {
+			pathDepth = len(trustPath) - 1
+		}
+
+		result := RelationalTrustResult{
+			Observer:   query.Observer,
+			Target:     query.Target,
+			TrustLevel: trustLevel,
+			TrustPath:  trustPath,
+			PathDepth:  pathDepth,
+			Domain:     domain,
+		}
+
+		json.NewEncoder(w).Encode(result)
+	}
 }
 
 // GetIdentityHandler returns identity information for a quid
@@ -564,6 +591,38 @@ func (node *QuidnugNode) GetTitleHandler(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(title)
+}
+
+// GetTentativeBlocksHandler returns tentative blocks for a domain
+func (node *QuidnugNode) GetTentativeBlocksHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	domain := vars["domain"]
+
+	blocks := node.GetTentativeBlocks(domain)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"domain": domain,
+		"blocks": blocks,
+	})
+}
+
+// GetTrustEdgesHandler returns trust edges for a quid with provenance
+func (node *QuidnugNode) GetTrustEdgesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	quidId := vars["quidId"]
+
+	includeUnverifiedStr := r.URL.Query().Get("includeUnverified")
+	includeUnverified := includeUnverifiedStr == "true"
+
+	edges := node.GetTrustEdges(quidId, includeUnverified)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"quidId":            quidId,
+		"includeUnverified": includeUnverified,
+		"edges":             edges,
+	})
 }
 
 // QueryTitleRegistryHandler handles title registry queries

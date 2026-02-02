@@ -102,10 +102,11 @@ type TrustDomain struct {
 
 // RelationalTrustQuery represents a query for trust between two quids
 type RelationalTrustQuery struct {
-	Observer string `json:"observer"`
-	Target   string `json:"target"`
-	Domain   string `json:"domain,omitempty"`
-	MaxDepth int    `json:"maxDepth,omitempty"`
+	Observer          string `json:"observer"`
+	Target            string `json:"target"`
+	Domain            string `json:"domain,omitempty"`
+	MaxDepth          int    `json:"maxDepth,omitempty"`
+	IncludeUnverified bool   `json:"includeUnverified,omitempty"`
 }
 
 // RelationalTrustResult represents the result of a relational trust query
