@@ -1,6 +1,6 @@
 # Quidnug
 
-A cryptographically secured implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
+Quidnug is a Trust protocol. A cryptographically secured implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
 
 ## What is Quidnug?
 
