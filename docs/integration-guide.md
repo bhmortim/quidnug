@@ -377,6 +377,203 @@ await quidnugClient.voteOnProposal(proposal.id, true, userQuid);
 6. **Resource Allocation**: Distribute resources based on trust scores
 7. **Reputation Systems**: Build context-specific reputation metrics
 
+## Working with Proof of Trust
+
+Quidnug uses **Proof of Trust** consensus, where block validation is subjective—each node validates blocks based on its own relational trust in the validator. This has important implications for application design.
+
+### Understanding Confidence Levels
+
+When querying trust with `includeUnverified=true`, the response includes a confidence level:
+
+```javascript
+const result = await quidnugClient.queryRelationalTrust({
+  observer: myQuidId,
+  target: partnerQuidId,
+  domain: 'business.example.com',
+  includeUnverified: true  // Get enhanced result with confidence
+});
+
+console.log("Trust level:", result.trustLevel);
+console.log("Confidence:", result.confidence);
+console.log("Unverified hops:", result.unverifiedHops);
+
+// Handle different confidence levels
+switch (result.confidence) {
+  case 'high':
+    // All edges verified - safe for high-stakes decisions
+    allowFullAccess();
+    break;
+  case 'medium':
+    // Some unverified edges - use caution
+    allowLimitedAccess();
+    break;
+  case 'low':
+    // Significant unverified data - require additional verification
+    requestAdditionalVerification();
+    break;
+}
+```
+
+### When to Use includeUnverified
+
+| Scenario | includeUnverified | Rationale |
+|----------|-------------------|-----------|
+| Authentication | `false` | High-stakes decision needs verified edges only |
+| Large transaction approval | `false` | Financial risk requires high assurance |
+| Discovery / exploration | `true` | Finding potential connections is lower risk |
+| Displaying trust context | `true` | Users benefit from seeing all connections |
+| Initial onboarding | `true` | New users have few verified connections |
+
+```javascript
+// High-stakes: authentication - verified edges only
+async function authenticateUser(userQuidId) {
+  const trust = await quidnugClient.getTrustLevel(
+    serviceQuidId,
+    userQuidId,
+    'auth.example.com',
+    { includeUnverified: false }  // Strict verification
+  );
+  return trust.trustLevel >= 0.8;
+}
+
+// Discovery: finding potential partners - include unverified
+async function discoverPartners(category) {
+  const candidates = await searchByCategory(category);
+  
+  for (const candidate of candidates) {
+    const trust = await quidnugClient.queryRelationalTrust({
+      observer: myQuidId,
+      target: candidate.quidId,
+      includeUnverified: true  // Cast a wider net
+    });
+    
+    candidate.trustLevel = trust.trustLevel;
+    candidate.confidence = trust.confidence;
+    candidate.verificationGaps = trust.verificationGaps;
+  }
+  
+  return candidates;
+}
+```
+
+### Working with Tentative Blocks
+
+Tentative blocks are cryptographically valid blocks from validators your node doesn't fully trust. They're stored separately and may be promoted later.
+
+```javascript
+// Get tentative blocks for a domain
+const response = await fetch(
+  'http://localhost:8080/api/blocks/tentative/example.com'
+);
+const { blocks, count } = await response.json();
+
+console.log(`${count} tentative blocks for example.com`);
+
+for (const block of blocks) {
+  console.log(`Block ${block.index} from validator ${block.trustProof.validatorId}`);
+  console.log(`  Validator trust: ${block.trustProof.validatorTrustInCreator}`);
+  console.log(`  Transactions: ${block.transactions.length}`);
+}
+```
+
+#### Promoting Tentative Blocks
+
+When you establish trust in a new validator, tentative blocks from that validator may be promoted:
+
+```javascript
+// 1. Establish trust in a validator
+await quidnugClient.submitTransaction({
+  type: 'TRUST',
+  truster: myQuidId,
+  trustee: newValidatorQuid,
+  trustLevel: 0.85,
+  domain: 'example.com'
+});
+
+// 2. Node will automatically re-evaluate tentative blocks
+// Or explicitly trigger re-evaluation via node admin API
+```
+
+### Handling Subjective Validation
+
+Different nodes may have different views of the blockchain based on their trust relationships. This is **by design**, not a bug.
+
+#### Application Design Implications
+
+1. **Don't assume global consensus**: Your view of "valid" blocks depends on your trust relationships
+
+2. **Design for eventual consistency**: Transactions may appear at different times on different nodes
+
+3. **Use trust paths for verification**: When displaying data, show users the trust path so they understand the provenance
+
+```javascript
+// Display trust context to users
+function displayPartnerInfo(partner, trustResult) {
+  const trustPath = trustResult.trustPath;
+  
+  if (trustPath.length === 2) {
+    // Direct trust
+    return `You directly trust ${partner.name}`;
+  } else {
+    // Transitive trust - show the chain
+    const intermediaries = trustPath.slice(1, -1);
+    const names = await Promise.all(
+      intermediaries.map(quid => getQuidName(quid))
+    );
+    return `You trust ${partner.name} through: ${names.join(' → ')}`;
+  }
+}
+```
+
+4. **Handle missing trust paths gracefully**: If no trust path exists, the entity isn't necessarily bad—you just don't have a connection to them
+
+```javascript
+const trust = await quidnugClient.getTrustLevel(myQuid, unknownQuid, domain);
+
+if (trust.trustLevel === 0 && trust.trustPath.length === 0) {
+  // No trust path exists
+  showMessage(
+    "No trust connection found. This entity may be legitimate, " +
+    "but no one in your trust network has vouched for them."
+  );
+  
+  // Offer options
+  offerDirectVerification();  // Let user establish direct trust
+  offerReferralRequest();     // Ask someone trusted to vouch
+}
+```
+
+### Trust Edge Provenance
+
+For audit purposes, you can retrieve full provenance for trust edges:
+
+```javascript
+// Get all trust edges for a quid with provenance
+const response = await fetch(
+  'http://localhost:8080/api/trust/edges/a1b2c3d4e5f6g7h8?includeUnverified=true'
+);
+const { edges, verifiedCount, unverifiedCount } = await response.json();
+
+console.log(`${verifiedCount} verified edges, ${unverifiedCount} unverified`);
+
+for (const edge of edges) {
+  console.log(`${edge.truster} → ${edge.trustee}: ${edge.trustLevel}`);
+  console.log(`  Source block: ${edge.sourceBlock}`);
+  console.log(`  Validator: ${edge.validatorQuid}`);
+  console.log(`  Verified: ${edge.verified}`);
+  console.log(`  Recorded: ${new Date(edge.timestamp * 1000).toISOString()}`);
+}
+```
+
+### Best Practices for Proof of Trust
+
+1. **Start with verified-only queries**, expand to unverified when needed
+2. **Always show users the trust path**, not just the trust score
+3. **Design UX for "no path found"** scenarios
+4. **Cache trust results** but with short TTLs (trust relationships change)
+5. **Monitor tentative blocks** for domains you care about
+6. **Establish trust proactively** with validators in your ecosystem
+
 ## Additional Resources
 
 - [API Reference](https://docs.quidnug.org/api)

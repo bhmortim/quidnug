@@ -118,6 +118,58 @@ The algorithm:
 3. Returns the **maximum** trust path when multiple paths exist
 4. Respects depth limits (default: 5 hops)
 
+### Proof of Trust Consensus
+
+Unlike traditional blockchains where all nodes agree on the same chain, Quidnug uses **Proof of Trust**—a consensus mechanism where each node validates blocks based on its own relational trust in the block's validator.
+
+#### How It Works
+
+When a node receives a block, it:
+1. **Validates cryptographically** (hash, signatures, chain linkage) — all honest nodes agree on this
+2. **Evaluates trust subjectively** — computes its relational trust in the block's validator
+3. **Assigns an acceptance tier** based on the trust level
+
+#### The Four Acceptance Tiers
+
+| Tier | Condition | Action |
+|------|-----------|--------|
+| **Trusted** | Trust in validator ≥ domain threshold | Add to main chain, process transactions |
+| **Tentative** | Trust > distrust threshold but < trust threshold | Store separately, don't build on it yet |
+| **Untrusted** | Trust ≤ distrust threshold | Extract trust data only, don't store block |
+| **Invalid** | Cryptographic validation fails | Reject entirely |
+
+#### Why Different Nodes May Have Different Chains
+
+This is **by design**. Consider:
+
+- Alice trusts validators A, B, and C
+- Bob trusts validators A, B, and D
+
+Alice and Bob will agree on blocks from A and B, but:
+- Alice accepts blocks from C that Bob ignores
+- Bob accepts blocks from D that Alice ignores
+
+This isn't a bug—it reflects the reality that trust is relational. Each node maintains a view of the world consistent with entities it trusts.
+
+#### Trust Data Extraction
+
+Even when a block is untrusted, the node extracts trust relationship data from it. This preserves the complete trust graph for pathfinding while maintaining consensus integrity:
+
+```
+Cryptographically Valid Block from Untrusted Validator
+                    │
+                    ▼
+    ┌───────────────────────────────────────┐
+    │  Extract trust edges as "unverified"  │
+    │  (available for discovery queries)    │
+    └───────────────────────────────────────┘
+                    │
+                    ▼
+    Block is NOT stored, NOT built upon
+```
+
+When querying trust, you can choose whether to include unverified edges (with appropriate discounting) or only use edges from trusted validators.
+
 ### Hierarchical Trust Domains
 
 Domains organize trust into contexts, similar to DNS:
@@ -717,8 +769,16 @@ DATA_DIR=/var/lib/quidnug \
 |--------|----------|-------------|
 | `GET` | `/api/trust/{observer}/{target}` | Get relational trust from observer to target |
 | `POST` | `/api/trust/query` | Query relational trust with full options |
+| `GET` | `/api/trust/edges/{quidId}` | Get trust edges with provenance |
 | `GET` | `/api/identity/{quidId}` | Get quid identity attributes |
 | `GET` | `/api/title/{assetId}` | Get asset ownership information |
+
+### Block Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/blocks` | Get blockchain data |
+| `GET` | `/api/blocks/tentative/{domain}` | Get tentative blocks for a domain |
 
 ### Domain Endpoints
 

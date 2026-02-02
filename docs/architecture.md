@@ -214,6 +214,212 @@ Result:
 | No path exists | TrustLevel: 0.0, Path: empty |
 | Direct trust only | TrustLevel: direct edge value, Path: [observer, target] |
 
+## Proof of Trust Consensus
+
+Quidnug implements a novel consensus mechanism called **Proof of Trust** where block validation is subjective—each node validates blocks based on its own relational trust in the block's validator.
+
+### Cryptographic vs Trust Validation
+
+Block validation is split into two distinct phases:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  ValidateBlockCryptographic()                   │
+│  • Hash verification                                            │
+│  • Signature verification                                       │
+│  • Chain linkage (prevHash, index)                              │
+│  • Transaction format validation                                │
+│                                                                 │
+│  UNIVERSAL: All honest nodes agree on this                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  ValidateTrustProofTiered()                     │
+│  • Compute relational trust: node → validator                   │
+│  • Compare against domain threshold                             │
+│  • Return acceptance tier                                       │
+│                                                                 │
+│  SUBJECTIVE: Different nodes may have different results         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+This separation allows nodes to:
+1. Agree on cryptographic validity (objective)
+2. Disagree on whether to accept the block (subjective, based on trust)
+
+### Tiered Block Acceptance
+
+The `BlockAcceptance` type defines four tiers:
+
+```go
+type BlockAcceptance int
+
+const (
+    BlockTrusted   BlockAcceptance = iota // Integrate into main chain
+    BlockTentative                        // Store separately, don't build on
+    BlockUntrusted                        // Extract data, relay, don't store block
+    BlockInvalid                          // Reject entirely
+)
+```
+
+#### ReceiveBlock() Decision Flow
+
+```
+                    Incoming Block
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │ ValidateBlockCrypto() │
+              └───────────────────────┘
+                          │
+                    ┌─────┴─────┐
+                    │   Valid?  │
+                    └─────┬─────┘
+                     No   │   Yes
+              ┌───────────┴───────────┐
+              ▼                       ▼
+        BlockInvalid     ┌────────────────────────┐
+                         │ Extract trust edges    │
+                         │ (store as unverified)  │
+                         └────────────────────────┘
+                                      │
+                                      ▼
+                         ┌────────────────────────┐
+                         │ ValidateTrustProof     │
+                         │ Tiered()               │
+                         └────────────────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              │                       │                       │
+              ▼                       ▼                       ▼
+    trust >= threshold     distrust < trust      trust <= distrust
+              │             < threshold                       │
+              ▼                       │                       ▼
+        BlockTrusted                  ▼                 BlockUntrusted
+              │              BlockTentative                   │
+              │                       │                       │
+              ▼                       ▼                       ▼
+    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+    │ Add to main     │    │ Store in        │    │ Edges already   │
+    │ chain           │    │ TentativeBlocks │    │ extracted       │
+    │ Process txs     │    │ Don't build on  │    │ Block discarded │
+    │ Promote edges   │    └─────────────────┘    └─────────────────┘
+    │ to verified     │
+    └─────────────────┘
+```
+
+### Dual-Layer Trust Registry
+
+The node maintains two separate trust edge registries:
+
+```go
+// Edges from trusted validators (high-assurance decisions)
+VerifiedTrustEdges map[string]map[string]TrustEdge
+
+// Edges from all cryptographically valid blocks (discovery with discounting)
+UnverifiedTrustRegistry map[string]map[string]TrustEdge
+```
+
+#### When to Use Each Registry
+
+| Registry | Source | Use Case |
+|----------|--------|----------|
+| **VerifiedTrustEdges** | Blocks from trusted validators | High-stakes decisions, authentication |
+| **UnverifiedTrustRegistry** | All cryptographically valid blocks | Discovery, exploration, lower-stakes queries |
+
+When querying trust with `includeUnverified=true`, the algorithm can traverse unverified edges but applies appropriate discounting to the trust levels.
+
+### Trust Edge Provenance
+
+Every trust edge tracks its origin:
+
+```go
+type TrustEdge struct {
+    Truster       string  // Who is trusting
+    Trustee       string  // Who is being trusted
+    TrustLevel    float64 // Trust level 0.0-1.0
+    SourceBlock   string  // Block hash where this edge was recorded
+    ValidatorQuid string  // Quid of validator who signed the block
+    Verified      bool    // True if from a trusted validator
+    Timestamp     int64   // When recorded
+}
+```
+
+This provenance enables:
+- Auditing trust relationships back to their source
+- Promoting edges when validator trust changes
+- Demoting edges if a validator becomes untrusted
+
+### Tentative Block Storage
+
+Blocks from partially-trusted validators are stored separately:
+
+```go
+TentativeBlocks map[string][]Block // keyed by trust domain
+```
+
+#### Management Functions
+
+| Function | Purpose |
+|----------|---------|
+| `StoreTentativeBlock(block)` | Add block to tentative storage |
+| `GetTentativeBlocks(domain)` | Retrieve tentative blocks for a domain |
+| `ReEvaluateTentativeBlocks(domain)` | Check if any can now be promoted |
+
+#### Promotion Flow
+
+When trust relationships change (e.g., you establish trust in a new validator), call `ReEvaluateTentativeBlocks()` to check if any tentative blocks can now be promoted to the main chain:
+
+```go
+// After establishing trust in a new validator
+node.AddTrustTransaction(trustTx)
+node.ReEvaluateTentativeBlocks("example.com")
+```
+
+### Trust-Aware Transaction Filtering
+
+During block generation, `FilterTransactionsForBlock()` ensures only trusted transactions are included:
+
+```go
+func (node *QuidnugNode) FilterTransactionsForBlock(
+    txs []interface{}, 
+    domain string,
+) []interface{}
+```
+
+For each pending transaction:
+1. Extract the creator quid (truster, creator, or first owner depending on type)
+2. Compute relational trust from node to creator
+3. Include only if `trustLevel >= node.TransactionTrustThreshold`
+
+This prevents a node from propagating transactions it doesn't trust, even if they're cryptographically valid.
+
+### Enhanced Trust Queries
+
+The `EnhancedTrustResult` provides additional provenance information:
+
+```go
+type EnhancedTrustResult struct {
+    RelationalTrustResult
+    Confidence       string            // "high", "medium", "low"
+    UnverifiedHops   int               // Number of unverified edges traversed
+    VerificationGaps []VerificationGap // Details of unverified hops
+}
+
+type VerificationGap struct {
+    From           string  // Source quid of the gap
+    To             string  // Target quid of the gap
+    ValidatorQuid  string  // Validator who recorded this edge
+    ValidatorTrust float64 // Node's trust in that validator
+}
+```
+
+Confidence levels are determined by:
+- **High**: All edges in path are verified
+- **Medium**: Some unverified edges, but validators have partial trust
+- **Low**: Significant unverified hops or low validator trust
+
 ## Thread Safety
 
 The codebase uses granular mutexes following Go best practices:
@@ -227,6 +433,8 @@ The codebase uses granular mutexes following Go best practices:
 | `TrustRegistryMutex` | `TrustRegistry` map |
 | `IdentityRegistryMutex` | `IdentityRegistry` map |
 | `TitleRegistryMutex` | `TitleRegistry` map |
+| `TentativeBlocksMutex` | `TentativeBlocks` map |
+| `UnverifiedRegistryMutex` | `UnverifiedTrustRegistry` map |
 
 Always acquire read locks for queries and write locks for mutations.
 
