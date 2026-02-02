@@ -83,6 +83,45 @@ func paginateSlice[T any](items []T, params PaginationParams) ([]T, int) {
 	return items[params.Offset:end], total
 }
 
+// registerAPIRoutes registers all API routes on the given router
+func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
+	// Metrics endpoint
+	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
+	// API endpoints
+	router.HandleFunc("/health", node.HealthCheckHandler).Methods("GET")
+	router.HandleFunc("/nodes", node.GetNodesHandler).Methods("GET")
+
+	// Transaction endpoints
+	router.HandleFunc("/transactions", node.GetTransactionsHandler).Methods("GET")
+	router.HandleFunc("/transactions/trust", node.CreateTrustTransactionHandler).Methods("POST")
+	router.HandleFunc("/transactions/identity", node.CreateIdentityTransactionHandler).Methods("POST")
+	router.HandleFunc("/transactions/title", node.CreateTitleTransactionHandler).Methods("POST")
+
+	// Blockchain endpoints
+	router.HandleFunc("/blocks", node.GetBlocksHandler).Methods("GET")
+
+	// Trust domain endpoints
+	router.HandleFunc("/domains", node.GetDomainsHandler).Methods("GET")
+	router.HandleFunc("/domains", node.RegisterDomainHandler).Methods("POST")
+	router.HandleFunc("/domains/{name}/query", node.QueryDomainHandler).Methods("GET")
+
+	// Registry query endpoints
+	router.HandleFunc("/registry/trust", node.QueryTrustRegistryHandler).Methods("GET")
+	router.HandleFunc("/registry/identity", node.QueryIdentityRegistryHandler).Methods("GET")
+	router.HandleFunc("/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
+
+	// API spec endpoints
+	router.HandleFunc("/info", node.GetInfoHandler).Methods("GET")
+	router.HandleFunc("/quids", node.CreateQuidHandler).Methods("POST")
+	router.HandleFunc("/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
+	router.HandleFunc("/trust/edges/{quidId}", node.GetTrustEdgesHandler).Methods("GET")
+	router.HandleFunc("/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
+	router.HandleFunc("/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
+	router.HandleFunc("/title/{assetId}", node.GetTitleHandler).Methods("GET")
+	router.HandleFunc("/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
+}
+
 // StartServer starts the HTTP server for API endpoints
 func (node *QuidnugNode) StartServer(port string) error {
 	return node.StartServerWithConfig(port, DefaultRateLimitPerMinute, DefaultMaxBodySizeBytes)
@@ -92,41 +131,13 @@ func (node *QuidnugNode) StartServer(port string) error {
 func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute int, maxBodySizeBytes int64) error {
 	router := mux.NewRouter()
 
-	// Metrics endpoint
-	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
+	// Register versioned routes under /api/v1
+	v1Router := router.PathPrefix("/api/v1").Subrouter()
+	node.registerAPIRoutes(v1Router)
 
-	// API endpoints
-	router.HandleFunc("/api/health", node.HealthCheckHandler).Methods("GET")
-	router.HandleFunc("/api/nodes", node.GetNodesHandler).Methods("GET")
-
-	// Transaction endpoints
-	router.HandleFunc("/api/transactions", node.GetTransactionsHandler).Methods("GET")
-	router.HandleFunc("/api/transactions/trust", node.CreateTrustTransactionHandler).Methods("POST")
-	router.HandleFunc("/api/transactions/identity", node.CreateIdentityTransactionHandler).Methods("POST")
-	router.HandleFunc("/api/transactions/title", node.CreateTitleTransactionHandler).Methods("POST")
-
-	// Blockchain endpoints
-	router.HandleFunc("/api/blocks", node.GetBlocksHandler).Methods("GET")
-
-	// Trust domain endpoints
-	router.HandleFunc("/api/domains", node.GetDomainsHandler).Methods("GET")
-	router.HandleFunc("/api/domains", node.RegisterDomainHandler).Methods("POST")
-	router.HandleFunc("/api/domains/{name}/query", node.QueryDomainHandler).Methods("GET")
-
-	// Registry query endpoints
-	router.HandleFunc("/api/registry/trust", node.QueryTrustRegistryHandler).Methods("GET")
-	router.HandleFunc("/api/registry/identity", node.QueryIdentityRegistryHandler).Methods("GET")
-	router.HandleFunc("/api/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
-
-	// API spec endpoints
-	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
-	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
-	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
-	router.HandleFunc("/api/trust/edges/{quidId}", node.GetTrustEdgesHandler).Methods("GET")
-	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
-	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
-	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
-	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
+	// Register backward-compatible routes under /api
+	apiRouter := router.PathPrefix("/api").Subrouter()
+	node.registerAPIRoutes(apiRouter)
 
 	// Apply middleware chain (outermost to innermost processing order):
 	// RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> RequestID -> Router

@@ -215,7 +215,6 @@ func TestBodySizeLimitMiddleware(t *testing.T) {
 			buf := make([]byte, 200)
 			_, err := r.Body.Read(buf)
 			if err != nil {
-				var maxBytesErr *http.MaxBytesError
 				if err.Error() == "http: request body too large" {
 					http.Error(w, "Payload Too Large", http.StatusRequestEntityTooLarge)
 					return
