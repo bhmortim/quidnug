@@ -19,6 +19,26 @@ import (
 	"time"
 )
 
+// Lock ordering to prevent deadlocks:
+//
+// When acquiring multiple locks, always acquire them in this order:
+//   1. BlockchainMutex       - Protects Blockchain slice
+//   2. TrustDomainsMutex     - Protects TrustDomains map
+//   3. TrustRegistryMutex    - Protects TrustRegistry, TrustNonceRegistry, VerifiedTrustEdges
+//   4. IdentityRegistryMutex - Protects IdentityRegistry map
+//   5. TitleRegistryMutex    - Protects TitleRegistry map
+//   6. PendingTxsMutex       - Protects PendingTxs slice
+//   7. TentativeBlocksMutex  - Protects TentativeBlocks map
+//   8. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
+//   9. KnownNodesMutex       - Protects KnownNodes map
+//
+// Guidelines:
+//   - Prefer acquiring a single lock when possible
+//   - Release locks as soon as the protected data is no longer needed
+//   - Use RLock for read-only access to enable concurrent readers
+//   - Never call external code (HTTP requests, etc.) while holding a lock
+//   - When computing trust (ComputeRelationalTrust), only TrustRegistryMutex is held briefly for reads
+
 // Package-level logger
 var logger *slog.Logger
 
