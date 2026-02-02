@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -440,7 +441,6 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 
 	if !trusterExists {
 		log.Printf("Truster %s not found in identity registry", tx.Truster)
-		// We might allow this in some cases, but log it as a warning
 	}
 
 	// Check if trustee exists in identity registry
@@ -450,11 +450,27 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 
 	if !trusteeExists {
 		log.Printf("Trustee %s not found in identity registry", tx.Trustee)
-		// We might allow this in some cases, but log it as a warning
 	}
 
-	// Verify signature (in a real implementation)
-	// Would verify that the truster signed this transaction
+	// Verify signature
+	if tx.Signature == "" || tx.PublicKey == "" {
+		log.Printf("Missing signature or public key in trust transaction")
+		return false
+	}
+
+	// Get signable data (transaction with signature field cleared)
+	txCopy := tx
+	txCopy.Signature = ""
+	signableData, err := json.Marshal(txCopy)
+	if err != nil {
+		log.Printf("Failed to marshal transaction for signature verification: %v", err)
+		return false
+	}
+
+	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
+		log.Printf("Invalid signature in trust transaction")
+		return false
+	}
 
 	return true
 }
@@ -492,8 +508,25 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 		}
 	}
 
-	// Verify signature (in a real implementation)
-	// Would verify that the creator signed this transaction
+	// Verify signature
+	if tx.Signature == "" || tx.PublicKey == "" {
+		log.Printf("Missing signature or public key in identity transaction")
+		return false
+	}
+
+	// Get signable data (transaction with signature field cleared)
+	txCopy := tx
+	txCopy.Signature = ""
+	signableData, err := json.Marshal(txCopy)
+	if err != nil {
+		log.Printf("Failed to marshal transaction for signature verification: %v", err)
+		return false
+	}
+
+	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
+		log.Printf("Invalid signature in identity transaction")
+		return false
+	}
 
 	return true
 }
@@ -531,20 +564,77 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 		return false
 	}
 
+	// Verify main signature from issuer
+	if tx.Signature == "" || tx.PublicKey == "" {
+		log.Printf("Missing signature or public key in title transaction")
+		return false
+	}
+
+	// Get signable data for issuer (transaction with main signature cleared)
+	txCopyForIssuer := tx
+	txCopyForIssuer.Signature = ""
+	issuerSignableData, err := json.Marshal(txCopyForIssuer)
+	if err != nil {
+		log.Printf("Failed to marshal transaction for issuer signature verification: %v", err)
+		return false
+	}
+
+	if !VerifySignature(tx.PublicKey, issuerSignableData, tx.Signature) {
+		log.Printf("Invalid issuer signature in title transaction")
+		return false
+	}
+
 	// If this is a transfer (has previous owners), verify previous owners' signatures
 	if len(tx.PreviousOwners) > 0 {
-		// In a real implementation, would verify signatures from previous owners
-		// authorizing the transfer
-		
-		// Also verify previous ownership matches current title in registry
+		// Verify previous ownership matches current title in registry
 		node.TitleRegistryMutex.RLock()
 		currentTitle, exists := node.TitleRegistry[tx.AssetID]
 		node.TitleRegistryMutex.RUnlock()
 		
 		if exists {
-			// Verify previous owners match current title
 			if !areOwnershipStakesEqual(tx.PreviousOwners, currentTitle.Owners) {
 				log.Printf("Previous owners don't match current title")
+				return false
+			}
+		}
+
+		// Get signable data for owners (transaction with all signatures cleared)
+		txCopyForOwners := tx
+		txCopyForOwners.Signature = ""
+		txCopyForOwners.Signatures = nil
+		ownerSignableData, err := json.Marshal(txCopyForOwners)
+		if err != nil {
+			log.Printf("Failed to marshal transaction for owner signature verification: %v", err)
+			return false
+		}
+
+		// Verify each previous owner's signature
+		for _, stake := range tx.PreviousOwners {
+			// Get previous owner's public key from identity registry
+			node.IdentityRegistryMutex.RLock()
+			ownerIdentity, ownerExists := node.IdentityRegistry[stake.OwnerID]
+			node.IdentityRegistryMutex.RUnlock()
+
+			if !ownerExists {
+				log.Printf("Previous owner %s not found in identity registry", stake.OwnerID)
+				return false
+			}
+
+			if ownerIdentity.PublicKey == "" {
+				log.Printf("Previous owner %s has no public key", stake.OwnerID)
+				return false
+			}
+
+			// Get the signature for this owner
+			ownerSig, hasSig := tx.Signatures[stake.OwnerID]
+			if !hasSig || ownerSig == "" {
+				log.Printf("Missing signature from previous owner %s", stake.OwnerID)
+				return false
+			}
+
+			// Verify the owner's signature
+			if !VerifySignature(ownerIdentity.PublicKey, ownerSignableData, ownerSig) {
+				log.Printf("Invalid signature from previous owner %s", stake.OwnerID)
 				return false
 			}
 		}
@@ -1406,9 +1496,72 @@ func (node *QuidnugNode) SignData(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// Convert the signature to a byte array
-	signature := append(r.Bytes(), s.Bytes()...)
+	// Pad r and s to 32 bytes each for P-256 (64 bytes total)
+	signature := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(signature[32-len(rBytes):32], rBytes)
+	copy(signature[64-len(sBytes):64], sBytes)
+	
 	return signature, nil
+}
+
+// GetPublicKeyHex returns the hex-encoded public key in uncompressed format
+func (node *QuidnugNode) GetPublicKeyHex() string {
+	publicKeyBytes := elliptic.Marshal(node.PublicKey.Curve, node.PublicKey.X, node.PublicKey.Y)
+	return hex.EncodeToString(publicKeyBytes)
+}
+
+// VerifySignature verifies an ECDSA P-256 signature
+// publicKeyHex: hex-encoded public key in uncompressed format (65 bytes: 0x04 || X || Y)
+// data: the data that was signed
+// signatureHex: hex-encoded signature (64 bytes: r || s, each padded to 32 bytes)
+func VerifySignature(publicKeyHex string, data []byte, signatureHex string) bool {
+	if publicKeyHex == "" || signatureHex == "" {
+		return false
+	}
+
+	// Decode public key from hex
+	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		log.Printf("Failed to decode public key hex: %v", err)
+		return false
+	}
+
+	// Unmarshal the public key
+	x, y := elliptic.Unmarshal(elliptic.P256(), publicKeyBytes)
+	if x == nil {
+		log.Printf("Failed to unmarshal public key")
+		return false
+	}
+
+	publicKey := &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     x,
+		Y:     y,
+	}
+
+	// Decode signature from hex
+	signatureBytes, err := hex.DecodeString(signatureHex)
+	if err != nil {
+		log.Printf("Failed to decode signature hex: %v", err)
+		return false
+	}
+
+	// For P-256, signature should be 64 bytes (32 for r, 32 for s)
+	if len(signatureBytes) != 64 {
+		log.Printf("Invalid signature length: expected 64, got %d", len(signatureBytes))
+		return false
+	}
+
+	r := new(big.Int).SetBytes(signatureBytes[:32])
+	s := new(big.Int).SetBytes(signatureBytes[32:])
+
+	// Hash the data
+	hash := sha256.Sum256(data)
+
+	// Verify the signature
+	return ecdsa.Verify(publicKey, hash[:], r, s)
 }
 
 // Recursively query other trust domains
