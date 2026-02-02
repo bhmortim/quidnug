@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 )
 
@@ -113,6 +117,65 @@ func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) err
 		return err
 	}
 	return nil
+}
+
+// RequestIDKey is the context key for request IDs
+type contextKey string
+
+const RequestIDContextKey contextKey = "requestID"
+
+// RequestIDMiddleware generates a UUID for each request and adds it to context and response header
+func RequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.New().String()
+		}
+
+		w.Header().Set("X-Request-ID", requestID)
+
+		ctx := context.WithValue(r.Context(), RequestIDContextKey, requestID)
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// GetRequestID retrieves the request ID from context
+func GetRequestID(ctx context.Context) string {
+	if id, ok := ctx.Value(RequestIDContextKey).(string); ok {
+		return id
+	}
+	return ""
+}
+
+// MetricsMiddleware records HTTP request metrics
+func MetricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		wrapped := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(wrapped, r)
+
+		duration := time.Since(start).Seconds()
+		path := r.URL.Path
+		method := r.Method
+		status := strconv.Itoa(wrapped.statusCode)
+
+		httpRequestsTotal.WithLabelValues(method, path, status).Inc()
+		httpRequestDuration.WithLabelValues(method, path).Observe(duration)
+	})
+}
+
+// statusResponseWriter wraps http.ResponseWriter to capture status code
+type statusResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
 }
 
 // Validation helpers

@@ -110,6 +110,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Configure HTTP client timeout from config
+	quidnugNode.SetHTTPClientTimeout(cfg.HTTPClientTimeout)
+
 	// Load persisted pending transactions
 	if err := quidnugNode.LoadPendingTransactions(cfg.DataDir); err != nil {
 		logger.Warn("Failed to load pending transactions", "error", err)
@@ -312,6 +315,11 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 	return node, nil
 }
 
+// SetHTTPClientTimeout configures the HTTP client timeout
+func (node *QuidnugNode) SetHTTPClientTimeout(timeout time.Duration) {
+	node.httpClient.Timeout = timeout
+}
+
 // AddTrustTransaction adds a trust transaction to the pending pool
 func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error) {
 	// Set timestamp if not set
@@ -357,6 +365,7 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 	
 	// Validate the transaction
 	if !node.ValidateTrustTransaction(tx) {
+		RecordTransactionProcessed("trust", false)
 		return "", fmt.Errorf("invalid trust transaction")
 	}
 
@@ -365,6 +374,10 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 
 	// Add transaction to pending pool
 	node.PendingTxs = append(node.PendingTxs, tx)
+
+	// Record metrics
+	RecordTransactionProcessed("trust", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
 
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
@@ -407,6 +420,7 @@ func (node *QuidnugNode) AddIdentityTransaction(tx IdentityTransaction) (string,
 	
 	// Validate the transaction
 	if !node.ValidateIdentityTransaction(tx) {
+		RecordTransactionProcessed("identity", false)
 		return "", fmt.Errorf("invalid identity transaction")
 	}
 
@@ -415,6 +429,10 @@ func (node *QuidnugNode) AddIdentityTransaction(tx IdentityTransaction) (string,
 
 	// Add transaction to pending pool
 	node.PendingTxs = append(node.PendingTxs, tx)
+
+	// Record metrics
+	RecordTransactionProcessed("identity", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
 
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
@@ -453,6 +471,7 @@ func (node *QuidnugNode) AddTitleTransaction(tx TitleTransaction) (string, error
 	
 	// Validate the transaction
 	if !node.ValidateTitleTransaction(tx) {
+		RecordTransactionProcessed("title", false)
 		return "", fmt.Errorf("invalid title transaction")
 	}
 
@@ -461,6 +480,10 @@ func (node *QuidnugNode) AddTitleTransaction(tx TitleTransaction) (string, error
 
 	// Add transaction to pending pool
 	node.PendingTxs = append(node.PendingTxs, tx)
+
+	// Record metrics
+	RecordTransactionProcessed("title", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
 
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
@@ -627,6 +650,8 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		"txCount", len(domainTxs),
 		"hash", newBlock.Hash)
 
+	RecordBlockGenerated(trustDomain)
+
 	return &newBlock, nil
 }
 
@@ -659,6 +684,9 @@ func (node *QuidnugNode) ReceiveBlock(block Block) (BlockAcceptance, error) {
 
 	// 3. Get tiered acceptance
 	acceptance := node.ValidateBlockTiered(block)
+
+	// Record block reception metrics
+	RecordBlockReceived(block.TrustProof.TrustDomain, acceptance)
 
 	// 4. Process based on tier
 	switch acceptance {

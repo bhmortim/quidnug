@@ -17,6 +17,7 @@ type Config struct {
 	MaxBodySizeBytes   int64         `json:"maxBodySizeBytes"`
 	DataDir            string        `json:"dataDir"`
 	ShutdownTimeout    time.Duration `json:"shutdownTimeout"`
+	HTTPClientTimeout  time.Duration `json:"httpClientTimeout"`
 }
 
 // Default values
@@ -25,6 +26,7 @@ const (
 	DefaultMaxBodySizeBytes   = 1 << 20 // 1MB
 	DefaultDataDir            = "./data"
 	DefaultShutdownTimeout    = 30 * time.Second
+	DefaultHTTPClientTimeout  = 5 * time.Second
 )
 
 // LoadConfig reads configuration from environment variables with defaults
@@ -38,6 +40,7 @@ func LoadConfig() *Config {
 		MaxBodySizeBytes:   DefaultMaxBodySizeBytes,
 		DataDir:            DefaultDataDir,
 		ShutdownTimeout:    DefaultShutdownTimeout,
+		HTTPClientTimeout:  DefaultHTTPClientTimeout,
 	}
 
 	if port := os.Getenv("PORT"); port != "" {
@@ -80,6 +83,12 @@ func LoadConfig() *Config {
 	if shutdownTimeout := os.Getenv("SHUTDOWN_TIMEOUT"); shutdownTimeout != "" {
 		if duration, err := time.ParseDuration(shutdownTimeout); err == nil {
 			cfg.ShutdownTimeout = duration
+		}
+	}
+
+	if httpTimeout := os.Getenv("HTTP_CLIENT_TIMEOUT"); httpTimeout != "" {
+		if duration, err := time.ParseDuration(httpTimeout); err == nil {
+			cfg.HTTPClientTimeout = duration
 		}
 	}
 

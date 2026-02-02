@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Pagination constants
@@ -91,6 +92,9 @@ func (node *QuidnugNode) StartServer(port string) error {
 func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute int, maxBodySizeBytes int64) error {
 	router := mux.NewRouter()
 
+	// Metrics endpoint
+	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
 	// API endpoints
 	router.HandleFunc("/api/health", node.HealthCheckHandler).Methods("GET")
 	router.HandleFunc("/api/nodes", node.GetNodesHandler).Methods("GET")
@@ -124,9 +128,11 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
 
-	// Apply middleware: body size limit first, then rate limiting
+	// Apply middleware: request ID first, then metrics, then body size limit, then rate limiting
 	rateLimiter := NewIPRateLimiter(rateLimitPerMinute)
-	handler := BodySizeLimitMiddleware(maxBodySizeBytes)(router)
+	handler := RequestIDMiddleware(router)
+	handler = MetricsMiddleware(handler)
+	handler = BodySizeLimitMiddleware(maxBodySizeBytes)(handler)
 	handler = RateLimitMiddleware(rateLimiter)(handler)
 
 	// Create HTTP server and store reference for graceful shutdown

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 // ErrTrustGraphTooLarge is returned when trust computation exceeds resource limits
@@ -11,26 +12,42 @@ var ErrTrustGraphTooLarge = errors.New("trust graph too large: resource limits e
 // processBlockTransactions processes transactions in a block to update registries
 func (node *QuidnugNode) processBlockTransactions(block Block) {
 	for _, txInterface := range block.Transactions {
-		txJson, _ := json.Marshal(txInterface)
+		txJson, err := json.Marshal(txInterface)
+		if err != nil {
+			logger.Error("Failed to marshal transaction in block", "blockIndex", block.Index, "error", err)
+			continue
+		}
 
 		// Determine transaction type
 		var baseTx BaseTransaction
-		json.Unmarshal(txJson, &baseTx)
+		if err := json.Unmarshal(txJson, &baseTx); err != nil {
+			logger.Error("Failed to unmarshal base transaction", "blockIndex", block.Index, "error", err)
+			continue
+		}
 
 		switch baseTx.Type {
 		case TxTypeTrust:
 			var tx TrustTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal trust transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
 			node.updateTrustRegistry(tx)
 
 		case TxTypeIdentity:
 			var tx IdentityTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal identity transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
 			node.updateIdentityRegistry(tx)
 
 		case TxTypeTitle:
 			var tx TitleTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal title transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
 			node.updateTitleRegistry(tx)
 		}
 	}
@@ -126,6 +143,11 @@ func (node *QuidnugNode) GetDirectTrustees(quidID string) map[string]float64 {
 //   - []string: the path of quid IDs for the best trust path
 //   - error: ErrTrustGraphTooLarge if resource limits exceeded, nil otherwise
 func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDepth int) (float64, []string, error) {
+	start := time.Now()
+	defer func() {
+		trustComputationDuration.Observe(time.Since(start).Seconds())
+	}()
+
 	if maxDepth <= 0 {
 		maxDepth = DefaultTrustMaxDepth
 	}
