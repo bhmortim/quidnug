@@ -37,11 +37,13 @@ Every entity in the Quidnug system (people, organizations, assets, documents) is
 
 ### Trust Relationships
 
-Trust is established between quids:
-- Explicit trust levels (0.0 to 1.0)
-- Domain-specific (e.g., `medical.credentials`, `property.texas`)
-- Can have expiration dates
-- Propagates transitively through the network
+Trust is established between quids with these key characteristics:
+
+- **Relational, not absolute**: Trust is always computed from an observer's perspective to a target. There is no global "trust score" for any quid—the same quid may have different trust levels when viewed by different observers.
+- **Explicit trust levels** (0.0 to 1.0) define direct relationships
+- **Domain-specific** (e.g., `medical.credentials`, `property.texas`)
+- **Can have expiration dates**
+- **Transitive with multiplicative decay**: Trust propagates through the network. If A trusts B at 0.8 and B trusts C at 0.7, then A's transitive trust in C is 0.8 × 0.7 = 0.56.
 
 ### Trust Domains
 
@@ -143,13 +145,17 @@ const titleTx = await quidnugClient.createTitleTransaction({
 Retrieving information:
 
 ```javascript
-// Get trust level between quids
-const trustLevel = await quidnugClient.getTrustLevel(
-  'truster_quid_id', 
-  'trustee_quid_id',
-  'example.com'
+// Get relational trust from observer to target
+// Trust is always computed from YOUR perspective (the observer)
+const result = await quidnugClient.getTrustLevel(
+  observerQuidId,  // Your quid (who is asking)
+  targetQuidId,    // The quid you want to assess
+  'example.com',
+  { maxDepth: 5 }
 );
-console.log("Trust level:", trustLevel);
+console.log("Trust level:", result.trustLevel);
+console.log("Trust path:", result.trustPath);
+console.log("Path depth:", result.pathDepth);
 
 // Get quid identity
 const identity = await quidnugClient.getIdentity('quid_id', 'example.com');
@@ -158,21 +164,67 @@ console.log("Identity:", identity);
 // Get asset ownership
 const ownership = await quidnugClient.getAssetOwnership('asset_quid_id', 'example.com');
 console.log("Owners:", ownership.ownershipMap);
+```
 
-// Find path of trust between quids
-const trustPath = await quidnugClient.findTrustPath(
-  'source_quid_id',
-  'target_quid_id',
-  'example.com',
-  { maxDepth: 4, minTrustLevel: 0.5 }
+### Understanding Relational Trust
+
+Trust in Quidnug is **relational**, not absolute. This is a fundamental design principle:
+
+#### Key Concepts
+
+1. **Observer Perspective**: Every trust query requires an observer (who is asking) and a target (who is being assessed). The same target quid may have different trust levels when queried by different observers.
+
+2. **Multiplicative Decay**: Trust decays as it propagates through intermediaries:
+   ```
+   A → B (0.8) → C (0.7) → D (0.9)
+   A's trust in D = 0.8 × 0.7 × 0.9 = 0.504
+   ```
+
+3. **Best Path Selection**: When multiple paths exist between observer and target, the algorithm returns the path with the **maximum** trust level.
+
+4. **Depth Limiting**: The `maxDepth` parameter (default 5) limits how far the algorithm searches. Deeper paths have more decay and are less likely to yield high trust.
+
+5. **Special Cases**:
+   - Same entity: An observer has full trust (1.0) in itself
+   - No path: Returns trust level 0.0
+
+#### Example: Computing Relational Trust
+
+```javascript
+// Your application's quid is the observer
+const myQuidId = 'a1b2c3d4e5f6g7h8';
+
+// Query trust in a potential business partner
+const partnerTrust = await quidnugClient.getTrustLevel(
+  myQuidId,           // Observer: your perspective
+  'partner_quid_id',  // Target: who you're assessing
+  'business.example.com',
+  { maxDepth: 4 }
 );
+
+if (partnerTrust.trustLevel >= 0.7) {
+  console.log("Partner is trusted via:", partnerTrust.trustPath);
+  // e.g., ["a1b2c3d4", "colleague_quid", "partner_quid_id"]
+} else if (partnerTrust.trustLevel > 0) {
+  console.log("Partner has low trust:", partnerTrust.trustLevel);
+} else {
+  console.log("No trust path found to partner");
+}
+
+// Alternative: POST query for more complex scenarios
+const result = await quidnugClient.queryRelationalTrust({
+  observer: myQuidId,
+  target: 'partner_quid_id',
+  domain: 'business.example.com',
+  maxDepth: 5
+});
 ```
 
 ## Building Applications with Quidnug
 
 ### Authentication & Authorization
 
-Quidnug can serve as an identity and authorization system:
+Quidnug can serve as an identity and authorization system. Note that trust is always relational—your service assesses trust from its own perspective:
 
 ```javascript
 // Authenticate a user with their quid
@@ -181,15 +233,21 @@ async function authenticateUser(quidId, challenge, signature) {
   const isValid = await quidnugClient.verifySignature(quidId, challenge, signature);
   
   if (isValid) {
-    // Check if the quid is trusted in the relevant domain
-    const trustLevel = await quidnugClient.getTrustLevel(
-      'your_service_quid_id',
-      quidId,
-      'your-service.com'
+    // Check if YOUR SERVICE trusts the user's quid
+    // The observer is your service, the target is the user
+    const trustResult = await quidnugClient.getTrustLevel(
+      'your_service_quid_id',  // Observer: your service's perspective
+      quidId,                   // Target: the user being authenticated
+      'your-service.com',
+      { maxDepth: 5 }
     );
     
-    if (trustLevel >= 0.7) {
-      return { authenticated: true, trustLevel };
+    if (trustResult.trustLevel >= 0.7) {
+      return { 
+        authenticated: true, 
+        trustLevel: trustResult.trustLevel,
+        trustPath: trustResult.trustPath  // Shows how trust was established
+      };
     }
   }
   
@@ -199,7 +257,7 @@ async function authenticateUser(quidId, challenge, signature) {
 
 ### Credential Verification
 
-For applications that need to verify credentials:
+For applications that need to verify credentials. Trust in the issuer is computed relationally from your service's perspective:
 
 ```javascript
 // Verify a credential
@@ -208,15 +266,22 @@ async function verifyCredential(credentialQuidId, issuerQuidId, domain) {
   const credential = await quidnugClient.getIdentity(credentialQuidId, domain);
   
   if (credential && credential.definerQuid === issuerQuidId) {
-    // Check if we trust the issuer
-    const trustLevel = await quidnugClient.getTrustLevel(
-      'your_service_quid_id',
-      issuerQuidId,
-      domain
+    // Check if YOUR SERVICE trusts the issuer
+    // Different services may have different trust levels for the same issuer
+    const trustResult = await quidnugClient.getTrustLevel(
+      'your_service_quid_id',  // Observer: your service
+      issuerQuidId,            // Target: the credential issuer
+      domain,
+      { maxDepth: 4 }
     );
     
-    if (trustLevel >= 0.8) {
-      return { verified: true, credential };
+    if (trustResult.trustLevel >= 0.8) {
+      return { 
+        verified: true, 
+        credential,
+        issuerTrust: trustResult.trustLevel,
+        trustPath: trustResult.trustPath
+      };
     }
   }
   

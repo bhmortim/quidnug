@@ -266,71 +266,70 @@ paths:
                     type: string
                     example: "Title transaction submitted"
 
-  /api/trust/{truster}/{trustee}:
+  /api/trust/{observer}/{target}:
     get:
-      summary: Get trust level between quids
-      description: Returns the trust level between two quids in a domain
+      summary: Get relational trust from observer to target
+      description: |
+        Computes the transitive trust level from the observer's perspective to the target quid.
+        Trust is relational - there is no absolute trust score for any quid. Instead, trust is
+        always computed dynamically based on the observer's position in the trust graph.
+        
+        The algorithm uses BFS with multiplicative decay: if A trusts B at 0.8 and B trusts C
+        at 0.7, then A's transitive trust in C is 0.8 × 0.7 = 0.56. When multiple paths exist,
+        the maximum trust across all paths is returned.
       parameters:
-        - name: truster
+        - name: observer
           in: path
           required: true
-          description: QuidID of the truster
+          description: QuidID of the observer (who is asking about trust)
           schema:
             type: string
-        - name: trustee
+        - name: target
           in: path
           required: true
-          description: QuidID of the trustee
+          description: QuidID of the target (who is being assessed)
           schema:
             type: string
         - name: domain
           in: query
-          required: true
-          description: Trust domain
+          required: false
+          description: Trust domain (optional, filters by domain if provided)
           schema:
             type: string
         - name: maxDepth
           in: query
           required: false
-          description: Maximum trust path depth (default 3)
+          description: Maximum number of hops to explore in the trust graph (default 5)
           schema:
             type: integer
-            default: 3
+            default: 5
       responses:
         '200':
-          description: Trust information
+          description: Relational trust result
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  truster:
-                    type: string
-                    example: "a1b2c3d4e5f6g7h8i9j0"
-                  trustee:
-                    type: string
-                    example: "b2c3d4e5f6g7h8i9j0k1"
-                  domain:
-                    type: string
-                    example: "example.com"
-                  trustLevel:
-                    type: number
-                    example: 0.75
-                  trustPath:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        from:
-                          type: string
-                        to:
-                          type: string
-                        level:
-                          type: number
-                    example: [
-                      {"from": "a1b2c3d4", "to": "e5f6g7h8", "level": 0.9},
-                      {"from": "e5f6g7h8", "to": "b2c3d4e5", "level": 0.85}
-                    ]
+                $ref: '#/components/schemas/RelationalTrustResult'
+
+  /api/trust/query:
+    post:
+      summary: Query relational trust with full options
+      description: |
+        Alternative endpoint for querying relational trust using a POST request body.
+        Useful when query parameters are inconvenient or when batching queries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RelationalTrustQuery'
+      responses:
+        '200':
+          description: Relational trust result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationalTrustResult'
 
   /api/identity/{quidId}:
     get:
@@ -678,6 +677,70 @@ paths:
 
 components:
   schemas:
+    RelationalTrustQuery:
+      type: object
+      description: Query for computing relational trust between two quids
+      required:
+        - observer
+        - target
+      properties:
+        observer:
+          type: string
+          description: QuidID of the observer (who is asking about trust)
+          example: "a1b2c3d4e5f6g7h8"
+        target:
+          type: string
+          description: QuidID of the target (who is being assessed)
+          example: "b2c3d4e5f6g7h8i9"
+        domain:
+          type: string
+          description: Trust domain to query within (optional)
+          example: "example.com"
+        maxDepth:
+          type: integer
+          description: Maximum number of hops to explore (default 5)
+          default: 5
+          example: 5
+
+    RelationalTrustResult:
+      type: object
+      description: |
+        Result of a relational trust query. Trust is always computed from an observer's
+        perspective to a target - there is no absolute trust score for any quid.
+      properties:
+        observer:
+          type: string
+          description: QuidID of the observer
+          example: "a1b2c3d4e5f6g7h8"
+        target:
+          type: string
+          description: QuidID of the target
+          example: "b2c3d4e5f6g7h8i9"
+        trustLevel:
+          type: number
+          format: double
+          description: |
+            Computed transitive trust level (0.0 to 1.0). This is the product of trust
+            levels along the best path found. Returns 1.0 if observer equals target,
+            0.0 if no path exists.
+          example: 0.56
+        trustPath:
+          type: array
+          items:
+            type: string
+          description: |
+            Ordered list of quid IDs representing the best trust path from observer to target.
+            Empty if no path exists.
+          example: ["a1b2c3d4e5f6g7h8", "c3d4e5f6g7h8i9j0", "b2c3d4e5f6g7h8i9"]
+        pathDepth:
+          type: integer
+          description: Number of hops in the trust path (0 if same entity, -1 or 0 if no path)
+          example: 2
+        domain:
+          type: string
+          description: Trust domain that was queried (if specified)
+          example: "example.com"
+
     Quid:
       type: object
       properties:
@@ -823,17 +886,25 @@ components:
               - $ref: '#/components/schemas/TitleTransaction'
         trustProof:
           type: object
+          description: |
+            Proof of trust for block validation. The validatorTrustInCreator field represents
+            the validator's relational trust in the block creator, computed dynamically.
           properties:
             trustDomain:
               type: string
-            validatorQuid:
+            validatorId:
               type: string
-            trustScore:
+              description: QuidID of the validator
+            validatorTrustInCreator:
               type: number
+              description: |
+                The validator's computed relational trust in the block creator.
+                This is not a static score but computed at validation time.
             validatorSigs:
-              type: object
-              additionalProperties:
+              type: array
+              items:
                 type: string
+              description: Validator signatures
             validationTime:
               type: integer
         prevHash:

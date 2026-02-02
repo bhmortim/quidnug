@@ -19,9 +19,11 @@ Quidnug is a security and encryption platform for establishing cryptographic tru
 - Each quid has a unique ID derived from its public key
 
 ### Trust Relationships
+- **Relational, not absolute**: Trust is always computed from an observer's perspective to a target quid. There is no global "trust score" for any quid.
 - Explicit trust levels (0.0 to 1.0) between quids
 - Domain-specific and can have expiration dates
-- Can propagate transitively through the network
+- **Transitive with multiplicative decay**: Trust propagates through the network. If A trusts B at 0.8 and B trusts C at 0.7, then A's transitive trust in C is 0.8 × 0.7 = 0.56.
+- Trust is computed on-demand using graph traversal, finding the best path from observer to target
 
 ### Hierarchical Trust Domains
 - Structured domains like `2025-spring.elections.williamson.counties.texas.us.gov`
@@ -97,19 +99,26 @@ type QuidKeypair struct {
 ```
 
 ### Trust Graph
-```go
-type TrustEdge struct {
-    TrustLevel    float64 `json:"trustLevel"`
-    TxID          string  `json:"txId"`
-    LastUpdated   int64   `json:"lastUpdated"`
-    ValidUntil    int64   `json:"validUntil,omitempty"`
-}
 
-type TrustGraph struct {
-    // Maps: truster -> trustee -> domain -> edge
-    Edges       map[string]map[string]map[string]TrustEdge
+Trust edges are stored in the registry, but trust *values* are computed relationally:
+
+```go
+// Trust edges are stored per truster -> trustee relationship
+// TrustRegistry maps: truster -> trustee -> trustLevel
+TrustRegistry map[string]map[string]float64
+
+// Relational trust is computed on-demand from observer to target
+type RelationalTrustResult struct {
+    Observer   string   `json:"observer"`   // Who is asking
+    Target     string   `json:"target"`     // Who is being assessed
+    TrustLevel float64  `json:"trustLevel"` // Computed transitive trust (0.0-1.0)
+    TrustPath  []string `json:"trustPath"`  // Path of quid IDs for best trust route
+    PathDepth  int      `json:"pathDepth"`  // Number of hops in the path
+    Domain     string   `json:"domain"`     // Trust domain (optional)
 }
 ```
+
+**Key principle**: Trust is never stored as an absolute value per quid. It is always computed dynamically based on the observer's perspective through the trust graph.
 
 ### Trust Domain Structure
 ```go
@@ -202,7 +211,8 @@ docker run -p 8080:8080 quidnug-node
 - `POST /api/transactions/title` - Submit a title transaction
 
 ### Query Endpoints
-- `GET /api/trust/{truster}/{trustee}?domain=X` - Get trust level between quids
+- `GET /api/trust/{observer}/{target}?domain=X&maxDepth=Y` - Get relational trust from observer to target
+- `POST /api/trust/query` - Query relational trust with full options
 - `GET /api/identity/{quidId}?domain=X` - Get quid identity
 - `GET /api/title/{assetId}?domain=X` - Get asset ownership
 
@@ -219,6 +229,30 @@ curl -X POST http://localhost:8080/api/transactions/trust -d '{
   "trustee": "quid_b_id",
   "domain": "example.com",
   "trustLevel": 0.8
+}'
+```
+
+### Querying Relational Trust
+```bash
+# Get trust from your perspective (observer) to a target quid
+curl "http://localhost:8080/api/trust/your_quid_id/target_quid_id?domain=example.com&maxDepth=5"
+
+# Response includes the computed trust and the path taken:
+# {
+#   "observer": "your_quid_id",
+#   "target": "target_quid_id",
+#   "trustLevel": 0.56,
+#   "trustPath": ["your_quid_id", "intermediate_quid", "target_quid_id"],
+#   "pathDepth": 2,
+#   "domain": "example.com"
+# }
+
+# Alternative: POST query with full options
+curl -X POST http://localhost:8080/api/trust/query -d '{
+  "observer": "your_quid_id",
+  "target": "target_quid_id",
+  "domain": "example.com",
+  "maxDepth": 5
 }'
 ```
 
