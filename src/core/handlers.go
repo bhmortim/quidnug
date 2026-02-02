@@ -15,6 +15,73 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Pagination constants
+const (
+	DefaultPaginationLimit = 50
+	MaxPaginationLimit     = 1000
+)
+
+// PaginationParams holds parsed pagination parameters
+type PaginationParams struct {
+	Limit  int
+	Offset int
+}
+
+// PaginationMeta contains pagination metadata for responses
+type PaginationMeta struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+	Total  int `json:"total"`
+}
+
+// ParsePaginationParams extracts limit and offset from query parameters
+// with validation and capping to maxLimit
+func ParsePaginationParams(r *http.Request, defaultLimit, maxLimit int) PaginationParams {
+	params := PaginationParams{
+		Limit:  defaultLimit,
+		Offset: 0,
+	}
+
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil {
+			if limit > 0 {
+				params.Limit = limit
+			}
+		}
+	}
+
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil {
+			if offset >= 0 {
+				params.Offset = offset
+			}
+		}
+	}
+
+	if params.Limit > maxLimit {
+		params.Limit = maxLimit
+	}
+
+	return params
+}
+
+// paginateSlice is a helper to paginate a generic slice
+// Returns the paginated slice and total count
+func paginateSlice[T any](items []T, params PaginationParams) ([]T, int) {
+	total := len(items)
+
+	if params.Offset >= total {
+		return []T{}, total
+	}
+
+	end := params.Offset + params.Limit
+	if end > total {
+		end = total
+	}
+
+	return items[params.Offset:end], total
+}
+
 // StartServer starts the HTTP server for API endpoints
 func (node *QuidnugNode) StartServer(port string) error {
 	return node.StartServerWithConfig(port, DefaultRateLimitPerMinute, DefaultMaxBodySizeBytes)
@@ -84,27 +151,45 @@ func (node *QuidnugNode) HealthCheckHandler(w http.ResponseWriter, r *http.Reque
 
 // GetNodesHandler returns the list of known nodes
 func (node *QuidnugNode) GetNodesHandler(w http.ResponseWriter, r *http.Request) {
-	node.KnownNodesMutex.RLock()
-	defer node.KnownNodesMutex.RUnlock()
+	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
 
-	// Convert map to slice for response
+	node.KnownNodesMutex.RLock()
 	var nodesList []Node
 	for _, n := range node.KnownNodes {
 		nodesList = append(nodesList, n)
 	}
+	node.KnownNodesMutex.RUnlock()
+
+	paginatedNodes, total := paginateSlice(nodesList, params)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"nodes": nodesList,
+		"data": paginatedNodes,
+		"pagination": PaginationMeta{
+			Limit:  params.Limit,
+			Offset: params.Offset,
+			Total:  total,
+		},
 	})
 }
 
 // GetTransactionsHandler returns pending transactions
 func (node *QuidnugNode) GetTransactionsHandler(w http.ResponseWriter, r *http.Request) {
+	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 	node.PendingTxsMutex.RLock()
-	defer node.PendingTxsMutex.RUnlock()
+	txsCopy := make([]interface{}, len(node.PendingTxs))
+	copy(txsCopy, node.PendingTxs)
+	node.PendingTxsMutex.RUnlock()
+
+	paginatedTxs, total := paginateSlice(txsCopy, params)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"pending_transactions": node.PendingTxs,
+		"data": paginatedTxs,
+		"pagination": PaginationMeta{
+			Limit:  params.Limit,
+			Offset: params.Offset,
+			Total:  total,
+		},
 	})
 }
 
@@ -185,11 +270,19 @@ func (node *QuidnugNode) CreateTitleTransactionHandler(w http.ResponseWriter, r 
 
 // GetBlocksHandler returns the blockchain
 func (node *QuidnugNode) GetBlocksHandler(w http.ResponseWriter, r *http.Request) {
+	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 	node.BlockchainMutex.RLock()
-	defer node.BlockchainMutex.RUnlock()
+	paginatedBlocks, total := paginateSlice(node.Blockchain, params)
+	node.BlockchainMutex.RUnlock()
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"blocks": node.Blockchain,
+		"data": paginatedBlocks,
+		"pagination": PaginationMeta{
+			Limit:  params.Limit,
+			Offset: params.Offset,
+			Total:  total,
+		},
 	})
 }
 
@@ -363,11 +456,35 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 			"relationships": relationships,
 		})
 	} else {
+		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 		node.TrustRegistryMutex.RLock()
-		defer node.TrustRegistryMutex.RUnlock()
+		type TrustEntry struct {
+			Truster    string  `json:"truster"`
+			Trustee    string  `json:"trustee"`
+			TrustLevel float64 `json:"trust_level"`
+		}
+		var entries []TrustEntry
+		for truster, relationships := range node.TrustRegistry {
+			for trustee, level := range relationships {
+				entries = append(entries, TrustEntry{
+					Truster:    truster,
+					Trustee:    trustee,
+					TrustLevel: level,
+				})
+			}
+		}
+		node.TrustRegistryMutex.RUnlock()
+
+		paginatedEntries, total := paginateSlice(entries, params)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"trust_registry": node.TrustRegistry,
+			"data": paginatedEntries,
+			"pagination": PaginationMeta{
+				Limit:  params.Limit,
+				Offset: params.Offset,
+				Total:  total,
+			},
 		})
 	}
 }
@@ -377,21 +494,46 @@ func (node *QuidnugNode) QueryIdentityRegistryHandler(w http.ResponseWriter, r *
 	quidID := r.URL.Query().Get("quid_id")
 
 	if quidID != "" {
-		// Query specific identity
 		identity, exists := node.GetQuidIdentity(quidID)
 		if !exists {
 			http.Error(w, "Identity not found", http.StatusNotFound)
 			return
 		}
-
 		json.NewEncoder(w).Encode(identity)
 	} else {
-		// Return all identities (could be paginated in a real implementation)
+		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 		node.IdentityRegistryMutex.RLock()
-		defer node.IdentityRegistryMutex.RUnlock()
+		type IdentityEntry struct {
+			QuidID   string                 `json:"quid_id"`
+			Identity map[string]interface{} `json:"identity"`
+		}
+		var entries []IdentityEntry
+		for quidID, identity := range node.IdentityRegistry {
+			identityMap := map[string]interface{}{
+				"quidId":      identity.QuidID,
+				"name":        identity.Name,
+				"description": identity.Description,
+				"attributes":  identity.Attributes,
+				"creator":     identity.Creator,
+				"updateNonce": identity.UpdateNonce,
+			}
+			entries = append(entries, IdentityEntry{
+				QuidID:   quidID,
+				Identity: identityMap,
+			})
+		}
+		node.IdentityRegistryMutex.RUnlock()
+
+		paginatedEntries, total := paginateSlice(entries, params)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"identities": node.IdentityRegistry,
+			"data": paginatedEntries,
+			"pagination": PaginationMeta{
+				Limit:  params.Limit,
+				Offset: params.Offset,
+				Total:  total,
+			},
 		})
 	}
 }
@@ -631,21 +773,17 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 	ownerID := r.URL.Query().Get("owner_id")
 
 	if assetID != "" {
-		// Query specific asset title
 		title, exists := node.GetAssetOwnership(assetID)
 		if !exists {
 			http.Error(w, "Title not found", http.StatusNotFound)
 			return
 		}
-
 		json.NewEncoder(w).Encode(title)
 	} else if ownerID != "" {
-		// Query all assets owned by a specific owner
+		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 		node.TitleRegistryMutex.RLock()
-		defer node.TitleRegistryMutex.RUnlock()
-
 		var ownedAssets []map[string]interface{}
-
 		for assetID, title := range node.TitleRegistry {
 			for _, stake := range title.Owners {
 				if stake.OwnerID == ownerID {
@@ -658,18 +796,44 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 				}
 			}
 		}
+		node.TitleRegistryMutex.RUnlock()
+
+		paginatedAssets, total := paginateSlice(ownedAssets, params)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"owner_id":     ownerID,
-			"owned_assets": ownedAssets,
+			"data": paginatedAssets,
+			"pagination": PaginationMeta{
+				Limit:  params.Limit,
+				Offset: params.Offset,
+				Total:  total,
+			},
 		})
 	} else {
-		// Return overview of title registry
+		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
 		node.TitleRegistryMutex.RLock()
-		defer node.TitleRegistryMutex.RUnlock()
+		type TitleEntry struct {
+			AssetID string      `json:"asset_id"`
+			Title   interface{} `json:"title"`
+		}
+		var entries []TitleEntry
+		for assetID, title := range node.TitleRegistry {
+			entries = append(entries, TitleEntry{
+				AssetID: assetID,
+				Title:   title,
+			})
+		}
+		node.TitleRegistryMutex.RUnlock()
+
+		paginatedEntries, total := paginateSlice(entries, params)
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"title_registry": node.TitleRegistry,
+			"data": paginatedEntries,
+			"pagination": PaginationMeta{
+				Limit:  params.Limit,
+				Offset: params.Offset,
+				Total:  total,
+			},
 		})
 	}
 }

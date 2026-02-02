@@ -898,6 +898,214 @@ class QuidnugClient {
   }
   
   /**
+   * Get blocks from the blockchain with pagination
+   * @param {Object} [options] - Query options
+   * @param {number} [options.limit=50] - Maximum number of items to return
+   * @param {number} [options.offset=0] - Number of items to skip
+   * @returns {Promise<Object>} Paginated blocks response with data and pagination metadata
+   */
+  async getBlocks(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/blocks`;
+
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get blocks: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Blocks query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get known nodes with pagination
+   * @param {Object} [options] - Query options
+   * @param {number} [options.limit=50] - Maximum number of items to return
+   * @param {number} [options.offset=0] - Number of items to skip
+   * @returns {Promise<Object>} Paginated nodes response with data and pagination metadata
+   */
+  async getNodes(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/nodes`;
+
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get nodes: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Nodes query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get pending transactions with pagination
+   * @param {Object} [options] - Query options
+   * @param {number} [options.limit=50] - Maximum number of items to return
+   * @param {number} [options.offset=0] - Number of items to skip
+   * @returns {Promise<Object>} Paginated transactions response with data and pagination metadata
+   */
+  async getPendingTransactions(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/transactions`;
+
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to get transactions: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Transactions query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query the trust registry with optional pagination
+   * @param {Object} [options] - Query options
+   * @param {string} [options.truster] - Filter by truster quid ID
+   * @param {string} [options.trustee] - Filter by trustee quid ID
+   * @param {number} [options.limit=50] - Maximum number of items to return (for full registry query)
+   * @param {number} [options.offset=0] - Number of items to skip (for full registry query)
+   * @returns {Promise<Object>} Trust registry data (paginated when no filters applied)
+   */
+  async queryTrustRegistry(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/registry/trust`;
+
+      const params = new URLSearchParams();
+      if (options.truster) params.append('truster', options.truster);
+      if (options.trustee) params.append('trustee', options.trustee);
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to query trust registry: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Trust registry query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query the identity registry with optional pagination
+   * @param {Object} [options] - Query options
+   * @param {string} [options.quidId] - Filter by specific quid ID
+   * @param {number} [options.limit=50] - Maximum number of items to return (for full registry query)
+   * @param {number} [options.offset=0] - Number of items to skip (for full registry query)
+   * @returns {Promise<Object>} Identity registry data (paginated when no quidId filter applied)
+   */
+  async queryIdentityRegistry(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/registry/identity`;
+
+      const params = new URLSearchParams();
+      if (options.quidId) params.append('quid_id', options.quidId);
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to query identity registry: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Identity registry query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query the title registry with optional pagination
+   * @param {Object} [options] - Query options
+   * @param {string} [options.assetId] - Filter by specific asset ID
+   * @param {string} [options.ownerId] - Filter by owner ID
+   * @param {number} [options.limit=50] - Maximum number of items to return (for full registry query)
+   * @param {number} [options.offset=0] - Number of items to skip (for full registry query)
+   * @returns {Promise<Object>} Title registry data (paginated when no filters applied)
+   */
+  async queryTitleRegistry(options = {}) {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/registry/title`;
+
+      const params = new URLSearchParams();
+      if (options.assetId) params.append('asset_id', options.assetId);
+      if (options.ownerId) params.append('owner_id', options.ownerId);
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to query title registry: ${response.status} ${errorText}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Title registry query failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Query a specific trust domain
    * @param {string} domain - Domain to query
    * @param {string} type - Query type (trust, identity, title)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -391,8 +392,12 @@ func TestGetNodesHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if _, ok := response["nodes"]; !ok {
-		t.Error("Expected 'nodes' key in response")
+	if _, ok := response["data"]; !ok {
+		t.Error("Expected 'data' key in response")
+	}
+
+	if _, ok := response["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response")
 	}
 }
 
@@ -413,13 +418,17 @@ func TestGetBlocksHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	blocks, ok := response["blocks"].([]interface{})
+	data, ok := response["data"].([]interface{})
 	if !ok {
-		t.Error("Expected 'blocks' to be an array")
+		t.Error("Expected 'data' to be an array")
 	}
 
-	if len(blocks) < 1 {
+	if len(data) < 1 {
 		t.Error("Expected at least genesis block")
+	}
+
+	if _, ok := response["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response")
 	}
 }
 
@@ -783,6 +792,289 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 			t.Errorf("Expected 0 edges for nonexistent quid, got %d", len(edges))
 		}
 	})
+}
+
+func TestParsePaginationParams(t *testing.T) {
+	t.Run("default values when no params", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 50 {
+			t.Errorf("Expected default limit 50, got %d", params.Limit)
+		}
+		if params.Offset != 0 {
+			t.Errorf("Expected default offset 0, got %d", params.Offset)
+		}
+	})
+
+	t.Run("custom limit and offset", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?limit=25&offset=100", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 25 {
+			t.Errorf("Expected limit 25, got %d", params.Limit)
+		}
+		if params.Offset != 100 {
+			t.Errorf("Expected offset 100, got %d", params.Offset)
+		}
+	})
+
+	t.Run("limit capped to maxLimit", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?limit=5000", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 1000 {
+			t.Errorf("Expected limit capped to 1000, got %d", params.Limit)
+		}
+	})
+
+	t.Run("negative limit uses default", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?limit=-10", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 50 {
+			t.Errorf("Expected default limit 50 for negative input, got %d", params.Limit)
+		}
+	})
+
+	t.Run("negative offset uses default", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?offset=-5", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Offset != 0 {
+			t.Errorf("Expected default offset 0 for negative input, got %d", params.Offset)
+		}
+	})
+
+	t.Run("invalid limit string uses default", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?limit=abc", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 50 {
+			t.Errorf("Expected default limit 50 for invalid string, got %d", params.Limit)
+		}
+	})
+
+	t.Run("zero limit uses default", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/test?limit=0", nil)
+		params := ParsePaginationParams(req, 50, 1000)
+
+		if params.Limit != 50 {
+			t.Errorf("Expected default limit 50 for zero, got %d", params.Limit)
+		}
+	})
+}
+
+func TestGetBlocksHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	t.Run("default pagination", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/blocks", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if _, ok := response["data"]; !ok {
+			t.Error("Expected 'data' key in response")
+		}
+
+		pagination, ok := response["pagination"].(map[string]interface{})
+		if !ok {
+			t.Error("Expected 'pagination' key in response")
+		} else {
+			if pagination["limit"].(float64) != 50 {
+				t.Errorf("Expected limit 50, got %v", pagination["limit"])
+			}
+			if pagination["offset"].(float64) != 0 {
+				t.Errorf("Expected offset 0, got %v", pagination["offset"])
+			}
+		}
+	})
+
+	t.Run("custom pagination params", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/blocks?limit=10&offset=0", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		pagination := response["pagination"].(map[string]interface{})
+		if pagination["limit"].(float64) != 10 {
+			t.Errorf("Expected limit 10, got %v", pagination["limit"])
+		}
+	})
+}
+
+func TestGetNodesHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	req := httptest.NewRequest("GET", "/api/nodes?limit=5", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["data"]; !ok {
+		t.Error("Expected 'data' key in response")
+	}
+
+	pagination, ok := response["pagination"].(map[string]interface{})
+	if !ok {
+		t.Error("Expected 'pagination' key in response")
+	} else {
+		if pagination["limit"].(float64) != 5 {
+			t.Errorf("Expected limit 5, got %v", pagination["limit"])
+		}
+	}
+}
+
+func TestGetTransactionsHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := mux.NewRouter()
+	router.HandleFunc("/api/transactions", node.GetTransactionsHandler).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/api/transactions?limit=20&offset=5", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["data"]; !ok {
+		t.Error("Expected 'data' key in response")
+	}
+
+	pagination := response["pagination"].(map[string]interface{})
+	if pagination["limit"].(float64) != 20 {
+		t.Errorf("Expected limit 20, got %v", pagination["limit"])
+	}
+	if pagination["offset"].(float64) != 5 {
+		t.Errorf("Expected offset 5, got %v", pagination["offset"])
+	}
+}
+
+func TestQueryTrustRegistryHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := mux.NewRouter()
+	router.HandleFunc("/api/registry/trust", node.QueryTrustRegistryHandler).Methods("GET")
+
+	node.TrustRegistryMutex.Lock()
+	for i := 0; i < 100; i++ {
+		truster := "truster_" + strconv.Itoa(i)
+		if node.TrustRegistry[truster] == nil {
+			node.TrustRegistry[truster] = make(map[string]float64)
+		}
+		node.TrustRegistry[truster]["trustee_"+strconv.Itoa(i)] = 0.5
+	}
+	node.TrustRegistryMutex.Unlock()
+
+	req := httptest.NewRequest("GET", "/api/registry/trust?limit=10&offset=5", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	data, ok := response["data"].([]interface{})
+	if !ok {
+		t.Error("Expected 'data' to be an array")
+	} else if len(data) > 10 {
+		t.Errorf("Expected at most 10 items, got %d", len(data))
+	}
+
+	pagination := response["pagination"].(map[string]interface{})
+	if pagination["total"].(float64) < 100 {
+		t.Errorf("Expected total >= 100, got %v", pagination["total"])
+	}
+}
+
+func TestQueryIdentityRegistryHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := mux.NewRouter()
+	router.HandleFunc("/api/registry/identity", node.QueryIdentityRegistryHandler).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/api/registry/identity?limit=10", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["data"]; !ok {
+		t.Error("Expected 'data' key in response")
+	}
+
+	if _, ok := response["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response")
+	}
+}
+
+func TestQueryTitleRegistryHandlerPagination(t *testing.T) {
+	node := newTestNode()
+	router := mux.NewRouter()
+	router.HandleFunc("/api/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/api/registry/title?limit=10", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	if _, ok := response["data"]; !ok {
+		t.Error("Expected 'data' key in response")
+	}
+
+	if _, ok := response["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response")
+	}
+}
+
+func TestPaginationLimitCapped(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	req := httptest.NewRequest("GET", "/api/blocks?limit=5000", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+
+	pagination := response["pagination"].(map[string]interface{})
+	if pagination["limit"].(float64) != 1000 {
+		t.Errorf("Expected limit capped to 1000, got %v", pagination["limit"])
+	}
 }
 
 func TestRelationalTrustQueryHandler(t *testing.T) {
