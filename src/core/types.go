@@ -117,3 +117,40 @@ type RelationalTrustResult struct {
 	PathDepth  int      `json:"pathDepth"`
 	Domain     string   `json:"domain,omitempty"`
 }
+
+// BlockAcceptance represents the tiered acceptance level of a block
+type BlockAcceptance int
+
+const (
+	BlockTrusted   BlockAcceptance = iota // Integrate into main chain
+	BlockTentative                        // Store separately, don't build on
+	BlockUntrusted                        // Extract data, relay, don't store block
+	BlockInvalid                          // Reject entirely (cryptographically invalid)
+)
+
+// TrustEdge represents a trust relationship with provenance tracking
+type TrustEdge struct {
+	Truster       string  `json:"truster"`
+	Trustee       string  `json:"trustee"`
+	TrustLevel    float64 `json:"trustLevel"`
+	SourceBlock   string  `json:"sourceBlock"`   // Block hash where this edge was recorded
+	ValidatorQuid string  `json:"validatorQuid"` // Quid of validator who signed the block
+	Verified      bool    `json:"verified"`      // True if from a trusted validator
+	Timestamp     int64   `json:"timestamp"`
+}
+
+// EnhancedTrustResult extends RelationalTrustResult with provenance
+type EnhancedTrustResult struct {
+	RelationalTrustResult
+	Confidence       string            `json:"confidence"` // "high", "medium", "low"
+	UnverifiedHops   int               `json:"unverifiedHops"`
+	VerificationGaps []VerificationGap `json:"verificationGaps,omitempty"`
+}
+
+// VerificationGap describes an unverified hop in the trust path
+type VerificationGap struct {
+	From           string  `json:"from"`
+	To             string  `json:"to"`
+	ValidatorQuid  string  `json:"validatorQuid"`
+	ValidatorTrust float64 `json:"validatorTrust"`
+}
