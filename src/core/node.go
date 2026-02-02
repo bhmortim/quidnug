@@ -448,6 +448,64 @@ func (node *QuidnugNode) AddTitleTransaction(tx TitleTransaction) (string, error
 	return tx.ID, nil
 }
 
+// FilterTransactionsForBlock filters pending transactions based on trust.
+// Only includes transactions from sources the node trusts (or sponsored transactions).
+// For each transaction, extracts the creator quid and computes relational trust.
+// Transactions are included if trustLevel >= node.TransactionTrustThreshold.
+func (node *QuidnugNode) FilterTransactionsForBlock(txs []interface{}, domain string) []interface{} {
+	var filtered []interface{}
+
+	for _, tx := range txs {
+		var creatorQuid string
+		var txID string
+
+		// Extract creator quid based on transaction type
+		switch t := tx.(type) {
+		case TrustTransaction:
+			creatorQuid = t.Truster
+			txID = t.ID
+		case IdentityTransaction:
+			creatorQuid = t.Creator
+			txID = t.ID
+		case TitleTransaction:
+			// For title transactions, use first owner as creator
+			if len(t.Owners) > 0 {
+				creatorQuid = t.Owners[0].OwnerID
+			}
+			txID = t.ID
+		default:
+			// Unknown transaction type, skip
+			logger.Debug("Skipping unknown transaction type in trust filter")
+			continue
+		}
+
+		// If no creator quid, skip this transaction
+		if creatorQuid == "" {
+			logger.Debug("Skipping transaction with empty creator",
+				"txId", txID,
+				"domain", domain)
+			continue
+		}
+
+		// Compute relational trust from this node to the creator
+		trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeQuidID, creatorQuid, 3)
+
+		// Include if trust meets threshold
+		if trustLevel >= node.TransactionTrustThreshold {
+			filtered = append(filtered, tx)
+		} else {
+			logger.Debug("Filtered out transaction due to insufficient trust",
+				"txId", txID,
+				"creator", creatorQuid,
+				"trustLevel", trustLevel,
+				"threshold", node.TransactionTrustThreshold,
+				"domain", domain)
+		}
+	}
+
+	return filtered
+}
+
 // GenerateBlock generates a new block with pending transactions
 func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	node.BlockchainMutex.RLock()
@@ -497,6 +555,9 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 			remainingTxs = append(remainingTxs, tx)
 		}
 	}
+
+	// Apply trust-based filtering to domain transactions
+	domainTxs = node.FilterTransactionsForBlock(domainTxs, trustDomain)
 
 	if len(domainTxs) == 0 {
 		return nil, fmt.Errorf("no pending transactions for trust domain: %s", trustDomain)

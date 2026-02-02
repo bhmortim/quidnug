@@ -1131,3 +1131,221 @@ func TestNewTestNodeInitialization(t *testing.T) {
 		}
 	})
 }
+
+func TestFilterTransactionsForBlock_TrustedCreatorIncluded(t *testing.T) {
+	node := newTestNode()
+
+	// Set up trust: node trusts quid_truster_001
+	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
+		"quid_truster_001": 0.8,
+	}
+
+	// Set a threshold that the trusted creator should pass
+	node.TransactionTrustThreshold = 0.5
+
+	// Create a trust transaction from a trusted creator
+	tx := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_001",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000000,
+		},
+		Truster:    "quid_truster_001",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.7,
+	}
+
+	txs := []interface{}{tx}
+	filtered := node.FilterTransactionsForBlock(txs, "test.domain.com")
+
+	if len(filtered) != 1 {
+		t.Errorf("Expected 1 transaction to be included, got %d", len(filtered))
+	}
+}
+
+func TestFilterTransactionsForBlock_UnknownCreatorExcluded(t *testing.T) {
+	node := newTestNode()
+
+	// Set threshold > 0 so unknown creators (trust = 0) are excluded
+	node.TransactionTrustThreshold = 0.1
+
+	// Create a trust transaction from an unknown creator (no trust path)
+	tx := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_002",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000000,
+		},
+		Truster:    "unknown_creator_1",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.7,
+	}
+
+	txs := []interface{}{tx}
+	filtered := node.FilterTransactionsForBlock(txs, "test.domain.com")
+
+	if len(filtered) != 0 {
+		t.Errorf("Expected 0 transactions (unknown creator should be excluded), got %d", len(filtered))
+	}
+}
+
+func TestFilterTransactionsForBlock_AllIncludedWhenThresholdZero(t *testing.T) {
+	node := newTestNode()
+
+	// Set threshold to 0, so all transactions should be included
+	node.TransactionTrustThreshold = 0.0
+
+	// Create transactions from various creators (including unknown)
+	tx1 := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_003",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000000,
+		},
+		Truster:    "unknown_creator_2",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.7,
+	}
+
+	tx2 := IdentityTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_004",
+			Type:        TxTypeIdentity,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000001,
+		},
+		QuidID:      "quid_new_001",
+		Name:        "New Identity",
+		Creator:     "another_unknown_cr",
+		UpdateNonce: 1,
+	}
+
+	tx3 := TitleTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_005",
+			Type:        TxTypeTitle,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000002,
+		},
+		AssetID: "quid_asset_001",
+		Owners: []OwnershipStake{
+			{OwnerID: "unknown_owner_001", Percentage: 100.0},
+		},
+		Signatures: make(map[string]string),
+	}
+
+	txs := []interface{}{tx1, tx2, tx3}
+	filtered := node.FilterTransactionsForBlock(txs, "test.domain.com")
+
+	if len(filtered) != 3 {
+		t.Errorf("Expected all 3 transactions to be included when threshold=0, got %d", len(filtered))
+	}
+}
+
+func TestFilterTransactionsForBlock_DistrustedCreatorExcluded(t *testing.T) {
+	node := newTestNode()
+
+	// Set up low trust (distrust) for a creator
+	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
+		"distrusted_quid01": 0.1, // Low trust
+	}
+
+	// Set threshold higher than the trust level
+	node.TransactionTrustThreshold = 0.5
+
+	// Create a transaction from the distrusted creator
+	tx := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_test_006",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000000,
+		},
+		Truster:    "distrusted_quid01",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.9,
+	}
+
+	txs := []interface{}{tx}
+	filtered := node.FilterTransactionsForBlock(txs, "test.domain.com")
+
+	if len(filtered) != 0 {
+		t.Errorf("Expected 0 transactions (distrusted creator should be excluded), got %d", len(filtered))
+	}
+}
+
+func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
+	node := newTestNode()
+
+	// Set up trust relationships
+	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
+		"trusted_truster01": 0.8,
+		"trusted_creator01": 0.7,
+		"trusted_owner_001": 0.9,
+	}
+
+	node.TransactionTrustThreshold = 0.5
+
+	// Create various transaction types from trusted creators
+	tx1 := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_mixed_001",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000000,
+		},
+		Truster:    "trusted_truster01",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.7,
+	}
+
+	tx2 := IdentityTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_mixed_002",
+			Type:        TxTypeIdentity,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000001,
+		},
+		QuidID:      "quid_new_002",
+		Name:        "Trusted Identity",
+		Creator:     "trusted_creator01",
+		UpdateNonce: 1,
+	}
+
+	tx3 := TitleTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_mixed_003",
+			Type:        TxTypeTitle,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000002,
+		},
+		AssetID: "quid_asset_001",
+		Owners: []OwnershipStake{
+			{OwnerID: "trusted_owner_001", Percentage: 100.0},
+		},
+		Signatures: make(map[string]string),
+	}
+
+	// Also add an untrusted transaction
+	tx4 := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_mixed_004",
+			Type:        TxTypeTrust,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000003,
+		},
+		Truster:    "untrusted_quid_01",
+		Trustee:    "quid_trustee_001",
+		TrustLevel: 0.5,
+	}
+
+	txs := []interface{}{tx1, tx2, tx3, tx4}
+	filtered := node.FilterTransactionsForBlock(txs, "test.domain.com")
+
+	if len(filtered) != 3 {
+		t.Errorf("Expected 3 transactions (trusted ones only), got %d", len(filtered))
+	}
+}
