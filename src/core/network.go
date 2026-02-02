@@ -2,33 +2,71 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
-// DiscoverNodes discovers other nodes in the network
-func (node *QuidnugNode) DiscoverNodes(seedNodes []string) {
+// DiscoverNodes discovers other nodes in the network with context support for cancellation
+func (node *QuidnugNode) DiscoverNodes(ctx context.Context, seedNodes []string) {
+	logger.Info("Starting node discovery", "seedNodes", len(seedNodes))
+
+	// Initial discovery
+	node.discoverFromSeeds(ctx, seedNodes)
+
+	// Periodic re-discovery every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Node discovery stopped")
+			return
+		case <-ticker.C:
+			node.discoverFromSeeds(ctx, seedNodes)
+		}
+	}
+}
+
+// discoverFromSeeds performs a single discovery round from seed nodes
+func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []string) {
 	for _, seedAddress := range seedNodes {
-		// Make HTTP request to the seed node's discovery endpoint
-		resp, err := http.Get(fmt.Sprintf("http://%s/api/nodes", seedAddress))
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Create request with context for cancellation
+		reqURL := fmt.Sprintf("http://%s/api/nodes", seedAddress)
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		if err != nil {
+			logger.Warn("Failed to create request for seed node", "seedAddress", seedAddress, "error", err)
+			continue
+		}
+
+		resp, err := node.httpClient.Do(req)
 		if err != nil {
 			logger.Warn("Failed to connect to seed node", "seedAddress", seedAddress, "error", err)
 			continue
 		}
-		defer resp.Body.Close()
 
 		var nodesResponse struct {
 			Nodes []Node `json:"nodes"`
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&nodesResponse); err != nil {
+			resp.Body.Close()
 			logger.Warn("Failed to decode node list", "seedAddress", seedAddress, "error", err)
 			continue
 		}
+		resp.Body.Close()
 
 		// Add discovered nodes to our known nodes list
 		node.KnownNodesMutex.Lock()

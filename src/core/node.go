@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,8 +12,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -56,6 +59,9 @@ type QuidnugNode struct {
 	IdentityRegistry map[string]IdentityTransaction
 	TitleRegistry    map[string]TitleTransaction
 
+	// HTTP server for graceful shutdown
+	Server *http.Server
+
 	// HTTP client for network communication
 	httpClient *http.Client
 
@@ -76,6 +82,10 @@ func main() {
 	// Initialize structured logger
 	initLogger(cfg.LogLevel)
 
+	// Create cancellable context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Initialize node
 	quidnugNode, err := NewQuidnugNode()
 	if err != nil {
@@ -83,39 +93,132 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Discover other nodes
-	go quidnugNode.DiscoverNodes(cfg.SeedNodes)
+	// Load persisted pending transactions
+	if err := quidnugNode.LoadPendingTransactions(cfg.DataDir); err != nil {
+		logger.Warn("Failed to load pending transactions", "error", err)
+	}
 
-	// Start block generation for managed trust domains
+	// WaitGroup for background goroutines
+	var wg sync.WaitGroup
+
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	go func() {
-		for {
-			time.Sleep(cfg.BlockInterval)
+		sig := <-sigChan
+		logger.Info("Received shutdown signal", "signal", sig.String())
+		cancel()
+	}()
 
-			quidnugNode.TrustDomainsMutex.RLock()
-			managedDomains := make([]string, 0, len(quidnugNode.TrustDomains))
-			for domain := range quidnugNode.TrustDomains {
+	// Discover other nodes (with context)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.DiscoverNodes(ctx, cfg.SeedNodes)
+	}()
+
+	// Start block generation for managed trust domains (with context)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runBlockGeneration(ctx, cfg.BlockInterval)
+	}()
+
+	// Start HTTP server (non-blocking)
+	serverErr := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := quidnugNode.StartServer(cfg.Port); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	// Wait for shutdown signal or server error
+	select {
+	case <-ctx.Done():
+		logger.Info("Initiating graceful shutdown...")
+	case err := <-serverErr:
+		logger.Error("Server failed", "error", err)
+		cancel()
+	}
+
+	// Graceful shutdown sequence
+	quidnugNode.Shutdown(ctx, cfg)
+
+	// Wait for all goroutines to finish
+	logger.Info("Waiting for background goroutines to finish...")
+	wg.Wait()
+
+	logger.Info("Shutdown complete")
+}
+
+// runBlockGeneration runs the block generation loop with context cancellation support
+func (node *QuidnugNode) runBlockGeneration(ctx context.Context, interval time.Duration) {
+	logger.Info("Starting block generation loop", "interval", interval)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Block generation loop stopped")
+			return
+		case <-ticker.C:
+			node.TrustDomainsMutex.RLock()
+			managedDomains := make([]string, 0, len(node.TrustDomains))
+			for domain := range node.TrustDomains {
 				managedDomains = append(managedDomains, domain)
 			}
-			quidnugNode.TrustDomainsMutex.RUnlock()
+			node.TrustDomainsMutex.RUnlock()
 
 			for _, domain := range managedDomains {
-				block, err := quidnugNode.GenerateBlock(domain)
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				block, err := node.GenerateBlock(domain)
 				if err != nil {
 					logger.Debug("Failed to generate block", "domain", domain, "error", err)
 					continue
 				}
 
-				if err := quidnugNode.AddBlock(*block); err != nil {
+				if err := node.AddBlock(*block); err != nil {
 					logger.Error("Failed to add generated block", "domain", domain, "error", err)
 				}
 			}
 		}
-	}()
+	}
+}
 
-	// Start HTTP server
-	if err := quidnugNode.StartServer(cfg.Port); err != nil {
-		logger.Error("Server failed", "error", err)
-		os.Exit(1)
+// Shutdown performs graceful shutdown of the node
+func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *Config) {
+	// Create timeout context for shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer shutdownCancel()
+
+	// Shutdown HTTP server gracefully
+	if node.Server != nil {
+		logger.Info("Shutting down HTTP server...", "timeout", cfg.ShutdownTimeout)
+		if err := node.Server.Shutdown(shutdownCtx); err != nil {
+			logger.Error("HTTP server shutdown error", "error", err)
+		} else {
+			logger.Info("HTTP server shutdown complete")
+		}
+	}
+
+	// Save pending transactions
+	logger.Info("Saving pending transactions...")
+	if err := node.SavePendingTransactions(cfg.DataDir); err != nil {
+		logger.Error("Failed to save pending transactions", "error", err)
+	} else {
+		node.PendingTxsMutex.RLock()
+		txCount := len(node.PendingTxs)
+		node.PendingTxsMutex.RUnlock()
+		logger.Info("Pending transactions saved", "count", txCount)
 	}
 }
 

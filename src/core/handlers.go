@@ -58,9 +58,14 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	handler := BodySizeLimitMiddleware(maxBodySizeBytes)(router)
 	handler = RateLimitMiddleware(rateLimiter)(handler)
 
-	// Start HTTP server
+	// Create HTTP server and store reference for graceful shutdown
+	node.Server = &http.Server{
+		Addr:    ":" + port,
+		Handler: handler,
+	}
+
 	logger.Info("Starting quidnug node server", "port", port, "nodeId", node.NodeID, "rateLimit", rateLimitPerMinute, "maxBodySize", maxBodySizeBytes)
-	return http.ListenAndServe(":"+port, handler)
+	return node.Server.ListenAndServe()
 }
 
 // HealthCheckHandler handles health check requests

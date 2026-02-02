@@ -1011,6 +1011,87 @@ func TestGetPublicKeyHex(t *testing.T) {
 	}
 }
 
+func TestPersistence(t *testing.T) {
+	node := newTestNode()
+	tempDir := t.TempDir()
+
+	t.Run("save and load pending transactions", func(t *testing.T) {
+		node.PendingTxsMutex.Lock()
+		node.PendingTxs = []interface{}{
+			map[string]interface{}{
+				"id":   "tx1",
+				"type": "TRUST",
+			},
+			map[string]interface{}{
+				"id":   "tx2",
+				"type": "IDENTITY",
+			},
+		}
+		node.PendingTxsMutex.Unlock()
+
+		err := node.SavePendingTransactions(tempDir)
+		if err != nil {
+			t.Fatalf("Failed to save pending transactions: %v", err)
+		}
+
+		node.PendingTxsMutex.Lock()
+		node.PendingTxs = nil
+		node.PendingTxsMutex.Unlock()
+
+		err = node.LoadPendingTransactions(tempDir)
+		if err != nil {
+			t.Fatalf("Failed to load pending transactions: %v", err)
+		}
+
+		node.PendingTxsMutex.RLock()
+		if len(node.PendingTxs) != 2 {
+			t.Errorf("Expected 2 pending transactions, got %d", len(node.PendingTxs))
+		}
+		node.PendingTxsMutex.RUnlock()
+	})
+
+	t.Run("load non-existent file returns nil error", func(t *testing.T) {
+		newNode := newTestNode()
+		err := newNode.LoadPendingTransactions(t.TempDir())
+		if err != nil {
+			t.Errorf("Expected nil error for non-existent file, got %v", err)
+		}
+	})
+
+	t.Run("save empty pending transactions does nothing", func(t *testing.T) {
+		newNode := newTestNode()
+		newNode.PendingTxs = []interface{}{}
+		err := newNode.SavePendingTransactions(tempDir)
+		if err != nil {
+			t.Errorf("Expected nil error for empty pending transactions, got %v", err)
+		}
+	})
+
+	t.Run("clear pending transactions file", func(t *testing.T) {
+		node.PendingTxsMutex.Lock()
+		node.PendingTxs = []interface{}{
+			map[string]interface{}{"id": "tx1"},
+		}
+		node.PendingTxsMutex.Unlock()
+
+		clearDir := t.TempDir()
+		err := node.SavePendingTransactions(clearDir)
+		if err != nil {
+			t.Fatalf("Failed to save: %v", err)
+		}
+
+		err = node.ClearPendingTransactionsFile(clearDir)
+		if err != nil {
+			t.Errorf("Failed to clear file: %v", err)
+		}
+
+		err = node.ClearPendingTransactionsFile(clearDir)
+		if err != nil {
+			t.Errorf("Clearing non-existent file should not error: %v", err)
+		}
+	})
+}
+
 func TestNewTestNodeInitialization(t *testing.T) {
 	node := newTestNode()
 

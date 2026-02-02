@@ -14,6 +14,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	os.Unsetenv("BLOCK_INTERVAL")
 	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
 	os.Unsetenv("MAX_BODY_SIZE_BYTES")
+	os.Unsetenv("DATA_DIR")
+	os.Unsetenv("SHUTDOWN_TIMEOUT")
 
 	cfg := LoadConfig()
 
@@ -44,6 +46,14 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.MaxBodySizeBytes != DefaultMaxBodySizeBytes {
 		t.Errorf("Expected default max body size %d, got %d", DefaultMaxBodySizeBytes, cfg.MaxBodySizeBytes)
 	}
+
+	if cfg.DataDir != DefaultDataDir {
+		t.Errorf("Expected default data dir '%s', got '%s'", DefaultDataDir, cfg.DataDir)
+	}
+
+	if cfg.ShutdownTimeout != DefaultShutdownTimeout {
+		t.Errorf("Expected default shutdown timeout %v, got %v", DefaultShutdownTimeout, cfg.ShutdownTimeout)
+	}
 }
 
 func TestLoadConfigFromEnv(t *testing.T) {
@@ -54,6 +64,8 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	os.Setenv("BLOCK_INTERVAL", "30s")
 	os.Setenv("RATE_LIMIT_PER_MINUTE", "200")
 	os.Setenv("MAX_BODY_SIZE_BYTES", "2097152")
+	os.Setenv("DATA_DIR", "/custom/data")
+	os.Setenv("SHUTDOWN_TIMEOUT", "45s")
 
 	defer func() {
 		os.Unsetenv("PORT")
@@ -62,6 +74,8 @@ func TestLoadConfigFromEnv(t *testing.T) {
 		os.Unsetenv("BLOCK_INTERVAL")
 		os.Unsetenv("RATE_LIMIT_PER_MINUTE")
 		os.Unsetenv("MAX_BODY_SIZE_BYTES")
+		os.Unsetenv("DATA_DIR")
+		os.Unsetenv("SHUTDOWN_TIMEOUT")
 	}()
 
 	cfg := LoadConfig()
@@ -92,6 +106,14 @@ func TestLoadConfigFromEnv(t *testing.T) {
 
 	if cfg.MaxBodySizeBytes != 2097152 {
 		t.Errorf("Expected max body size 2097152, got %d", cfg.MaxBodySizeBytes)
+	}
+
+	if cfg.DataDir != "/custom/data" {
+		t.Errorf("Expected data dir '/custom/data', got '%s'", cfg.DataDir)
+	}
+
+	if cfg.ShutdownTimeout != 45*time.Second {
+		t.Errorf("Expected shutdown timeout 45s, got %v", cfg.ShutdownTimeout)
 	}
 }
 
@@ -138,6 +160,8 @@ func TestLoadConfigPartialEnv(t *testing.T) {
 	os.Unsetenv("BLOCK_INTERVAL")
 	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
 	os.Unsetenv("MAX_BODY_SIZE_BYTES")
+	os.Unsetenv("DATA_DIR")
+	os.Unsetenv("SHUTDOWN_TIMEOUT")
 
 	defer os.Unsetenv("LOG_LEVEL")
 
@@ -157,6 +181,14 @@ func TestLoadConfigPartialEnv(t *testing.T) {
 
 	if cfg.RateLimitPerMinute != DefaultRateLimitPerMinute {
 		t.Errorf("Expected default rate limit, got %d", cfg.RateLimitPerMinute)
+	}
+
+	if cfg.DataDir != DefaultDataDir {
+		t.Errorf("Expected default data dir, got '%s'", cfg.DataDir)
+	}
+
+	if cfg.ShutdownTimeout != DefaultShutdownTimeout {
+		t.Errorf("Expected default shutdown timeout, got %v", cfg.ShutdownTimeout)
 	}
 }
 
