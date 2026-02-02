@@ -604,13 +604,9 @@ class QuidnugClient {
         body: JSON.stringify(transaction)
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to submit transaction: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Transaction submission failed: ${error.message}`);
     }
   }
@@ -648,26 +644,20 @@ class QuidnugClient {
       }
       
       const response = await fetch(url);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          return { 
-            observer,
-            target,
-            trustLevel: 0, 
-            trustPath: [],
-            pathDepth: 0,
-            domain,
-            message: 'No trust relationship found' 
-          };
-        }
-        
-        const errorText = await response.text();
-        throw new Error(`Failed to get trust level: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return { 
+          observer,
+          target,
+          trustLevel: 0, 
+          trustPath: [],
+          pathDepth: 0,
+          domain,
+          message: 'No trust relationship found' 
+        };
+      }
+      if (error.code) throw error;
       throw new Error(`Trust level query failed: ${error.message}`);
     }
   }
@@ -692,18 +682,12 @@ class QuidnugClient {
       }
       
       const response = await fetch(url);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null;
-        }
-        
-        const errorText = await response.text();
-        throw new Error(`Failed to get identity: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return null;
+      }
+      if (error.code) throw error;
       throw new Error(`Identity query failed: ${error.message}`);
     }
   }
@@ -728,18 +712,12 @@ class QuidnugClient {
       }
       
       const response = await fetch(url);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          return null;
-        }
-        
-        const errorText = await response.text();
-        throw new Error(`Failed to get asset ownership: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return null;
+      }
+      if (error.code) throw error;
       throw new Error(`Asset ownership query failed: ${error.message}`);
     }
   }
@@ -822,13 +800,9 @@ class QuidnugClient {
         })
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to query relational trust: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Relational trust query failed: ${error.message}`);
     }
   }
@@ -918,14 +892,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to get blocks: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Blocks query failed: ${error.message}`);
     }
   }
@@ -951,14 +920,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to get nodes: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Nodes query failed: ${error.message}`);
     }
   }
@@ -984,14 +948,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to get transactions: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Transactions query failed: ${error.message}`);
     }
   }
@@ -1021,14 +980,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to query trust registry: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Trust registry query failed: ${error.message}`);
     }
   }
@@ -1056,14 +1010,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to query identity registry: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Identity registry query failed: ${error.message}`);
     }
   }
@@ -1093,14 +1042,9 @@ class QuidnugClient {
       }
 
       const response = await fetch(url);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to query title registry: ${response.status} ${errorText}`);
-      }
-
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Title registry query failed: ${error.message}`);
     }
   }
@@ -1122,14 +1066,9 @@ class QuidnugClient {
       const url = `${nodeUrl}/api/domains/${domain}/query?type=${type}&param=${encodeURIComponent(param)}`;
       
       const response = await fetch(url);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Domain query failed: ${response.status} ${errorText}`);
-      }
-      
-      return await response.json();
+      return await this._parseResponse(response);
     } catch (error) {
+      if (error.code) throw error;
       throw new Error(`Domain query failed: ${error.message}`);
     }
   }
@@ -1148,13 +1087,9 @@ class QuidnugClient {
       // Get list of all known nodes
       const nodeUrl = this._getHealthyNode();
       const response = await fetch(`${nodeUrl}/api/nodes`);
+      const result = await this._parseResponse(response);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to get nodes: ${response.status} ${errorText}`);
-      }
-      
-      const { nodes } = await response.json();
+      const nodes = result.data || [];
       
       // Filter nodes that manage this domain
       return nodes.filter(node => {

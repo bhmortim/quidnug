@@ -45,12 +45,26 @@ func TestHealthCheckHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if response["status"] != "ok" {
-		t.Errorf("Expected status 'ok', got '%v'", response["status"])
+	if response["success"] != true {
+		t.Errorf("Expected success true, got '%v'", response["success"])
 	}
 
-	if response["node_id"] != node.NodeID {
-		t.Errorf("Expected node_id '%s', got '%v'", node.NodeID, response["node_id"])
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected data to be a map")
+	}
+
+	if data["status"] != "ok" {
+		t.Errorf("Expected status 'ok', got '%v'", data["status"])
+	}
+
+	if data["node_id"] != node.NodeID {
+		t.Errorf("Expected node_id '%s', got '%v'", node.NodeID, data["node_id"])
+	}
+
+	// Check X-API-Version header
+	if w.Header().Get("X-API-Version") != "1.0" {
+		t.Errorf("Expected X-API-Version '1.0', got '%s'", w.Header().Get("X-API-Version"))
 	}
 }
 
@@ -71,19 +85,28 @@ func TestGetInfoHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if response["nodeQuid"] != node.NodeID {
-		t.Errorf("Expected nodeQuid '%s', got '%v'", node.NodeID, response["nodeQuid"])
+	if response["success"] != true {
+		t.Errorf("Expected success true, got '%v'", response["success"])
 	}
 
-	if response["version"] != "1.0.0" {
-		t.Errorf("Expected version '1.0.0', got '%v'", response["version"])
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected data to be a map")
 	}
 
-	if _, ok := response["managedDomains"].([]interface{}); !ok {
+	if data["nodeQuid"] != node.NodeID {
+		t.Errorf("Expected nodeQuid '%s', got '%v'", node.NodeID, data["nodeQuid"])
+	}
+
+	if data["version"] != "1.0.0" {
+		t.Errorf("Expected version '1.0.0', got '%v'", data["version"])
+	}
+
+	if _, ok := data["managedDomains"].([]interface{}); !ok {
 		t.Error("Expected managedDomains to be an array")
 	}
 
-	if _, ok := response["blockHeight"].(float64); !ok {
+	if _, ok := data["blockHeight"].(float64); !ok {
 		t.Error("Expected blockHeight to be a number")
 	}
 }
@@ -106,16 +129,25 @@ func TestCreateQuidHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		quidID, ok := response["quidId"].(string)
-		if !ok || len(quidID) != 16 {
-			t.Errorf("Expected 16-character quidId, got '%v'", response["quidId"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		if _, ok := response["publicKey"].(string); !ok {
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
+		quidID, ok := data["quidId"].(string)
+		if !ok || len(quidID) != 16 {
+			t.Errorf("Expected 16-character quidId, got '%v'", data["quidId"])
+		}
+
+		if _, ok := data["publicKey"].(string); !ok {
 			t.Error("Expected publicKey to be a string")
 		}
 
-		if _, ok := response["created"].(float64); !ok {
+		if _, ok := data["created"].(float64); !ok {
 			t.Error("Expected created to be a number")
 		}
 	})
@@ -136,7 +168,16 @@ func TestCreateQuidHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if _, ok := response["quidId"].(string); !ok {
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
+		if _, ok := data["quidId"].(string); !ok {
 			t.Error("Expected quidId to be a string")
 		}
 	})
@@ -167,30 +208,39 @@ func TestGetTrustHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["observer"] != "quid_truster_001" {
-			t.Errorf("Expected observer 'quid_truster_001', got '%v'", response["observer"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		if response["target"] != "quid_trustee_001" {
-			t.Errorf("Expected target 'quid_trustee_001', got '%v'", response["target"])
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
 		}
 
-		if response["domain"] != "test.domain.com" {
-			t.Errorf("Expected domain 'test.domain.com', got '%v'", response["domain"])
+		if data["observer"] != "quid_truster_001" {
+			t.Errorf("Expected observer 'quid_truster_001', got '%v'", data["observer"])
 		}
 
-		if response["trustLevel"] != 0.85 {
-			t.Errorf("Expected trustLevel 0.85, got '%v'", response["trustLevel"])
+		if data["target"] != "quid_trustee_001" {
+			t.Errorf("Expected target 'quid_trustee_001', got '%v'", data["target"])
 		}
 
-		trustPath, ok := response["trustPath"].([]interface{})
+		if data["domain"] != "test.domain.com" {
+			t.Errorf("Expected domain 'test.domain.com', got '%v'", data["domain"])
+		}
+
+		if data["trustLevel"] != 0.85 {
+			t.Errorf("Expected trustLevel 0.85, got '%v'", data["trustLevel"])
+		}
+
+		trustPath, ok := data["trustPath"].([]interface{})
 		if !ok {
 			t.Error("Expected trustPath to be an array")
 		} else if len(trustPath) != 2 {
 			t.Errorf("Expected trustPath length 2, got %d", len(trustPath))
 		}
 
-		pathDepth, ok := response["pathDepth"].(float64)
+		pathDepth, ok := data["pathDepth"].(float64)
 		if !ok {
 			t.Error("Expected pathDepth to be a number")
 		} else if int(pathDepth) != 1 {
@@ -212,11 +262,20 @@ func TestGetTrustHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["trustLevel"] != 0.0 {
-			t.Errorf("Expected trustLevel 0.0 for non-existing relationship, got '%v'", response["trustLevel"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		trustPath, ok := response["trustPath"].([]interface{})
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
+		if data["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 for non-existing relationship, got '%v'", data["trustLevel"])
+		}
+
+		trustPath, ok := data["trustPath"].([]interface{})
 		if ok && len(trustPath) != 0 {
 			t.Errorf("Expected empty trustPath for non-existing relationship, got %v", trustPath)
 		}
@@ -234,8 +293,9 @@ func TestGetTrustHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if response["domain"] != "default" {
-			t.Errorf("Expected domain 'default', got '%v'", response["domain"])
+		data := response["data"].(map[string]interface{})
+		if data["domain"] != "default" {
+			t.Errorf("Expected domain 'default', got '%v'", data["domain"])
 		}
 	})
 
@@ -259,8 +319,9 @@ func TestGetTrustHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if response["trustLevel"] != 0.0 {
-			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", response["trustLevel"])
+		data := response["data"].(map[string]interface{})
+		if data["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", data["trustLevel"])
 		}
 
 		req2 := httptest.NewRequest("GET", "/api/trust/quid_truster_001/distant_target?maxDepth=3", nil)
@@ -270,7 +331,8 @@ func TestGetTrustHandler(t *testing.T) {
 		var response2 map[string]interface{}
 		json.Unmarshal(w2.Body.Bytes(), &response2)
 
-		if response2["trustLevel"] == 0.0 {
+		data2 := response2["data"].(map[string]interface{})
+		if data2["trustLevel"] == 0.0 {
 			t.Error("Expected non-zero trustLevel with maxDepth=3")
 		}
 	})
@@ -294,12 +356,21 @@ func TestGetIdentityHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["quidId"] != "quid_truster_001" {
-			t.Errorf("Expected quidId 'quid_truster_001', got '%v'", response["quidId"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		if response["name"] != "Test Truster" {
-			t.Errorf("Expected name 'Test Truster', got '%v'", response["name"])
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
+		if data["quidId"] != "quid_truster_001" {
+			t.Errorf("Expected quidId 'quid_truster_001', got '%v'", data["quidId"])
+		}
+
+		if data["name"] != "Test Truster" {
+			t.Errorf("Expected name 'Test Truster', got '%v'", data["name"])
 		}
 	})
 
@@ -310,6 +381,22 @@ func TestGetIdentityHandler(t *testing.T) {
 
 		if w.Code != http.StatusNotFound {
 			t.Errorf("Expected status 404, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
+		}
+
+		errData, ok := response["error"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected error to be a map")
+		}
+
+		if errData["code"] != "NOT_FOUND" {
+			t.Errorf("Expected error code 'NOT_FOUND', got '%v'", errData["code"])
 		}
 	})
 
@@ -342,11 +429,20 @@ func TestGetTitleHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["assetId"] != "quid_asset_001" {
-			t.Errorf("Expected assetId 'quid_asset_001', got '%v'", response["assetId"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		owners, ok := response["owners"].([]interface{})
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
+		if data["assetId"] != "quid_asset_001" {
+			t.Errorf("Expected assetId 'quid_asset_001', got '%v'", data["assetId"])
+		}
+
+		owners, ok := data["owners"].([]interface{})
 		if !ok {
 			t.Error("Expected owners to be an array")
 		} else if len(owners) != 2 {
@@ -361,6 +457,13 @@ func TestGetTitleHandler(t *testing.T) {
 
 		if w.Code != http.StatusNotFound {
 			t.Errorf("Expected status 404, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
 		}
 	})
 
@@ -392,12 +495,21 @@ func TestGetNodesHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if _, ok := response["data"]; !ok {
-		t.Error("Expected 'data' key in response")
+	if response["success"] != true {
+		t.Errorf("Expected success true, got '%v'", response["success"])
 	}
 
-	if _, ok := response["pagination"]; !ok {
-		t.Error("Expected 'pagination' key in response")
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected data to be a map")
+	}
+
+	if _, ok := data["data"]; !ok {
+		t.Error("Expected 'data' key in data")
+	}
+
+	if _, ok := data["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in data")
 	}
 }
 
@@ -418,7 +530,16 @@ func TestGetBlocksHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	data, ok := response["data"].([]interface{})
+	if response["success"] != true {
+		t.Errorf("Expected success true, got '%v'", response["success"])
+	}
+
+	responseData, ok := response["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected response data to be a map")
+	}
+
+	data, ok := responseData["data"].([]interface{})
 	if !ok {
 		t.Error("Expected 'data' to be an array")
 	}
@@ -427,8 +548,8 @@ func TestGetBlocksHandler(t *testing.T) {
 		t.Error("Expected at least genesis block")
 	}
 
-	if _, ok := response["pagination"]; !ok {
-		t.Error("Expected 'pagination' key in response")
+	if _, ok := responseData["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response data")
 	}
 }
 
@@ -449,8 +570,17 @@ func TestGetDomainsHandler(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	if _, ok := response["domains"]; !ok {
-		t.Error("Expected 'domains' key in response")
+	if response["success"] != true {
+		t.Errorf("Expected success true, got '%v'", response["success"])
+	}
+
+	data, ok := response["data"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected data to be a map")
+	}
+
+	if _, ok := data["domains"]; !ok {
+		t.Error("Expected 'domains' key in data")
 	}
 }
 
@@ -483,25 +613,34 @@ func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
 		// Check for EnhancedTrustResult fields
-		if _, ok := response["confidence"]; !ok {
+		if _, ok := data["confidence"]; !ok {
 			t.Error("Expected 'confidence' field in enhanced result")
 		}
 
-		if _, ok := response["unverifiedHops"]; !ok {
+		if _, ok := data["unverifiedHops"]; !ok {
 			t.Error("Expected 'unverifiedHops' field in enhanced result")
 		}
 
-		if _, ok := response["verificationGaps"]; !ok {
+		if _, ok := data["verificationGaps"]; !ok {
 			t.Error("Expected 'verificationGaps' field in enhanced result")
 		}
 
-		if response["confidence"] != "high" {
-			t.Errorf("Expected confidence 'high' for verified path, got '%v'", response["confidence"])
+		if data["confidence"] != "high" {
+			t.Errorf("Expected confidence 'high' for verified path, got '%v'", data["confidence"])
 		}
 
-		if response["trustLevel"] != 0.8 {
-			t.Errorf("Expected trustLevel 0.8, got '%v'", response["trustLevel"])
+		if data["trustLevel"] != 0.8 {
+			t.Errorf("Expected trustLevel 0.8, got '%v'", data["trustLevel"])
 		}
 	})
 
@@ -517,8 +656,10 @@ func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
+		data := response["data"].(map[string]interface{})
+
 		// Standard result should NOT have confidence field
-		if _, ok := response["confidence"]; ok {
+		if _, ok := data["confidence"]; ok {
 			t.Error("Standard result should not have 'confidence' field")
 		}
 	})
@@ -555,17 +696,26 @@ func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data, ok := response["data"].(map[string]interface{})
+		if !ok {
+			t.Fatal("Expected data to be a map")
+		}
+
 		// Check for EnhancedTrustResult fields
-		if _, ok := response["confidence"]; !ok {
+		if _, ok := data["confidence"]; !ok {
 			t.Error("Expected 'confidence' field in enhanced result")
 		}
 
-		if _, ok := response["unverifiedHops"]; !ok {
+		if _, ok := data["unverifiedHops"]; !ok {
 			t.Error("Expected 'unverifiedHops' field in enhanced result")
 		}
 
-		if response["trustLevel"] != 0.9 {
-			t.Errorf("Expected trustLevel 0.9, got '%v'", response["trustLevel"])
+		if data["trustLevel"] != 0.9 {
+			t.Errorf("Expected trustLevel 0.9, got '%v'", data["trustLevel"])
 		}
 	})
 
@@ -583,8 +733,10 @@ func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
+		data := response["data"].(map[string]interface{})
+
 		// Standard result should NOT have confidence field
-		if _, ok := response["confidence"]; ok {
+		if _, ok := data["confidence"]; ok {
 			t.Error("Standard result should not have 'confidence' field")
 		}
 	})
@@ -608,8 +760,13 @@ func TestGetTentativeBlocksHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["domain"] != "nonexistent" {
-			t.Errorf("Expected domain 'nonexistent', got '%v'", response["domain"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data := response["data"].(map[string]interface{})
+		if data["domain"] != "nonexistent" {
+			t.Errorf("Expected domain 'nonexistent', got '%v'", data["domain"])
 		}
 	})
 
@@ -646,11 +803,16 @@ func TestGetTentativeBlocksHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["domain"] != "testdomain" {
-			t.Errorf("Expected domain 'testdomain', got '%v'", response["domain"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		blocks, ok := response["blocks"].([]interface{})
+		data := response["data"].(map[string]interface{})
+		if data["domain"] != "testdomain" {
+			t.Errorf("Expected domain 'testdomain', got '%v'", data["domain"])
+		}
+
+		blocks, ok := data["blocks"].([]interface{})
 		if !ok {
 			t.Error("Expected 'blocks' to be an array")
 		} else if len(blocks) != 1 {
@@ -698,15 +860,21 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["quidId"] != "edges_quid_0001" {
-			t.Errorf("Expected quidId 'edges_quid_0001', got '%v'", response["quidId"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		if response["includeUnverified"] != false {
-			t.Errorf("Expected includeUnverified false, got '%v'", response["includeUnverified"])
+		data := response["data"].(map[string]interface{})
+
+		if data["quidId"] != "edges_quid_0001" {
+			t.Errorf("Expected quidId 'edges_quid_0001', got '%v'", data["quidId"])
 		}
 
-		edges, ok := response["edges"].(map[string]interface{})
+		if data["includeUnverified"] != false {
+			t.Errorf("Expected includeUnverified false, got '%v'", data["includeUnverified"])
+		}
+
+		edges, ok := data["edges"].(map[string]interface{})
 		if !ok {
 			t.Error("Expected 'edges' to be a map")
 		} else if len(edges) != 2 {
@@ -752,11 +920,13 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if response["includeUnverified"] != true {
-			t.Errorf("Expected includeUnverified true, got '%v'", response["includeUnverified"])
+		data := response["data"].(map[string]interface{})
+
+		if data["includeUnverified"] != true {
+			t.Errorf("Expected includeUnverified true, got '%v'", data["includeUnverified"])
 		}
 
-		edges, ok := response["edges"].(map[string]interface{})
+		edges, ok := data["edges"].(map[string]interface{})
 		if !ok {
 			t.Error("Expected 'edges' to be a map")
 		} else if len(edges) != 3 {
@@ -785,7 +955,8 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		edges, ok := response["edges"].(map[string]interface{})
+		data := response["data"].(map[string]interface{})
+		edges, ok := data["edges"].(map[string]interface{})
 		if !ok {
 			t.Error("Expected 'edges' to be a map")
 		} else if len(edges) != 0 {
@@ -881,13 +1052,15 @@ func TestGetBlocksHandlerPagination(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if _, ok := response["data"]; !ok {
-			t.Error("Expected 'data' key in response")
+		data := response["data"].(map[string]interface{})
+
+		if _, ok := data["data"]; !ok {
+			t.Error("Expected 'data' key in response data")
 		}
 
-		pagination, ok := response["pagination"].(map[string]interface{})
+		pagination, ok := data["pagination"].(map[string]interface{})
 		if !ok {
-			t.Error("Expected 'pagination' key in response")
+			t.Error("Expected 'pagination' key in response data")
 		} else {
 			if pagination["limit"].(float64) != 50 {
 				t.Errorf("Expected limit 50, got %v", pagination["limit"])
@@ -906,7 +1079,8 @@ func TestGetBlocksHandlerPagination(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		pagination := response["pagination"].(map[string]interface{})
+		data := response["data"].(map[string]interface{})
+		pagination := data["pagination"].(map[string]interface{})
 		if pagination["limit"].(float64) != 10 {
 			t.Errorf("Expected limit 10, got %v", pagination["limit"])
 		}
@@ -928,13 +1102,15 @@ func TestGetNodesHandlerPagination(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	if _, ok := response["data"]; !ok {
-		t.Error("Expected 'data' key in response")
+	data := response["data"].(map[string]interface{})
+
+	if _, ok := data["data"]; !ok {
+		t.Error("Expected 'data' key in response data")
 	}
 
-	pagination, ok := response["pagination"].(map[string]interface{})
+	pagination, ok := data["pagination"].(map[string]interface{})
 	if !ok {
-		t.Error("Expected 'pagination' key in response")
+		t.Error("Expected 'pagination' key in response data")
 	} else {
 		if pagination["limit"].(float64) != 5 {
 			t.Errorf("Expected limit 5, got %v", pagination["limit"])
@@ -958,11 +1134,13 @@ func TestGetTransactionsHandlerPagination(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	if _, ok := response["data"]; !ok {
-		t.Error("Expected 'data' key in response")
+	data := response["data"].(map[string]interface{})
+
+	if _, ok := data["data"]; !ok {
+		t.Error("Expected 'data' key in response data")
 	}
 
-	pagination := response["pagination"].(map[string]interface{})
+	pagination := data["pagination"].(map[string]interface{})
 	if pagination["limit"].(float64) != 20 {
 		t.Errorf("Expected limit 20, got %v", pagination["limit"])
 	}
@@ -997,14 +1175,15 @@ func TestQueryTrustRegistryHandlerPagination(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	data, ok := response["data"].([]interface{})
+	responseData := response["data"].(map[string]interface{})
+	data, ok := responseData["data"].([]interface{})
 	if !ok {
 		t.Error("Expected 'data' to be an array")
 	} else if len(data) > 10 {
 		t.Errorf("Expected at most 10 items, got %d", len(data))
 	}
 
-	pagination := response["pagination"].(map[string]interface{})
+	pagination := responseData["pagination"].(map[string]interface{})
 	if pagination["total"].(float64) < 100 {
 		t.Errorf("Expected total >= 100, got %v", pagination["total"])
 	}
@@ -1026,12 +1205,14 @@ func TestQueryIdentityRegistryHandlerPagination(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	if _, ok := response["data"]; !ok {
-		t.Error("Expected 'data' key in response")
+	data := response["data"].(map[string]interface{})
+
+	if _, ok := data["data"]; !ok {
+		t.Error("Expected 'data' key in response data")
 	}
 
-	if _, ok := response["pagination"]; !ok {
-		t.Error("Expected 'pagination' key in response")
+	if _, ok := data["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response data")
 	}
 }
 
@@ -1051,12 +1232,14 @@ func TestQueryTitleRegistryHandlerPagination(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	if _, ok := response["data"]; !ok {
-		t.Error("Expected 'data' key in response")
+	data := response["data"].(map[string]interface{})
+
+	if _, ok := data["data"]; !ok {
+		t.Error("Expected 'data' key in response data")
 	}
 
-	if _, ok := response["pagination"]; !ok {
-		t.Error("Expected 'pagination' key in response")
+	if _, ok := data["pagination"]; !ok {
+		t.Error("Expected 'pagination' key in response data")
 	}
 }
 
@@ -1071,10 +1254,63 @@ func TestPaginationLimitCapped(t *testing.T) {
 	var response map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &response)
 
-	pagination := response["pagination"].(map[string]interface{})
+	data := response["data"].(map[string]interface{})
+	pagination := data["pagination"].(map[string]interface{})
 	if pagination["limit"].(float64) != 1000 {
 		t.Errorf("Expected limit capped to 1000, got %v", pagination["limit"])
 	}
+}
+
+func TestVersionedRoutes(t *testing.T) {
+	node := newTestNode()
+	router := mux.NewRouter()
+
+	// Register versioned routes
+	v1Router := router.PathPrefix("/api/v1").Subrouter()
+	node.registerAPIRoutes(v1Router)
+
+	// Register backward-compatible routes
+	apiRouter := router.PathPrefix("/api").Subrouter()
+	node.registerAPIRoutes(apiRouter)
+
+	t.Run("v1 health endpoint works", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/health", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		// Check X-API-Version header
+		if w.Header().Get("X-API-Version") != "1.0" {
+			t.Errorf("Expected X-API-Version '1.0', got '%s'", w.Header().Get("X-API-Version"))
+		}
+	})
+
+	t.Run("backward compatible /api endpoint works", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/health", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+	})
 }
 
 func TestRelationalTrustQueryHandler(t *testing.T) {
@@ -1104,30 +1340,36 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["observer"] != "observer_quid_01" {
-			t.Errorf("Expected observer 'observer_quid_01', got '%v'", response["observer"])
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
 		}
 
-		if response["target"] != "target_quid_001" {
-			t.Errorf("Expected target 'target_quid_001', got '%v'", response["target"])
+		data := response["data"].(map[string]interface{})
+
+		if data["observer"] != "observer_quid_01" {
+			t.Errorf("Expected observer 'observer_quid_01', got '%v'", data["observer"])
 		}
 
-		if response["trustLevel"] != 0.75 {
-			t.Errorf("Expected trustLevel 0.75, got '%v'", response["trustLevel"])
+		if data["target"] != "target_quid_001" {
+			t.Errorf("Expected target 'target_quid_001', got '%v'", data["target"])
 		}
 
-		if response["domain"] != "test.domain" {
-			t.Errorf("Expected domain 'test.domain', got '%v'", response["domain"])
+		if data["trustLevel"] != 0.75 {
+			t.Errorf("Expected trustLevel 0.75, got '%v'", data["trustLevel"])
 		}
 
-		trustPath, ok := response["trustPath"].([]interface{})
+		if data["domain"] != "test.domain" {
+			t.Errorf("Expected domain 'test.domain', got '%v'", data["domain"])
+		}
+
+		trustPath, ok := data["trustPath"].([]interface{})
 		if !ok {
 			t.Error("Expected trustPath to be an array")
 		} else if len(trustPath) != 2 {
 			t.Errorf("Expected trustPath length 2, got %d", len(trustPath))
 		}
 
-		pathDepth, ok := response["pathDepth"].(float64)
+		pathDepth, ok := data["pathDepth"].(float64)
 		if !ok {
 			t.Error("Expected pathDepth to be a number")
 		} else if int(pathDepth) != 1 {
@@ -1145,6 +1387,18 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("Expected status 400, got %d", w.Code)
 		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
+		}
+
+		errData := response["error"].(map[string]interface{})
+		if errData["code"] != "MISSING_PARAMETERS" {
+			t.Errorf("Expected error code 'MISSING_PARAMETERS', got '%v'", errData["code"])
+		}
 	})
 
 	t.Run("missing target", func(t *testing.T) {
@@ -1156,6 +1410,13 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
 		}
 	})
 
@@ -1184,8 +1445,9 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if response["trustLevel"] != 0.0 {
-			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", response["trustLevel"])
+		data := response["data"].(map[string]interface{})
+		if data["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", data["trustLevel"])
 		}
 
 		body2 := bytes.NewBufferString(`{"observer":"hop1_quid_00001","target":"hop3_quid_00001","maxDepth":3}`)
@@ -1197,9 +1459,10 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 		var response2 map[string]interface{}
 		json.Unmarshal(w2.Body.Bytes(), &response2)
 
+		data2 := response2["data"].(map[string]interface{})
 		expected := 0.8 * 0.8
-		if response2["trustLevel"] != expected {
-			t.Errorf("Expected trustLevel %f with maxDepth=3, got '%v'", expected, response2["trustLevel"])
+		if data2["trustLevel"] != expected {
+			t.Errorf("Expected trustLevel %f with maxDepth=3, got '%v'", expected, data2["trustLevel"])
 		}
 	})
 
@@ -1217,13 +1480,15 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 		var response map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &response)
 
-		if response["trustLevel"] != 0.0 {
-			t.Errorf("Expected trustLevel 0.0 for no path, got '%v'", response["trustLevel"])
+		data := response["data"].(map[string]interface{})
+
+		if data["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 for no path, got '%v'", data["trustLevel"])
 		}
 
-		pathDepth, ok := response["pathDepth"].(float64)
+		pathDepth, ok := data["pathDepth"].(float64)
 		if !ok || int(pathDepth) != 0 {
-			t.Errorf("Expected pathDepth 0, got '%v'", response["pathDepth"])
+			t.Errorf("Expected pathDepth 0, got '%v'", data["pathDepth"])
 		}
 	})
 }
