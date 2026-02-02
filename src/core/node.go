@@ -73,6 +73,21 @@ type QuidnugNode struct {
 	TrustRegistryMutex    sync.RWMutex
 	IdentityRegistryMutex sync.RWMutex
 	TitleRegistryMutex    sync.RWMutex
+
+	// Node identity for signing blocks
+	NodeQuidID string
+
+	// Tentative blocks storage (blocks from partially-trusted validators)
+	TentativeBlocks      map[string][]Block // keyed by trust domain
+	TentativeBlocksMutex sync.RWMutex
+
+	// Dual-layer trust registry
+	UnverifiedTrustRegistry map[string]map[string]TrustEdge
+	UnverifiedRegistryMutex sync.RWMutex
+
+	// Threshold configuration
+	DistrustThreshold         float64 // Below this, block is 'untrusted' (default 0.0)
+	TransactionTrustThreshold float64 // Minimum trust to include tx in block (default 0.0)
 }
 
 func main() {
@@ -250,16 +265,20 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 	genesisBlock.Hash = calculateBlockHash(genesisBlock)
 
 	node := &QuidnugNode{
-		NodeID:            nodeID,
-		PrivateKey:        privateKey,
-		PublicKey:         &privateKey.PublicKey,
-		Blockchain:        []Block{genesisBlock},
-		PendingTxs:        []interface{}{},
-		TrustDomains:      make(map[string]TrustDomain),
-		KnownNodes:        make(map[string]Node),
-		TrustRegistry:     make(map[string]map[string]float64),
-		IdentityRegistry:  make(map[string]IdentityTransaction),
-		TitleRegistry:     make(map[string]TitleTransaction),
+		NodeID:                    nodeID,
+		PrivateKey:               privateKey,
+		PublicKey:                &privateKey.PublicKey,
+		Blockchain:               []Block{genesisBlock},
+		PendingTxs:               []interface{}{},
+		TrustDomains:             make(map[string]TrustDomain),
+		KnownNodes:               make(map[string]Node),
+		TrustRegistry:            make(map[string]map[string]float64),
+		IdentityRegistry:         make(map[string]IdentityTransaction),
+		TitleRegistry:            make(map[string]TitleTransaction),
+		TentativeBlocks:          make(map[string][]Block),
+		UnverifiedTrustRegistry:  make(map[string]map[string]TrustEdge),
+		DistrustThreshold:        0.0,
+		TransactionTrustThreshold: 0.0,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -273,6 +292,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		BlockchainHead: genesisBlock.Hash,
 		Validators:     map[string]float64{nodeID: 1.0},
 	}
+
+	// Set node's quid identity from its public key
+	node.NodeQuidID = node.GetPublicKeyHex()
 
 	if logger != nil {
 		logger.Info("Initialized quidnug node", "nodeId", nodeID)
