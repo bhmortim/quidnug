@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"testing"
 )
 
@@ -287,6 +288,91 @@ func TestValidateTrustTransaction(t *testing.T) {
 		})
 		if !node.ValidateTrustTransaction(tx) {
 			t.Error("Expected trust level 1.0 to pass")
+		}
+	})
+
+	t.Run("invalid: trust level NaN", func(t *testing.T) {
+		tx := signTrustTx(node, TrustTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_trust_nan",
+				Type:        TxTypeTrust,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			Truster:    "quid_truster_001",
+			Trustee:    "quid_trustee_001",
+			TrustLevel: math.NaN(),
+		})
+		if node.ValidateTrustTransaction(tx) {
+			t.Error("Expected NaN trust level to fail")
+		}
+	})
+
+	t.Run("invalid: trust level positive Inf", func(t *testing.T) {
+		tx := signTrustTx(node, TrustTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_trust_inf_pos",
+				Type:        TxTypeTrust,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			Truster:    "quid_truster_001",
+			Trustee:    "quid_trustee_001",
+			TrustLevel: math.Inf(1),
+		})
+		if node.ValidateTrustTransaction(tx) {
+			t.Error("Expected positive Inf trust level to fail")
+		}
+	})
+
+	t.Run("invalid: trust level negative Inf", func(t *testing.T) {
+		tx := signTrustTx(node, TrustTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_trust_inf_neg",
+				Type:        TxTypeTrust,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			Truster:    "quid_truster_001",
+			Trustee:    "quid_trustee_001",
+			TrustLevel: math.Inf(-1),
+		})
+		if node.ValidateTrustTransaction(tx) {
+			t.Error("Expected negative Inf trust level to fail")
+		}
+	})
+
+	t.Run("invalid: invalid truster quid ID format", func(t *testing.T) {
+		tx := signTrustTx(node, TrustTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_trust_invalid_truster",
+				Type:        TxTypeTrust,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			Truster:    "INVALID-FORMAT!",
+			Trustee:    "quid_trustee_001",
+			TrustLevel: 0.5,
+		})
+		if node.ValidateTrustTransaction(tx) {
+			t.Error("Expected invalid truster quid ID format to fail")
+		}
+	})
+
+	t.Run("invalid: invalid trustee quid ID format", func(t *testing.T) {
+		tx := signTrustTx(node, TrustTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_trust_invalid_trustee",
+				Type:        TxTypeTrust,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			Truster:    "quid_truster_001",
+			Trustee:    "short",
+			TrustLevel: 0.5,
+		})
+		if node.ValidateTrustTransaction(tx) {
+			t.Error("Expected invalid trustee quid ID format to fail")
 		}
 	})
 

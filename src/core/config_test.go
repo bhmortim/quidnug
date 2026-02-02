@@ -12,6 +12,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 	os.Unsetenv("SEED_NODES")
 	os.Unsetenv("LOG_LEVEL")
 	os.Unsetenv("BLOCK_INTERVAL")
+	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
+	os.Unsetenv("MAX_BODY_SIZE_BYTES")
 
 	cfg := LoadConfig()
 
@@ -34,6 +36,14 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.BlockInterval != 60*time.Second {
 		t.Errorf("Expected default block interval 60s, got %v", cfg.BlockInterval)
 	}
+
+	if cfg.RateLimitPerMinute != DefaultRateLimitPerMinute {
+		t.Errorf("Expected default rate limit %d, got %d", DefaultRateLimitPerMinute, cfg.RateLimitPerMinute)
+	}
+
+	if cfg.MaxBodySizeBytes != DefaultMaxBodySizeBytes {
+		t.Errorf("Expected default max body size %d, got %d", DefaultMaxBodySizeBytes, cfg.MaxBodySizeBytes)
+	}
 }
 
 func TestLoadConfigFromEnv(t *testing.T) {
@@ -42,12 +52,16 @@ func TestLoadConfigFromEnv(t *testing.T) {
 	os.Setenv("SEED_NODES", `["node1.example.com:8080","node2.example.com:8080","node3.example.com:8080"]`)
 	os.Setenv("LOG_LEVEL", "debug")
 	os.Setenv("BLOCK_INTERVAL", "30s")
+	os.Setenv("RATE_LIMIT_PER_MINUTE", "200")
+	os.Setenv("MAX_BODY_SIZE_BYTES", "2097152")
 
 	defer func() {
 		os.Unsetenv("PORT")
 		os.Unsetenv("SEED_NODES")
 		os.Unsetenv("LOG_LEVEL")
 		os.Unsetenv("BLOCK_INTERVAL")
+		os.Unsetenv("RATE_LIMIT_PER_MINUTE")
+		os.Unsetenv("MAX_BODY_SIZE_BYTES")
 	}()
 
 	cfg := LoadConfig()
@@ -70,6 +84,14 @@ func TestLoadConfigFromEnv(t *testing.T) {
 
 	if cfg.BlockInterval != 30*time.Second {
 		t.Errorf("Expected block interval 30s, got %v", cfg.BlockInterval)
+	}
+
+	if cfg.RateLimitPerMinute != 200 {
+		t.Errorf("Expected rate limit 200, got %d", cfg.RateLimitPerMinute)
+	}
+
+	if cfg.MaxBodySizeBytes != 2097152 {
+		t.Errorf("Expected max body size 2097152, got %d", cfg.MaxBodySizeBytes)
 	}
 }
 
@@ -114,6 +136,8 @@ func TestLoadConfigPartialEnv(t *testing.T) {
 	os.Unsetenv("SEED_NODES")
 	os.Setenv("LOG_LEVEL", "warn")
 	os.Unsetenv("BLOCK_INTERVAL")
+	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
+	os.Unsetenv("MAX_BODY_SIZE_BYTES")
 
 	defer os.Unsetenv("LOG_LEVEL")
 
@@ -129,6 +153,10 @@ func TestLoadConfigPartialEnv(t *testing.T) {
 
 	if cfg.BlockInterval != 60*time.Second {
 		t.Errorf("Expected default block interval 60s, got %v", cfg.BlockInterval)
+	}
+
+	if cfg.RateLimitPerMinute != DefaultRateLimitPerMinute {
+		t.Errorf("Expected default rate limit, got %d", cfg.RateLimitPerMinute)
 	}
 }
 
@@ -152,4 +180,48 @@ func TestLoadConfigVariousBlockIntervals(t *testing.T) {
 	}
 
 	os.Unsetenv("BLOCK_INTERVAL")
+}
+
+func TestLoadConfigInvalidRateLimit(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int
+	}{
+		{"not-a-number", DefaultRateLimitPerMinute},
+		{"-50", DefaultRateLimitPerMinute},
+		{"0", DefaultRateLimitPerMinute},
+		{"50", 50},
+	}
+
+	for _, tc := range tests {
+		os.Setenv("RATE_LIMIT_PER_MINUTE", tc.input)
+		cfg := LoadConfig()
+		if cfg.RateLimitPerMinute != tc.expected {
+			t.Errorf("For input '%s', expected %d, got %d", tc.input, tc.expected, cfg.RateLimitPerMinute)
+		}
+	}
+
+	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
+}
+
+func TestLoadConfigInvalidMaxBodySize(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{"not-a-number", DefaultMaxBodySizeBytes},
+		{"-1000", DefaultMaxBodySizeBytes},
+		{"0", DefaultMaxBodySizeBytes},
+		{"524288", 524288},
+	}
+
+	for _, tc := range tests {
+		os.Setenv("MAX_BODY_SIZE_BYTES", tc.input)
+		cfg := LoadConfig()
+		if cfg.MaxBodySizeBytes != tc.expected {
+			t.Errorf("For input '%s', expected %d, got %d", tc.input, tc.expected, cfg.MaxBodySizeBytes)
+		}
+	}
+
+	os.Unsetenv("MAX_BODY_SIZE_BYTES")
 }

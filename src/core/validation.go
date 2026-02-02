@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 )
 
 // ValidateTrustTransaction validates a trust transaction
@@ -16,9 +17,37 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 		return false
 	}
 
+	// Verify trust level is not NaN or Inf
+	if math.IsNaN(tx.TrustLevel) || math.IsInf(tx.TrustLevel, 0) {
+		logger.Warn("Invalid trust level: NaN or Inf", "trustLevel", tx.TrustLevel, "txId", tx.ID)
+		return false
+	}
+
 	// Verify trust level is in valid range (0.0 to 1.0)
 	if tx.TrustLevel < 0.0 || tx.TrustLevel > 1.0 {
 		logger.Warn("Invalid trust level", "trustLevel", tx.TrustLevel, "txId", tx.ID)
+		return false
+	}
+
+	// Validate quid ID formats
+	if tx.Truster != "" && !IsValidQuidID(tx.Truster) {
+		logger.Warn("Invalid truster quid ID format", "truster", tx.Truster, "txId", tx.ID)
+		return false
+	}
+
+	if tx.Trustee != "" && !IsValidQuidID(tx.Trustee) {
+		logger.Warn("Invalid trustee quid ID format", "trustee", tx.Trustee, "txId", tx.ID)
+		return false
+	}
+
+	// Validate string field lengths and control characters
+	if tx.TrustDomain != "" && !ValidateStringField(tx.TrustDomain, MaxDomainLength) {
+		logger.Warn("Invalid trust domain: too long or contains control characters", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	if tx.Description != "" && !ValidateStringField(tx.Description, MaxDescriptionLength) {
+		logger.Warn("Invalid description: too long or contains control characters", "txId", tx.ID)
 		return false
 	}
 
@@ -72,6 +101,33 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 
 	if !domainExists && tx.TrustDomain != "" {
 		logger.Warn("Identity transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	// Validate quid ID formats
+	if tx.QuidID != "" && !IsValidQuidID(tx.QuidID) {
+		logger.Warn("Invalid quid ID format", "quidId", tx.QuidID, "txId", tx.ID)
+		return false
+	}
+
+	if tx.Creator != "" && !IsValidQuidID(tx.Creator) {
+		logger.Warn("Invalid creator quid ID format", "creator", tx.Creator, "txId", tx.ID)
+		return false
+	}
+
+	// Validate string field lengths and control characters
+	if tx.TrustDomain != "" && !ValidateStringField(tx.TrustDomain, MaxDomainLength) {
+		logger.Warn("Invalid trust domain: too long or contains control characters", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	if tx.Name != "" && !ValidateStringField(tx.Name, MaxNameLength) {
+		logger.Warn("Invalid name: too long or contains control characters", "quidId", tx.QuidID, "txId", tx.ID)
+		return false
+	}
+
+	if tx.Description != "" && !ValidateStringField(tx.Description, MaxDescriptionLength) {
+		logger.Warn("Invalid description: too long or contains control characters", "quidId", tx.QuidID, "txId", tx.ID)
 		return false
 	}
 
@@ -134,6 +190,31 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 
 	if !domainExists && tx.TrustDomain != "" {
 		logger.Warn("Title transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	// Validate asset quid ID format
+	if tx.AssetID != "" && !IsValidQuidID(tx.AssetID) {
+		logger.Warn("Invalid asset quid ID format", "assetId", tx.AssetID, "txId", tx.ID)
+		return false
+	}
+
+	// Validate owner quid ID formats
+	for _, stake := range tx.Owners {
+		if stake.OwnerID != "" && !IsValidQuidID(stake.OwnerID) {
+			logger.Warn("Invalid owner quid ID format", "ownerId", stake.OwnerID, "txId", tx.ID)
+			return false
+		}
+	}
+
+	// Validate string field lengths and control characters
+	if tx.TrustDomain != "" && !ValidateStringField(tx.TrustDomain, MaxDomainLength) {
+		logger.Warn("Invalid trust domain: too long or contains control characters", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	if tx.TitleType != "" && !ValidateStringField(tx.TitleType, MaxNameLength) {
+		logger.Warn("Invalid title type: too long or contains control characters", "assetId", tx.AssetID, "txId", tx.ID)
 		return false
 	}
 

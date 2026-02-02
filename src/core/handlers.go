@@ -16,6 +16,11 @@ import (
 
 // StartServer starts the HTTP server for API endpoints
 func (node *QuidnugNode) StartServer(port string) error {
+	return node.StartServerWithConfig(port, DefaultRateLimitPerMinute, DefaultMaxBodySizeBytes)
+}
+
+// StartServerWithConfig starts the HTTP server with configurable middleware settings
+func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute int, maxBodySizeBytes int64) error {
 	router := mux.NewRouter()
 
 	// API endpoints
@@ -48,9 +53,14 @@ func (node *QuidnugNode) StartServer(port string) error {
 	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 
+	// Apply middleware: body size limit first, then rate limiting
+	rateLimiter := NewIPRateLimiter(rateLimitPerMinute)
+	handler := BodySizeLimitMiddleware(maxBodySizeBytes)(router)
+	handler = RateLimitMiddleware(rateLimiter)(handler)
+
 	// Start HTTP server
-	logger.Info("Starting quidnug node server", "port", port, "nodeId", node.NodeID)
-	return http.ListenAndServe(":"+port, router)
+	logger.Info("Starting quidnug node server", "port", port, "nodeId", node.NodeID, "rateLimit", rateLimitPerMinute, "maxBodySize", maxBodySizeBytes)
+	return http.ListenAndServe(":"+port, handler)
 }
 
 // HealthCheckHandler handles health check requests
@@ -92,8 +102,7 @@ func (node *QuidnugNode) GetTransactionsHandler(w http.ResponseWriter, r *http.R
 // CreateTrustTransactionHandler handles trust transaction creation
 func (node *QuidnugNode) CreateTrustTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	var tx TrustTransaction
-	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-		http.Error(w, "Invalid transaction data", http.StatusBadRequest)
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
 		return
 	}
 
@@ -118,8 +127,7 @@ func (node *QuidnugNode) CreateTrustTransactionHandler(w http.ResponseWriter, r 
 // CreateIdentityTransactionHandler handles identity transaction creation
 func (node *QuidnugNode) CreateIdentityTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	var tx IdentityTransaction
-	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-		http.Error(w, "Invalid transaction data", http.StatusBadRequest)
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
 		return
 	}
 
@@ -144,8 +152,7 @@ func (node *QuidnugNode) CreateIdentityTransactionHandler(w http.ResponseWriter,
 // CreateTitleTransactionHandler handles title transaction creation
 func (node *QuidnugNode) CreateTitleTransactionHandler(w http.ResponseWriter, r *http.Request) {
 	var tx TitleTransaction
-	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
-		http.Error(w, "Invalid transaction data", http.StatusBadRequest)
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
 		return
 	}
 
@@ -196,8 +203,7 @@ func (node *QuidnugNode) GetDomainsHandler(w http.ResponseWriter, r *http.Reques
 // RegisterDomainHandler handles trust domain registration
 func (node *QuidnugNode) RegisterDomainHandler(w http.ResponseWriter, r *http.Request) {
 	var domain TrustDomain
-	if err := json.NewDecoder(r.Body).Decode(&domain); err != nil {
-		http.Error(w, "Invalid domain data", http.StatusBadRequest)
+	if err := DecodeJSONBody(w, r, &domain); err != nil {
 		return
 	}
 

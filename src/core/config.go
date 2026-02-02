@@ -3,24 +3,35 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"time"
 )
 
 // Config holds the application configuration
 type Config struct {
-	Port          string        `json:"port"`
-	SeedNodes     []string      `json:"seedNodes"`
-	LogLevel      string        `json:"logLevel"`
-	BlockInterval time.Duration `json:"blockInterval"`
+	Port              string        `json:"port"`
+	SeedNodes         []string      `json:"seedNodes"`
+	LogLevel          string        `json:"logLevel"`
+	BlockInterval     time.Duration `json:"blockInterval"`
+	RateLimitPerMinute int          `json:"rateLimitPerMinute"`
+	MaxBodySizeBytes  int64         `json:"maxBodySizeBytes"`
 }
+
+// Default values
+const (
+	DefaultRateLimitPerMinute = 100
+	DefaultMaxBodySizeBytes   = 1 << 20 // 1MB
+)
 
 // LoadConfig reads configuration from environment variables with defaults
 func LoadConfig() *Config {
 	cfg := &Config{
-		Port:          "8080",
-		SeedNodes:     []string{"seed1.quidnug.net:8080", "seed2.quidnug.net:8080"},
-		LogLevel:      "info",
-		BlockInterval: 60 * time.Second,
+		Port:              "8080",
+		SeedNodes:         []string{"seed1.quidnug.net:8080", "seed2.quidnug.net:8080"},
+		LogLevel:          "info",
+		BlockInterval:     60 * time.Second,
+		RateLimitPerMinute: DefaultRateLimitPerMinute,
+		MaxBodySizeBytes:  DefaultMaxBodySizeBytes,
 	}
 
 	if port := os.Getenv("PORT"); port != "" {
@@ -41,6 +52,18 @@ func LoadConfig() *Config {
 	if blockInterval := os.Getenv("BLOCK_INTERVAL"); blockInterval != "" {
 		if duration, err := time.ParseDuration(blockInterval); err == nil {
 			cfg.BlockInterval = duration
+		}
+	}
+
+	if rateLimitEnv := os.Getenv("RATE_LIMIT_PER_MINUTE"); rateLimitEnv != "" {
+		if rateLimit, err := strconv.Atoi(rateLimitEnv); err == nil && rateLimit > 0 {
+			cfg.RateLimitPerMinute = rateLimit
+		}
+	}
+
+	if maxBodyEnv := os.Getenv("MAX_BODY_SIZE_BYTES"); maxBodyEnv != "" {
+		if maxBody, err := strconv.ParseInt(maxBodyEnv, 10, 64); err == nil && maxBody > 0 {
+			cfg.MaxBodySizeBytes = maxBody
 		}
 	}
 
