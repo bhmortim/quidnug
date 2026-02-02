@@ -347,6 +347,158 @@ func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) ma
 	return result
 }
 
+// ComputeRelationalTrustEnhanced computes transitive trust with optional unverified edge inclusion.
+// When includeUnverified=true, unverified edges are discounted by the observer's trust in the recording validator.
+// Returns enhanced result with provenance information.
+func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
+	observer, target string,
+	maxDepth int,
+	includeUnverified bool,
+) (EnhancedTrustResult, error) {
+	if maxDepth <= 0 {
+		maxDepth = 5
+	}
+
+	// Same entity has full trust in itself
+	if observer == target {
+		return EnhancedTrustResult{
+			RelationalTrustResult: RelationalTrustResult{
+				Observer:   observer,
+				Target:     target,
+				TrustLevel: 1.0,
+				TrustPath:  []string{observer},
+				PathDepth:  0,
+			},
+			Confidence:     "high",
+			UnverifiedHops: 0,
+		}, nil
+	}
+
+	type searchState struct {
+		quid           string
+		path           []string
+		trust          float64
+		unverifiedHops int
+		gaps           []VerificationGap
+	}
+
+	queue := []searchState{{
+		quid:           observer,
+		path:           []string{observer},
+		trust:          1.0,
+		unverifiedHops: 0,
+		gaps:           nil,
+	}}
+
+	bestTrust := 0.0
+	var bestPath []string
+	bestUnverifiedHops := 0
+	var bestGaps []VerificationGap
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		edges := node.GetTrustEdges(current.quid, includeUnverified)
+
+		for trustee, edge := range edges {
+			// Skip if trustee is already in current path (cycle avoidance)
+			inPath := false
+			for _, p := range current.path {
+				if p == trustee {
+					inPath = true
+					break
+				}
+			}
+			if inPath {
+				continue
+			}
+
+			var effectiveTrust float64
+			var newUnverifiedHops int
+			var newGaps []VerificationGap
+
+			if edge.Verified {
+				effectiveTrust = current.trust * edge.TrustLevel
+				newUnverifiedHops = current.unverifiedHops
+				newGaps = current.gaps
+			} else {
+				// Discount by validator trust
+				validatorTrust, _, _ := node.ComputeRelationalTrust(observer, edge.ValidatorQuid, 3)
+				effectiveTrust = current.trust * edge.TrustLevel * validatorTrust
+				newUnverifiedHops = current.unverifiedHops + 1
+
+				// Create verification gap entry
+				gap := VerificationGap{
+					From:           current.quid,
+					To:             trustee,
+					ValidatorQuid:  edge.ValidatorQuid,
+					ValidatorTrust: validatorTrust,
+				}
+				newGaps = make([]VerificationGap, len(current.gaps)+1)
+				copy(newGaps, current.gaps)
+				newGaps[len(current.gaps)] = gap
+			}
+
+			// Build new path
+			newPath := make([]string, len(current.path)+1)
+			copy(newPath, current.path)
+			newPath[len(current.path)] = trustee
+
+			// Check if we've reached the target
+			if trustee == target {
+				if effectiveTrust > bestTrust {
+					bestTrust = effectiveTrust
+					bestPath = newPath
+					bestUnverifiedHops = newUnverifiedHops
+					bestGaps = newGaps
+				}
+				continue
+			}
+
+			// Continue BFS if within depth limit
+			if len(current.path) < maxDepth {
+				queue = append(queue, searchState{
+					quid:           trustee,
+					path:           newPath,
+					trust:          effectiveTrust,
+					unverifiedHops: newUnverifiedHops,
+					gaps:           newGaps,
+				})
+			}
+		}
+	}
+
+	// Determine confidence level based on unverified hop count
+	var confidence string
+	switch {
+	case bestUnverifiedHops == 0:
+		confidence = "high"
+	case bestUnverifiedHops == 1:
+		confidence = "medium"
+	default:
+		confidence = "low"
+	}
+
+	pathDepth := 0
+	if len(bestPath) > 0 {
+		pathDepth = len(bestPath) - 1
+	}
+
+	return EnhancedTrustResult{
+		RelationalTrustResult: RelationalTrustResult{
+			Observer:   observer,
+			Target:     target,
+			TrustLevel: bestTrust,
+			TrustPath:  bestPath,
+			PathDepth:  pathDepth,
+		},
+		Confidence:       confidence,
+		UnverifiedHops:   bestUnverifiedHops,
+		VerificationGaps: bestGaps,
+	}, nil
+}
+
 // ExtractTrustEdgesFromBlock extracts all trust transaction edges from a block
 func (node *QuidnugNode) ExtractTrustEdgesFromBlock(block Block, verified bool) []TrustEdge {
 	var edges []TrustEdge
