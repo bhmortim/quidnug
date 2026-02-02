@@ -430,6 +430,16 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	prevBlock := node.Blockchain[len(node.Blockchain)-1]
 	node.BlockchainMutex.RUnlock()
 
+	// Get validator's participation weight for this domain
+	node.TrustDomainsMutex.RLock()
+	validatorWeight := 1.0 // default for self-owned domains
+	if domain, exists := node.TrustDomains[trustDomain]; exists {
+		if weight, found := domain.Validators[node.NodeID]; found {
+			validatorWeight = weight
+		}
+	}
+	node.TrustDomainsMutex.RUnlock()
+
 	node.PendingTxsMutex.Lock()
 	defer node.PendingTxsMutex.Unlock()
 
@@ -476,7 +486,7 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		TrustProof: TrustProof{
 			TrustDomain:             trustDomain,
 			ValidatorID:             node.NodeID,
-			ValidatorTrustInCreator: node.GetTrustDomainScore(trustDomain),
+			ValidatorTrustInCreator: validatorWeight,
 			ValidatorSigs:           []string{},
 			ValidationTime:          time.Now().Unix(),
 		},
@@ -563,7 +573,7 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 		domain.Validators = make(map[string]float64)
 	}
 
-	// Add this node as a validator with default trust score
+	// Add this node as a validator with full participation weight
 	domain.Validators[node.NodeID] = 1.0
 
 	// Register the domain
@@ -573,17 +583,3 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	return nil
 }
 
-// GetTrustDomainScore returns the node's trust score for a domain
-func (node *QuidnugNode) GetTrustDomainScore(domain string) float64 {
-	node.TrustDomainsMutex.RLock()
-	defer node.TrustDomainsMutex.RUnlock()
-
-	if trustDomain, exists := node.TrustDomains[domain]; exists {
-		if score, found := trustDomain.Validators[node.NodeID]; found {
-			return score
-		}
-	}
-
-	// Default score for unknown domains or validators
-	return 0.5
-}
