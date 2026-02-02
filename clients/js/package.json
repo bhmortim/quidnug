@@ -4,11 +4,13 @@
   "description": "Quidnug Client SDK for JavaScript",
   "main": "quidnug-client.js",
   "module": "quidnug-client.js",
+  "types": "quidnug-client.d.ts",
   "type": "module",
   "exports": {
     ".": {
       "import": "./quidnug-client.js",
       "require": "./quidnug-client.js",
+      "types": "./quidnug-client.d.ts",
       "default": "./quidnug-client.js"
     }
   },
@@ -17,7 +19,8 @@
     "test:watch": "node --test --watch quidnug-client.test.js"
   },
   "files": [
-    "quidnug-client.js"
+    "quidnug-client.js",
+    "quidnug-client.d.ts"
   ],
   "keywords": [
     "quidnug",
