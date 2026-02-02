@@ -20,6 +20,32 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 		return false
 	}
 
+	// Validate nonce is present and positive
+	if tx.Nonce <= 0 {
+		logger.Warn("Invalid nonce: must be positive", "nonce", tx.Nonce, "txId", tx.ID)
+		return false
+	}
+
+	// Check nonce against registry for replay protection
+	node.TrustRegistryMutex.RLock()
+	currentNonce := int64(0)
+	if trusterNonces, exists := node.TrustNonceRegistry[tx.Truster]; exists {
+		if nonce, found := trusterNonces[tx.Trustee]; found {
+			currentNonce = nonce
+		}
+	}
+	node.TrustRegistryMutex.RUnlock()
+
+	if tx.Nonce <= currentNonce {
+		logger.Warn("Invalid nonce: must be greater than current",
+			"providedNonce", tx.Nonce,
+			"currentNonce", currentNonce,
+			"truster", tx.Truster,
+			"trustee", tx.Trustee,
+			"txId", tx.ID)
+		return false
+	}
+
 	// Verify trust level is not NaN or Inf
 	if math.IsNaN(tx.TrustLevel) || math.IsInf(tx.TrustLevel, 0) {
 		logger.Warn("Invalid trust level: NaN or Inf", "trustLevel", tx.TrustLevel, "txId", tx.ID)

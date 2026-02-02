@@ -45,10 +45,17 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 	// Update trust level
 	node.TrustRegistry[tx.Truster][tx.Trustee] = tx.TrustLevel
 
+	// Update nonce registry for replay protection
+	if _, exists := node.TrustNonceRegistry[tx.Truster]; !exists {
+		node.TrustNonceRegistry[tx.Truster] = make(map[string]int64)
+	}
+	node.TrustNonceRegistry[tx.Truster][tx.Trustee] = tx.Nonce
+
 	logger.Debug("Updated trust registry",
 		"truster", tx.Truster,
 		"trustee", tx.Trustee,
-		"trustLevel", tx.TrustLevel)
+		"trustLevel", tx.TrustLevel,
+		"nonce", tx.Nonce)
 }
 
 // updateIdentityRegistry updates the identity registry with an identity transaction

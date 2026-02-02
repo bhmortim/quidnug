@@ -288,6 +288,7 @@ class QuidnugClient {
    *   - 0.0: complete distrust
    *   - 0.5: neutral
    *   - 1.0: complete trust
+   * @param {number} [params.nonce] - Monotonic nonce for replay protection (defaults to 1 for new trust relationships)
    * @param {number} [params.validUntil] - Optional expiration timestamp (Unix seconds)
    * @param {string} [params.description] - Optional description
    * @param {Object} quid - Quid object with private key for signing (becomes the truster)
@@ -315,7 +316,8 @@ class QuidnugClient {
       signerQuid: quid.id,
       truster: quid.id,
       trustee: params.trustee,
-      trustLevel: params.trustLevel
+      trustLevel: params.trustLevel,
+      nonce: params.nonce || 1
     };
     
     if (params.validUntil) {

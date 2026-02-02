@@ -55,9 +55,10 @@ type QuidnugNode struct {
 	KnownNodes   map[string]Node
 
 	// State registries
-	TrustRegistry    map[string]map[string]float64
-	IdentityRegistry map[string]IdentityTransaction
-	TitleRegistry    map[string]TitleTransaction
+	TrustRegistry      map[string]map[string]float64
+	TrustNonceRegistry map[string]map[string]int64
+	IdentityRegistry   map[string]IdentityTransaction
+	TitleRegistry      map[string]TitleTransaction
 
 	// HTTP server for graceful shutdown
 	Server *http.Server
@@ -279,6 +280,7 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		TrustDomains:             make(map[string]TrustDomain),
 		KnownNodes:               make(map[string]Node),
 		TrustRegistry:            make(map[string]map[string]float64),
+		TrustNonceRegistry:       make(map[string]map[string]int64),
 		IdentityRegistry:         make(map[string]IdentityTransaction),
 		TitleRegistry:            make(map[string]TitleTransaction),
 		TentativeBlocks:          make(map[string][]Block),
@@ -318,6 +320,19 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 	
 	// Set type
 	tx.Type = TxTypeTrust
+	
+	// Set nonce if not provided (use current highest nonce + 1 for this truster-trustee pair)
+	if tx.Nonce == 0 {
+		node.TrustRegistryMutex.RLock()
+		currentNonce := int64(0)
+		if trusterNonces, exists := node.TrustNonceRegistry[tx.Truster]; exists {
+			if nonce, found := trusterNonces[tx.Trustee]; found {
+				currentNonce = nonce
+			}
+		}
+		node.TrustRegistryMutex.RUnlock()
+		tx.Nonce = currentNonce + 1
+	}
 	
 	// Generate transaction ID if not present
 	if tx.ID == "" {

@@ -26,6 +26,7 @@ type TrustTransaction struct {
 	Truster     string  `json:"truster"`
 	Trustee     string  `json:"trustee"`
 	TrustLevel  float64 `json:"trustLevel"`
+	Nonce       int64   `json:"nonce"`
 	Description string  `json:"description,omitempty"`
 	ValidUntil  int64   `json:"validUntil,omitempty"`
 }
