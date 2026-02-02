@@ -416,8 +416,8 @@ func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
 		return false
 	}
 
-	// Check trust score threshold
-	if proof.TrustScore < domain.TrustThreshold {
+	// Check validator trust threshold for consensus
+	if proof.ValidatorTrustInCreator < domain.TrustThreshold {
 		return false
 	}
 

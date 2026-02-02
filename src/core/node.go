@@ -240,10 +240,10 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		Timestamp:    time.Now().Unix(),
 		Transactions: []interface{}{},
 		TrustProof: TrustProof{
-			TrustDomain:    "genesis",
-			ValidatorID:    nodeID,
-			TrustScore:     1.0,
-			ValidationTime: time.Now().Unix(),
+			TrustDomain:             "genesis",
+			ValidatorID:             nodeID,
+			ValidatorTrustInCreator: 1.0,
+			ValidationTime:          time.Now().Unix(),
 		},
 		PrevHash: "0",
 	}
@@ -474,11 +474,11 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		Timestamp:    time.Now().Unix(),
 		Transactions: domainTxs,
 		TrustProof: TrustProof{
-			TrustDomain:    trustDomain,
-			ValidatorID:    node.NodeID,
-			TrustScore:     node.GetTrustDomainScore(trustDomain),
-			ValidatorSigs:  []string{},
-			ValidationTime: time.Now().Unix(),
+			TrustDomain:             trustDomain,
+			ValidatorID:             node.NodeID,
+			ValidatorTrustInCreator: node.GetTrustDomainScore(trustDomain),
+			ValidatorSigs:           []string{},
+			ValidationTime:          time.Now().Unix(),
 		},
 		PrevHash: prevBlock.Hash,
 	}

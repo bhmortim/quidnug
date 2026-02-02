@@ -71,12 +71,12 @@ type Block struct {
 
 // TrustProof implements the proof of trust system
 type TrustProof struct {
-	TrustDomain    string                 `json:"trustDomain"`
-	ValidatorID    string                 `json:"validatorId"`
-	TrustScore     float64                `json:"trustScore"`
-	ValidatorSigs  []string               `json:"validatorSigs"`
-	ConsensusData  map[string]interface{} `json:"consensusData,omitempty"`
-	ValidationTime int64                  `json:"validationTime"`
+	TrustDomain             string                 `json:"trustDomain"`
+	ValidatorID             string                 `json:"validatorId"`
+	ValidatorTrustInCreator float64                `json:"validatorTrustInCreator"`
+	ValidatorSigs           []string               `json:"validatorSigs"`
+	ConsensusData           map[string]interface{} `json:"consensusData,omitempty"`
+	ValidationTime          int64                  `json:"validationTime"`
 }
 
 // Node represents a quidnug node in the network
@@ -85,16 +85,35 @@ type Node struct {
 	Address          string   `json:"address"`
 	TrustDomains     []string `json:"trustDomains"`
 	IsValidator      bool     `json:"isValidator"`
-	TrustScore       float64  `json:"trustScore"`
 	LastSeen         int64    `json:"lastSeen"`
 	ConnectionStatus string   `json:"connectionStatus"`
 }
 
 // TrustDomain represents a domain that this node manages or interacts with
 type TrustDomain struct {
-	Name           string             `json:"name"`
-	ValidatorNodes []string           `json:"validatorNodes"`
-	TrustThreshold float64            `json:"trustThreshold"`
-	BlockchainHead string             `json:"blockchainHead"`
-	Validators     map[string]float64 `json:"validators"`
+	Name           string   `json:"name"`
+	ValidatorNodes []string `json:"validatorNodes"`
+	TrustThreshold float64  `json:"trustThreshold"`
+	BlockchainHead string   `json:"blockchainHead"`
+	// Validators maps validator node IDs to their participation weight (0.0-1.0).
+	// This represents voting power in consensus, not an absolute trust score.
+	Validators map[string]float64 `json:"validators"`
+}
+
+// RelationalTrustQuery represents a query for trust between two quids
+type RelationalTrustQuery struct {
+	Observer string `json:"observer"`
+	Target   string `json:"target"`
+	Domain   string `json:"domain,omitempty"`
+	MaxDepth int    `json:"maxDepth,omitempty"`
+}
+
+// RelationalTrustResult represents the result of a relational trust query
+type RelationalTrustResult struct {
+	Observer   string   `json:"observer"`
+	Target     string   `json:"target"`
+	TrustLevel float64  `json:"trustLevel"`
+	TrustPath  []string `json:"trustPath,omitempty"`
+	PathDepth  int      `json:"pathDepth"`
+	Domain     string   `json:"domain,omitempty"`
 }
