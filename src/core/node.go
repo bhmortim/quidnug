@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -54,6 +55,9 @@ type QuidnugNode struct {
 	TrustRegistry    map[string]map[string]float64
 	IdentityRegistry map[string]IdentityTransaction
 	TitleRegistry    map[string]TitleTransaction
+
+	// HTTP client for network communication
+	httpClient *http.Client
 
 	// Mutexes for thread safety
 	BlockchainMutex       sync.RWMutex
@@ -153,6 +157,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		TrustRegistry:     make(map[string]map[string]float64),
 		IdentityRegistry:  make(map[string]IdentityTransaction),
 		TitleRegistry:     make(map[string]TitleTransaction),
+		httpClient: &http.Client{
+			Timeout: 5 * time.Second,
+		},
 	}
 
 	// Initialize default trust domain
