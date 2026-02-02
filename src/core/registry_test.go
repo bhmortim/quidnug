@@ -147,7 +147,7 @@ func TestComputeRelationalTrust_CycleHandling(t *testing.T) {
 	}
 
 	expected := 0.8 * 0.9
-	if trust != expected {
+	if !floatEquals(trust, expected, 0.0001) {
 		t.Errorf("Expected trust %f, got %f", expected, trust)
 	}
 
@@ -180,7 +180,7 @@ func TestComputeRelationalTrust_DepthLimit(t *testing.T) {
 	trust, path, _ = node.ComputeRelationalTrust("aaaa111111111111", "eeee555555555555", 4)
 
 	expected := 0.9 * 0.9 * 0.9 * 0.9
-	if trust != expected {
+	if !floatEquals(trust, expected, 0.0001) {
 		t.Errorf("Expected trust %f with maxDepth=4, got %f", expected, trust)
 	}
 
@@ -280,7 +280,7 @@ func TestComputeRelationalTrust_LongerPathBetterTrust(t *testing.T) {
 	trust, path, _ := node.ComputeRelationalTrust("aaaa111111111111", "dddd444444444444", 5)
 
 	expected := 0.9 * 0.9 * 0.9
-	if trust != expected {
+	if !floatEquals(trust, expected, 0.0001) {
 		t.Errorf("Expected best trust %f (longer path), got %f", expected, trust)
 	}
 

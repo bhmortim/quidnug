@@ -7,6 +7,11 @@ import (
 	"testing"
 )
 
+// floatEquals compares two floats with a tolerance for floating-point precision errors
+func floatEquals(a, b, tolerance float64) bool {
+	return math.Abs(a-b) < tolerance
+}
+
 // newTestNode creates a QuidnugNode with pre-populated test data for testing
 func newTestNode() *QuidnugNode {
 	initLogger("info")

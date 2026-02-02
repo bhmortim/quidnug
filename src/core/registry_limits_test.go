@@ -67,7 +67,7 @@ func TestComputeRelationalTrust_NormalGraphSucceeds(t *testing.T) {
 	}
 
 	expectedTrust := 0.9 * 0.9 * 0.9 * 0.9 * 0.9 // 5 hops at 0.9 each
-	if trustLevel != expectedTrust {
+	if !floatEquals(trustLevel, expectedTrust, 0.0001) {
 		t.Errorf("Expected trust level %f, got %f", expectedTrust, trustLevel)
 	}
 

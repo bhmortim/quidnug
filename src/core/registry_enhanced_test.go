@@ -44,7 +44,7 @@ func TestComputeRelationalTrustEnhanced_VerifiedOnlyPath(t *testing.T) {
 	}
 
 	expectedTrust := 0.8 * 0.9 // 0.72
-	if result.TrustLevel != expectedTrust {
+	if !floatEquals(result.TrustLevel, expectedTrust, 0.0001) {
 		t.Errorf("expected TrustLevel %f, got %f", expectedTrust, result.TrustLevel)
 	}
 	if result.Confidence != "high" {
@@ -90,7 +90,7 @@ func TestComputeRelationalTrustEnhanced_MixedPathWithGaps(t *testing.T) {
 
 	// Expected: 0.8 (A->B) * 0.9 (B->C) * 0.5 (validator discount) = 0.36
 	expectedTrust := 0.8 * 0.9 * 0.5
-	if result.TrustLevel != expectedTrust {
+	if !floatEquals(result.TrustLevel, expectedTrust, 0.0001) {
 		t.Errorf("expected TrustLevel %f, got %f", expectedTrust, result.TrustLevel)
 	}
 	if result.Confidence != "medium" {
