@@ -4,6 +4,12 @@
  * This is a simplified client library for interacting with Quidnug nodes.
  * It provides the core functionality needed for applications to integrate with
  * the Quidnug platform for identity, trust, and ownership management.
+ * 
+ * Trust Model: Quidnug uses relational trust where trust is computed from an
+ * observer's perspective through the trust graph. Trust is transitive with
+ * multiplicative decay - if A trusts B at 0.8 and B trusts C at 0.9, then
+ * A's relational trust in C is 0.8 * 0.9 = 0.72. The system finds the best
+ * path (highest trust) when multiple paths exist.
  */
 
 class QuidnugClient {
@@ -269,15 +275,22 @@ class QuidnugClient {
   }
   
   /**
-   * Create a trust transaction
+   * Create a trust transaction to establish direct trust from the signer to a trustee.
+   * 
+   * This creates a direct trust edge in the trust graph. The signing quid becomes
+   * the truster. When others query relational trust, this edge may be traversed
+   * as part of transitive trust computation.
+   * 
    * @param {Object} params - Transaction parameters
-   * @param {string} params.truster - Quid ID of the truster
-   * @param {string} params.trustee - Quid ID of the trustee
+   * @param {string} params.trustee - Quid ID of the entity being trusted
    * @param {string} params.domain - Trust domain
    * @param {number} params.trustLevel - Trust level (0.0 to 1.0)
-   * @param {number} [params.validUntil] - Optional expiration timestamp
+   *   - 0.0: complete distrust
+   *   - 0.5: neutral
+   *   - 1.0: complete trust
+   * @param {number} [params.validUntil] - Optional expiration timestamp (Unix seconds)
    * @param {string} [params.description] - Optional description
-   * @param {Object} quid - Quid object with private key for signing
+   * @param {Object} quid - Quid object with private key for signing (becomes the truster)
    * @returns {Promise<Object>} Signed trust transaction
    */
   async createTrustTransaction(params, quid) {
@@ -580,22 +593,32 @@ class QuidnugClient {
   }
   
   /**
-   * Get trust level between quids
-   * @param {string} truster - Quid ID of the truster
-   * @param {string} trustee - Quid ID of the trustee
+   * Get relational trust level between quids.
+   * 
+   * Computes trust from the observer's perspective to the target through the
+   * trust graph. Uses BFS to find the best path with multiplicative decay.
+   * 
+   * @param {string} observer - Quid ID of the observer (source of trust query)
+   * @param {string} target - Quid ID of the target (destination of trust query)
    * @param {string} domain - Trust domain
    * @param {Object} [options] - Additional options
-   * @param {number} [options.maxDepth] - Maximum trust path depth
-   * @returns {Promise<Object>} Trust information
+   * @param {number} [options.maxDepth=5] - Maximum trust path depth (hops)
+   * @returns {Promise<Object>} Trust result with:
+   *   - observer: the observer quid ID
+   *   - target: the target quid ID
+   *   - trustLevel: computed relational trust (0.0 to 1.0)
+   *   - trustPath: array of quid IDs forming the best trust path
+   *   - pathDepth: number of hops in the path
+   *   - domain: the trust domain
    */
-  async getTrustLevel(truster, trustee, domain, options = {}) {
-    if (!truster || !trustee || !domain) {
-      throw new Error('Missing required parameters: truster, trustee, domain');
+  async getTrustLevel(observer, target, domain, options = {}) {
+    if (!observer || !target || !domain) {
+      throw new Error('Missing required parameters: observer, target, domain');
     }
     
     try {
       const nodeUrl = this._getHealthyNode();
-      let url = `${nodeUrl}/api/trust/${truster}/${trustee}?domain=${encodeURIComponent(domain)}`;
+      let url = `${nodeUrl}/api/trust/${observer}/${target}?domain=${encodeURIComponent(domain)}`;
       
       if (options.maxDepth) {
         url += `&maxDepth=${options.maxDepth}`;
@@ -605,7 +628,15 @@ class QuidnugClient {
       
       if (!response.ok) {
         if (response.status === 404) {
-          return { trustLevel: 0, message: 'No trust relationship found' };
+          return { 
+            observer,
+            target,
+            trustLevel: 0, 
+            trustPath: [],
+            pathDepth: 0,
+            domain,
+            message: 'No trust relationship found' 
+          };
         }
         
         const errorText = await response.text();
@@ -691,52 +722,156 @@ class QuidnugClient {
   }
   
   /**
-   * Find trust path between quids
-   * @param {string} sourceQuid - Source quid ID
-   * @param {string} targetQuid - Target quid ID
+   * Find trust path between quids.
+   * 
+   * This is a convenience wrapper around getTrustLevel() that returns
+   * path-focused results. The relational trust API always computes and
+   * returns the best path.
+   * 
+   * @param {string} observer - Observer quid ID (who is asking about trust)
+   * @param {string} target - Target quid ID (who we want to know about)
    * @param {string} domain - Trust domain
    * @param {Object} [options] - Additional options
-   * @param {number} [options.maxDepth] - Maximum path depth
-   * @param {number} [options.minTrustLevel] - Minimum trust level
-   * @returns {Promise<Object>} Trust path information
+   * @param {number} [options.maxDepth=5] - Maximum path depth (hops)
+   * @param {number} [options.minTrustLevel] - Minimum trust level threshold
+   * @returns {Promise<Object>} Trust path result with:
+   *   - found: boolean indicating if a path exists
+   *   - trustLevel: computed relational trust along the path
+   *   - path: array of quid IDs from observer to target
+   *   - pathDepth: number of hops
    */
-  async findTrustPath(sourceQuid, targetQuid, domain, options = {}) {
-    if (!sourceQuid || !targetQuid || !domain) {
-      throw new Error('Missing required parameters: sourceQuid, targetQuid, domain');
+  async findTrustPath(observer, target, domain, options = {}) {
+    if (!observer || !target || !domain) {
+      throw new Error('Missing required parameters: observer, target, domain');
     }
     
     try {
-      const nodeUrl = this._getHealthyNode();
-      let url = `${nodeUrl}/api/trust/${sourceQuid}/${targetQuid}?domain=${encodeURIComponent(domain)}`;
+      const result = await this.getTrustLevel(observer, target, domain, {
+        maxDepth: options.maxDepth
+      });
       
-      if (options.maxDepth) {
-        url += `&maxDepth=${options.maxDepth}`;
-      }
+      const found = result.trustPath && result.trustPath.length > 0;
+      const meetsThreshold = options.minTrustLevel === undefined || 
+                             result.trustLevel >= options.minTrustLevel;
       
-      if (options.minTrustLevel) {
-        url += `&minTrustLevel=${options.minTrustLevel}`;
-      }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          return { found: false, message: 'No trust path found' };
-        }
-        
-        const errorText = await response.text();
-        throw new Error(`Failed to find trust path: ${response.status} ${errorText}`);
-      }
-      
-      const result = await response.json();
       return {
-        found: result.trustPath && result.trustPath.length > 0,
+        found: found && meetsThreshold,
         trustLevel: result.trustLevel,
-        path: result.trustPath
+        path: result.trustPath || [],
+        pathDepth: result.pathDepth || 0
       };
     } catch (error) {
       throw new Error(`Trust path query failed: ${error.message}`);
     }
+  }
+  
+  /**
+   * Query relational trust using a structured query object.
+   * 
+   * This method POSTs to /api/trust/query and is useful for programmatic
+   * trust queries where parameters are built dynamically.
+   * 
+   * @param {Object} query - Relational trust query
+   * @param {string} query.observer - Quid ID of the observer
+   * @param {string} query.target - Quid ID of the target
+   * @param {string} [query.domain] - Trust domain (defaults to 'default')
+   * @param {number} [query.maxDepth=5] - Maximum path depth
+   * @returns {Promise<Object>} Relational trust result
+   */
+  async queryRelationalTrust({ observer, target, domain, maxDepth }) {
+    if (!observer || !target) {
+      throw new Error('Missing required parameters: observer, target');
+    }
+    
+    try {
+      const nodeUrl = this._getHealthyNode();
+      
+      const response = await fetch(`${nodeUrl}/api/trust/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          observer,
+          target,
+          domain: domain || 'default',
+          maxDepth: maxDepth || 5
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to query relational trust: ${response.status} ${errorText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      throw new Error(`Relational trust query failed: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Compute transitive trust client-side from a cached trust graph.
+   * 
+   * This is useful for offline computation when the full trust graph
+   * (or a relevant subset) has been cached locally. Uses BFS with
+   * multiplicative decay, matching the server-side algorithm.
+   * 
+   * @param {Object} trustGraph - Map of truster -> { trustee -> trustLevel }
+   * @param {string} observer - Observer quid ID
+   * @param {string} target - Target quid ID
+   * @param {number} [maxDepth=5] - Maximum path depth
+   * @returns {Object} Trust result with trustLevel and trustPath
+   */
+  computeTransitiveTrust(trustGraph, observer, target, maxDepth = 5) {
+    if (observer === target) {
+      return { trustLevel: 1.0, trustPath: [observer] };
+    }
+    
+    const queue = [{
+      quid: observer,
+      path: [observer],
+      trust: 1.0
+    }];
+    
+    let bestTrust = 0;
+    let bestPath = [];
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const trustees = trustGraph[current.quid] || {};
+      
+      for (const [trustee, edgeTrust] of Object.entries(trustees)) {
+        if (current.path.includes(trustee)) {
+          continue;
+        }
+        
+        const pathTrust = current.trust * edgeTrust;
+        const newPath = [...current.path, trustee];
+        
+        if (trustee === target) {
+          if (pathTrust > bestTrust) {
+            bestTrust = pathTrust;
+            bestPath = newPath;
+          }
+          continue;
+        }
+        
+        if (current.path.length < maxDepth) {
+          queue.push({
+            quid: trustee,
+            path: newPath,
+            trust: pathTrust
+          });
+        }
+      }
+    }
+    
+    return {
+      trustLevel: bestTrust,
+      trustPath: bestPath,
+      pathDepth: bestPath.length > 1 ? bestPath.length - 1 : 0
+    };
   }
   
   /**
