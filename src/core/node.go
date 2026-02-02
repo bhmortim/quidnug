@@ -250,6 +250,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 	publicKeyBytes := elliptic.Marshal(privateKey.PublicKey.Curve, privateKey.PublicKey.X, privateKey.PublicKey.Y)
 	nodeID := fmt.Sprintf("%x", sha256.Sum256(publicKeyBytes))[:16]
 
+	// Compute public key hex for genesis block
+	publicKeyHex := hex.EncodeToString(publicKeyBytes)
+
 	// Initialize the node with genesis block
 	genesisBlock := Block{
 		Index:        0,
@@ -258,7 +261,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		TrustProof: TrustProof{
 			TrustDomain:             "genesis",
 			ValidatorID:             nodeID,
+			ValidatorPublicKey:      publicKeyHex,
 			ValidatorTrustInCreator: 1.0,
+			ValidatorSigs:           []string{},
 			ValidationTime:          time.Now().Unix(),
 		},
 		PrevHash: "0",
@@ -571,6 +576,7 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		TrustProof: TrustProof{
 			TrustDomain:             trustDomain,
 			ValidatorID:             node.NodeID,
+			ValidatorPublicKey:      node.GetPublicKeyHex(),
 			ValidatorTrustInCreator: validatorWeight,
 			ValidatorSigs:           []string{},
 			ValidationTime:          time.Now().Unix(),
@@ -578,8 +584,9 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		PrevHash: prevBlock.Hash,
 	}
 
-	// Sign the block with our validator signature
-	signature, err := node.SignData([]byte(newBlock.PrevHash))
+	// Sign the full block content (not just PrevHash) to prevent transaction tampering
+	signableData := GetBlockSignableData(newBlock)
+	signature, err := node.SignData(signableData)
 	if err == nil {
 		newBlock.TrustProof.ValidatorSigs = append(newBlock.TrustProof.ValidatorSigs, hex.EncodeToString(signature))
 	}

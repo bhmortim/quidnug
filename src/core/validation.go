@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 )
 
@@ -341,6 +344,46 @@ func (node *QuidnugNode) ValidateBlockCryptographic(block Block) bool {
 
 	// Verify the block hash
 	if calculateBlockHash(block) != block.Hash {
+		return false
+	}
+
+	// Verify validator signature against block content
+	if len(block.TrustProof.ValidatorSigs) == 0 {
+		logger.Debug("Block has no validator signatures", "blockIndex", block.Index)
+		return false
+	}
+
+	// Get validator public key
+	validatorPubKey := block.TrustProof.ValidatorPublicKey
+	if validatorPubKey == "" {
+		// For backward compatibility with self-generated blocks missing public key
+		if block.TrustProof.ValidatorID == node.NodeID {
+			validatorPubKey = node.GetPublicKeyHex()
+		} else {
+			logger.Debug("Block missing validator public key", "blockIndex", block.Index, "validatorId", block.TrustProof.ValidatorID)
+			return false
+		}
+	}
+
+	// Verify that the public key matches the validator ID (ID is derived from pubkey hash)
+	pubKeyBytes, err := hex.DecodeString(validatorPubKey)
+	if err != nil {
+		logger.Debug("Invalid validator public key hex", "blockIndex", block.Index, "error", err)
+		return false
+	}
+	computedID := fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes))[:16]
+	if computedID != block.TrustProof.ValidatorID {
+		logger.Debug("Validator public key does not match validator ID",
+			"blockIndex", block.Index,
+			"expectedId", block.TrustProof.ValidatorID,
+			"computedId", computedID)
+		return false
+	}
+
+	// Verify the primary validator signature against block content
+	signableData := GetBlockSignableData(block)
+	if !VerifySignature(validatorPubKey, signableData, block.TrustProof.ValidatorSigs[0]) {
+		logger.Debug("Invalid validator signature", "blockIndex", block.Index, "validatorId", block.TrustProof.ValidatorID)
 		return false
 	}
 

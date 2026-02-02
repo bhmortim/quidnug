@@ -73,6 +73,7 @@ type Block struct {
 type TrustProof struct {
 	TrustDomain             string                 `json:"trustDomain"`
 	ValidatorID             string                 `json:"validatorId"`
+	ValidatorPublicKey      string                 `json:"validatorPublicKey,omitempty"`
 	ValidatorTrustInCreator float64                `json:"validatorTrustInCreator"`
 	ValidatorSigs           []string               `json:"validatorSigs"`
 	ConsensusData           map[string]interface{} `json:"consensusData,omitempty"`

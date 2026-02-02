@@ -10,6 +10,38 @@ import (
 	"math/big"
 )
 
+// GetBlockSignableData returns canonical bytes for signing a block.
+// This excludes the Hash field (not set during signing) and ValidatorSigs
+// (signatures should not sign themselves).
+func GetBlockSignableData(block Block) []byte {
+	// Create a copy of TrustProof without signatures for signing
+	trustProofForSigning := TrustProof{
+		TrustDomain:             block.TrustProof.TrustDomain,
+		ValidatorID:             block.TrustProof.ValidatorID,
+		ValidatorPublicKey:      block.TrustProof.ValidatorPublicKey,
+		ValidatorTrustInCreator: block.TrustProof.ValidatorTrustInCreator,
+		// ValidatorSigs intentionally excluded - signatures don't sign themselves
+		ConsensusData:  block.TrustProof.ConsensusData,
+		ValidationTime: block.TrustProof.ValidationTime,
+	}
+
+	blockData, _ := json.Marshal(struct {
+		Index        int64
+		Timestamp    int64
+		Transactions []interface{}
+		TrustProof   TrustProof
+		PrevHash     string
+	}{
+		Index:        block.Index,
+		Timestamp:    block.Timestamp,
+		Transactions: block.Transactions,
+		TrustProof:   trustProofForSigning,
+		PrevHash:     block.PrevHash,
+	})
+
+	return blockData
+}
+
 // calculateBlockHash calculates the hash for a block
 func calculateBlockHash(block Block) string {
 	blockData, _ := json.Marshal(struct {
