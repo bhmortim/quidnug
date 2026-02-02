@@ -189,6 +189,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 			Truster:    "0000000000000001",
 			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
+			Nonce:      1,
 		})
 		if !node.ValidateTrustTransaction(tx) {
 			t.Error("Expected valid transaction to pass")
@@ -257,6 +258,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 			Truster:    "0000000000000001",
 			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
+			Nonce:      1,
 		})
 		if !node.ValidateTrustTransaction(tx) {
 			t.Error("Expected empty domain with valid signature to pass")
@@ -274,6 +276,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 			Truster:    "0000000000000001",
 			Trustee:    "0000000000000002",
 			TrustLevel: 0.0,
+			Nonce:      1,
 		})
 		if !node.ValidateTrustTransaction(tx) {
 			t.Error("Expected trust level 0.0 to pass")
@@ -291,6 +294,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 			Truster:    "0000000000000001",
 			Trustee:    "0000000000000002",
 			TrustLevel: 1.0,
+			Nonce:      1,
 		})
 		if !node.ValidateTrustTransaction(tx) {
 			t.Error("Expected trust level 1.0 to pass")
