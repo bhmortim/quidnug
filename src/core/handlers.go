@@ -83,6 +83,56 @@ func paginateSlice[T any](items []T, params PaginationParams) ([]T, int) {
 	return items[params.Offset:end], total
 }
 
+// WriteSuccess writes a successful JSON response with envelope
+func WriteSuccess(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1.0")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    data,
+	})
+}
+
+// WriteSuccessWithStatus writes a successful JSON response with custom status code
+func WriteSuccessWithStatus(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1.0")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    data,
+	})
+}
+
+// WriteError writes an error JSON response with envelope
+func WriteError(w http.ResponseWriter, status int, code string, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1.0")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+		},
+	})
+}
+
+// WriteFieldError writes a field validation error response
+func WriteFieldError(w http.ResponseWriter, code string, message string, fields []string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-API-Version", "1.0")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error": map[string]interface{}{
+			"code":    code,
+			"message": message,
+			"fields":  fields,
+		},
+	})
+}
+
 // registerAPIRoutes registers all API routes on the given router
 func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	// Metrics endpoint
@@ -160,7 +210,7 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 
 // HealthCheckHandler handles health check requests
 func (node *QuidnugNode) HealthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"status":  "ok",
 		"node_id": node.NodeID,
 		"uptime":  time.Now().Unix() - node.Blockchain[0].Timestamp,
@@ -181,7 +231,7 @@ func (node *QuidnugNode) GetNodesHandler(w http.ResponseWriter, r *http.Request)
 
 	paginatedNodes, total := paginateSlice(nodesList, params)
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"data": paginatedNodes,
 		"pagination": PaginationMeta{
 			Limit:  params.Limit,
@@ -202,7 +252,7 @@ func (node *QuidnugNode) GetTransactionsHandler(w http.ResponseWriter, r *http.R
 
 	paginatedTxs, total := paginateSlice(txsCopy, params)
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"data": paginatedTxs,
 		"pagination": PaginationMeta{
 			Limit:  params.Limit,
@@ -226,11 +276,11 @@ func (node *QuidnugNode) CreateTrustTransactionHandler(w http.ResponseWriter, r 
 
 	txID, err := node.AddTrustTransaction(tx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"status":         "success",
 		"transaction_id": txID,
 		"message":        "Trust transaction added to pending pool",
@@ -251,11 +301,11 @@ func (node *QuidnugNode) CreateIdentityTransactionHandler(w http.ResponseWriter,
 
 	txID, err := node.AddIdentityTransaction(tx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"status":         "success",
 		"transaction_id": txID,
 		"message":        "Identity transaction added to pending pool",
@@ -276,11 +326,11 @@ func (node *QuidnugNode) CreateTitleTransactionHandler(w http.ResponseWriter, r 
 
 	txID, err := node.AddTitleTransaction(tx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"status":         "success",
 		"transaction_id": txID,
 		"message":        "Title transaction added to pending pool",
@@ -295,7 +345,7 @@ func (node *QuidnugNode) GetBlocksHandler(w http.ResponseWriter, r *http.Request
 	paginatedBlocks, total := paginateSlice(node.Blockchain, params)
 	node.BlockchainMutex.RUnlock()
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"data": paginatedBlocks,
 		"pagination": PaginationMeta{
 			Limit:  params.Limit,
@@ -316,7 +366,7 @@ func (node *QuidnugNode) GetDomainsHandler(w http.ResponseWriter, r *http.Reques
 		domainsList = append(domainsList, domain)
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"domains": domainsList,
 	})
 }
@@ -329,11 +379,11 @@ func (node *QuidnugNode) RegisterDomainHandler(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := node.RegisterTrustDomain(domain); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"status":  "success",
 		"message": "Trust domain registered successfully",
 		"domain":  domain.Name,
@@ -361,7 +411,7 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			// Query local identity registry
 			identity, exists := node.GetQuidIdentity(queryParam)
 			if !exists {
-				http.Error(w, "Identity not found", http.StatusNotFound)
+				WriteError(w, http.StatusNotFound, "NOT_FOUND", "Identity not found")
 				return
 			}
 			result = identity
@@ -370,7 +420,7 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			// Parse observer and target from param (format: "observer:target")
 			parts := strings.Split(queryParam, ":")
 			if len(parts) != 2 {
-				http.Error(w, "Invalid trust query format. Use observer:target", http.StatusBadRequest)
+				WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid trust query format. Use observer:target")
 				return
 			}
 			observer := parts[0]
@@ -402,25 +452,25 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			// Query local title registry
 			title, exists := node.GetAssetOwnership(queryParam)
 			if !exists {
-				http.Error(w, "Title not found", http.StatusNotFound)
+				WriteError(w, http.StatusNotFound, "NOT_FOUND", "Title not found")
 				return
 			}
 			result = title
 
 		default:
-			http.Error(w, "Unknown query type", http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Unknown query type")
 			return
 		}
 
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	} else {
 		// Forward query to other domains
 		result, err := node.QueryOtherDomain(domainName, queryType, queryParam)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 			return
 		}
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	}
 }
 
@@ -432,8 +482,6 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 	truster := r.URL.Query().Get("truster")
 	trustee := r.URL.Query().Get("trustee")
 	maxDepthStr := r.URL.Query().Get("maxDepth")
-
-	w.Header().Set("Content-Type", "application/json")
 
 	// If observer/target provided, compute relational trust
 	if observer != "" && target != "" {
@@ -465,14 +513,14 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 			PathDepth:  pathDepth,
 		}
 
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 		return
 	}
 
 	// Fall back to existing behavior for truster/trustee (direct trust)
 	if truster != "" && trustee != "" {
 		trustLevel := node.GetTrustLevel(truster, trustee)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"truster":     truster,
 			"trustee":     trustee,
 			"trust_level": trustLevel,
@@ -482,7 +530,7 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 		relationships := node.TrustRegistry[truster]
 		node.TrustRegistryMutex.RUnlock()
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"truster":       truster,
 			"relationships": relationships,
 		})
@@ -509,7 +557,7 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 
 		paginatedEntries, total := paginateSlice(entries, params)
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"data": paginatedEntries,
 			"pagination": PaginationMeta{
 				Limit:  params.Limit,
@@ -527,10 +575,10 @@ func (node *QuidnugNode) QueryIdentityRegistryHandler(w http.ResponseWriter, r *
 	if quidID != "" {
 		identity, exists := node.GetQuidIdentity(quidID)
 		if !exists {
-			http.Error(w, "Identity not found", http.StatusNotFound)
+			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Identity not found")
 			return
 		}
-		json.NewEncoder(w).Encode(identity)
+		WriteSuccess(w, identity)
 	} else {
 		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
 
@@ -558,7 +606,7 @@ func (node *QuidnugNode) QueryIdentityRegistryHandler(w http.ResponseWriter, r *
 
 		paginatedEntries, total := paginateSlice(entries, params)
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"data": paginatedEntries,
 			"pagination": PaginationMeta{
 				Limit:  params.Limit,
@@ -585,8 +633,7 @@ func (node *QuidnugNode) GetInfoHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	node.BlockchainMutex.RUnlock()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"nodeQuid":       node.NodeID,
 		"managedDomains": managedDomains,
 		"blockHeight":    blockHeight,
@@ -602,14 +649,14 @@ func (node *QuidnugNode) CreateQuidHandler(w http.ResponseWriter, r *http.Reques
 
 	if r.Body != nil && r.ContentLength > 0 {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 			return
 		}
 	}
 
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		http.Error(w, "Failed to generate key pair", http.StatusInternalServerError)
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate key pair")
 		return
 	}
 
@@ -621,9 +668,7 @@ func (node *QuidnugNode) CreateQuidHandler(w http.ResponseWriter, r *http.Reques
 
 	created := time.Now().Unix()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccessWithStatus(w, http.StatusCreated, map[string]interface{}{
 		"quidId":    quidID,
 		"publicKey": publicKeyHex,
 		"created":   created,
@@ -652,8 +697,6 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 
 	includeUnverified := includeUnverifiedStr == "true"
 
-	w.Header().Set("Content-Type", "application/json")
-
 	if includeUnverified {
 		result, err := node.ComputeRelationalTrustEnhanced(observer, target, maxDepth, true)
 		if err != nil {
@@ -665,7 +708,7 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
 		}
 		result.Domain = domain
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	} else {
 		trustLevel, trustPath, err := node.ComputeRelationalTrust(observer, target, maxDepth)
 		if err != nil {
@@ -691,7 +734,7 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 			Domain:     domain,
 		}
 
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	}
 }
 
@@ -703,7 +746,7 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 	}
 
 	if query.Observer == "" || query.Target == "" {
-		http.Error(w, "observer and target are required", http.StatusBadRequest)
+		WriteFieldError(w, "MISSING_PARAMETERS", "observer and target are required", []string{"observer", "target"})
 		return
 	}
 
@@ -717,8 +760,6 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 		maxDepth = DefaultTrustMaxDepth
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-
 	if query.IncludeUnverified {
 		result, err := node.ComputeRelationalTrustEnhanced(query.Observer, query.Target, maxDepth, true)
 		if err != nil {
@@ -730,7 +771,7 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
 		}
 		result.Domain = domain
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	} else {
 		trustLevel, trustPath, err := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
 		if err != nil {
@@ -756,7 +797,7 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 			Domain:     domain,
 		}
 
-		json.NewEncoder(w).Encode(result)
+		WriteSuccess(w, result)
 	}
 }
 
@@ -767,12 +808,11 @@ func (node *QuidnugNode) GetIdentityHandler(w http.ResponseWriter, r *http.Reque
 
 	identity, exists := node.GetQuidIdentity(quidID)
 	if !exists {
-		http.Error(w, "Identity not found", http.StatusNotFound)
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Identity not found")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(identity)
+	WriteSuccess(w, identity)
 }
 
 // GetTitleHandler returns ownership information for an asset
@@ -782,12 +822,11 @@ func (node *QuidnugNode) GetTitleHandler(w http.ResponseWriter, r *http.Request)
 
 	title, exists := node.GetAssetOwnership(assetID)
 	if !exists {
-		http.Error(w, "Title not found", http.StatusNotFound)
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Title not found")
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(title)
+	WriteSuccess(w, title)
 }
 
 // GetTentativeBlocksHandler returns tentative blocks for a domain
@@ -797,8 +836,7 @@ func (node *QuidnugNode) GetTentativeBlocksHandler(w http.ResponseWriter, r *htt
 
 	blocks := node.GetTentativeBlocks(domain)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"domain": domain,
 		"blocks": blocks,
 	})
@@ -814,8 +852,7 @@ func (node *QuidnugNode) GetTrustEdgesHandler(w http.ResponseWriter, r *http.Req
 
 	edges := node.GetTrustEdges(quidId, includeUnverified)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	WriteSuccess(w, map[string]interface{}{
 		"quidId":            quidId,
 		"includeUnverified": includeUnverified,
 		"edges":             edges,
@@ -830,10 +867,10 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 	if assetID != "" {
 		title, exists := node.GetAssetOwnership(assetID)
 		if !exists {
-			http.Error(w, "Title not found", http.StatusNotFound)
+			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Title not found")
 			return
 		}
-		json.NewEncoder(w).Encode(title)
+		WriteSuccess(w, title)
 	} else if ownerID != "" {
 		params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
 
@@ -855,7 +892,7 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 
 		paginatedAssets, total := paginateSlice(ownedAssets, params)
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"data": paginatedAssets,
 			"pagination": PaginationMeta{
 				Limit:  params.Limit,
@@ -882,7 +919,7 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 
 		paginatedEntries, total := paginateSlice(entries, params)
 
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		WriteSuccess(w, map[string]interface{}{
 			"data": paginatedEntries,
 			"pagination": PaginationMeta{
 				Limit:  params.Limit,
