@@ -1,6 +1,11 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -35,6 +40,13 @@ func (node *QuidnugNode) StartServer(port string) error {
 	router.HandleFunc("/api/registry/trust", node.QueryTrustRegistryHandler).Methods("GET")
 	router.HandleFunc("/api/registry/identity", node.QueryIdentityRegistryHandler).Methods("GET")
 	router.HandleFunc("/api/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
+
+	// API spec endpoints
+	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
+	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
+	router.HandleFunc("/api/trust/{truster}/{trustee}", node.GetTrustHandler).Methods("GET")
+	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
+	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 
 	// Start HTTP server
 	logger.Info("Starting quidnug node server", "port", port, "nodeId", node.NodeID)
@@ -324,6 +336,131 @@ func (node *QuidnugNode) QueryIdentityRegistryHandler(w http.ResponseWriter, r *
 			"identities": node.IdentityRegistry,
 		})
 	}
+}
+
+// GetInfoHandler returns node information
+func (node *QuidnugNode) GetInfoHandler(w http.ResponseWriter, r *http.Request) {
+	node.TrustDomainsMutex.RLock()
+	managedDomains := make([]string, 0, len(node.TrustDomains))
+	for domain := range node.TrustDomains {
+		managedDomains = append(managedDomains, domain)
+	}
+	node.TrustDomainsMutex.RUnlock()
+
+	node.BlockchainMutex.RLock()
+	blockHeight := int64(0)
+	if len(node.Blockchain) > 0 {
+		blockHeight = node.Blockchain[len(node.Blockchain)-1].Index
+	}
+	node.BlockchainMutex.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"nodeQuid":       node.NodeID,
+		"managedDomains": managedDomains,
+		"blockHeight":    blockHeight,
+		"version":        "1.0.0",
+	})
+}
+
+// CreateQuidHandler creates a new quid identity
+func (node *QuidnugNode) CreateQuidHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Metadata map[string]interface{} `json:"metadata"`
+	}
+
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		http.Error(w, "Failed to generate key pair", http.StatusInternalServerError)
+		return
+	}
+
+	publicKeyBytes := elliptic.Marshal(privateKey.PublicKey.Curve, privateKey.PublicKey.X, privateKey.PublicKey.Y)
+	publicKeyHex := hex.EncodeToString(publicKeyBytes)
+
+	hashBytes := sha256.Sum256(publicKeyBytes)
+	quidID := hex.EncodeToString(hashBytes[:])[:16]
+
+	created := time.Now().Unix()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"quidId":    quidID,
+		"publicKey": publicKeyHex,
+		"created":   created,
+	})
+}
+
+// GetTrustHandler returns trust level between two quids
+func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	truster := vars["truster"]
+	trustee := vars["trustee"]
+	domain := r.URL.Query().Get("domain")
+
+	if domain == "" {
+		domain = "default"
+	}
+
+	node.TrustRegistryMutex.RLock()
+	trustMap, trusterExists := node.TrustRegistry[truster]
+	var trustLevel float64
+	var relationshipExists bool
+	if trusterExists {
+		trustLevel, relationshipExists = trustMap[trustee]
+	}
+	node.TrustRegistryMutex.RUnlock()
+
+	if !relationshipExists {
+		http.Error(w, "No trust relationship found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"truster":    truster,
+		"trustee":    trustee,
+		"domain":     domain,
+		"trustLevel": trustLevel,
+	})
+}
+
+// GetIdentityHandler returns identity information for a quid
+func (node *QuidnugNode) GetIdentityHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	quidID := vars["quidId"]
+
+	identity, exists := node.GetQuidIdentity(quidID)
+	if !exists {
+		http.Error(w, "Identity not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(identity)
+}
+
+// GetTitleHandler returns ownership information for an asset
+func (node *QuidnugNode) GetTitleHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	assetID := vars["assetId"]
+
+	title, exists := node.GetAssetOwnership(assetID)
+	if !exists {
+		http.Error(w, "Title not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(title)
 }
 
 // QueryTitleRegistryHandler handles title registry queries
