@@ -3,13 +3,11 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"log"
 	"math/big"
-
-	"crypto/rand"
 )
 
 // calculateBlockHash calculates the hash for a block
@@ -69,14 +67,18 @@ func VerifySignature(publicKeyHex string, data []byte, signatureHex string) bool
 	// Decode public key from hex
 	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		log.Printf("Failed to decode public key hex: %v", err)
+		if logger != nil {
+			logger.Debug("Failed to decode public key hex", "error", err)
+		}
 		return false
 	}
 
 	// Unmarshal the public key
 	x, y := elliptic.Unmarshal(elliptic.P256(), publicKeyBytes)
 	if x == nil {
-		log.Printf("Failed to unmarshal public key")
+		if logger != nil {
+			logger.Debug("Failed to unmarshal public key")
+		}
 		return false
 	}
 
@@ -89,13 +91,17 @@ func VerifySignature(publicKeyHex string, data []byte, signatureHex string) bool
 	// Decode signature from hex
 	signatureBytes, err := hex.DecodeString(signatureHex)
 	if err != nil {
-		log.Printf("Failed to decode signature hex: %v", err)
+		if logger != nil {
+			logger.Debug("Failed to decode signature hex", "error", err)
+		}
 		return false
 	}
 
 	// For P-256, signature should be 64 bytes (32 for r, 32 for s)
 	if len(signatureBytes) != 64 {
-		log.Printf("Invalid signature length: expected 64, got %d", len(signatureBytes))
+		if logger != nil {
+			logger.Debug("Invalid signature length", "expected", 64, "got", len(signatureBytes))
+		}
 		return false
 	}
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 )
 
 // ValidateTrustTransaction validates a trust transaction
@@ -13,13 +12,13 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 	node.TrustDomainsMutex.RUnlock()
 
 	if !domainExists && tx.TrustDomain != "" {
-		log.Printf("Trust transaction from unknown trust domain: %s", tx.TrustDomain)
+		logger.Warn("Trust transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
 		return false
 	}
 
 	// Verify trust level is in valid range (0.0 to 1.0)
 	if tx.TrustLevel < 0.0 || tx.TrustLevel > 1.0 {
-		log.Printf("Invalid trust level: %f", tx.TrustLevel)
+		logger.Warn("Invalid trust level", "trustLevel", tx.TrustLevel, "txId", tx.ID)
 		return false
 	}
 
@@ -29,7 +28,7 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 	node.IdentityRegistryMutex.RUnlock()
 
 	if !trusterExists {
-		log.Printf("Truster %s not found in identity registry", tx.Truster)
+		logger.Debug("Truster not found in identity registry", "truster", tx.Truster, "txId", tx.ID)
 	}
 
 	// Check if trustee exists in identity registry
@@ -38,12 +37,12 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 	node.IdentityRegistryMutex.RUnlock()
 
 	if !trusteeExists {
-		log.Printf("Trustee %s not found in identity registry", tx.Trustee)
+		logger.Debug("Trustee not found in identity registry", "trustee", tx.Trustee, "txId", tx.ID)
 	}
 
 	// Verify signature
 	if tx.Signature == "" || tx.PublicKey == "" {
-		log.Printf("Missing signature or public key in trust transaction")
+		logger.Warn("Missing signature or public key in trust transaction", "txId", tx.ID)
 		return false
 	}
 
@@ -52,12 +51,12 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 	txCopy.Signature = ""
 	signableData, err := json.Marshal(txCopy)
 	if err != nil {
-		log.Printf("Failed to marshal transaction for signature verification: %v", err)
+		logger.Error("Failed to marshal transaction for signature verification", "txId", tx.ID, "error", err)
 		return false
 	}
 
 	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
-		log.Printf("Invalid signature in trust transaction")
+		logger.Warn("Invalid signature in trust transaction", "txId", tx.ID)
 		return false
 	}
 
@@ -72,7 +71,7 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 	node.TrustDomainsMutex.RUnlock()
 
 	if !domainExists && tx.TrustDomain != "" {
-		log.Printf("Identity transaction from unknown trust domain: %s", tx.TrustDomain)
+		logger.Warn("Identity transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
 		return false
 	}
 
@@ -84,22 +83,28 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 	if exists {
 		// If it's an update, check that update nonce is higher than current
 		if tx.UpdateNonce <= existingIdentity.UpdateNonce {
-			log.Printf("Invalid update nonce for identity %s: %d <= %d",
-				tx.QuidID, tx.UpdateNonce, existingIdentity.UpdateNonce)
+			logger.Warn("Invalid update nonce for identity",
+				"quidId", tx.QuidID,
+				"providedNonce", tx.UpdateNonce,
+				"currentNonce", existingIdentity.UpdateNonce,
+				"txId", tx.ID)
 			return false
 		}
 
 		// Also verify that the creator is the same as original creator
 		if tx.Creator != existingIdentity.Creator {
-			log.Printf("Identity update creator mismatch: %s != %s",
-				tx.Creator, existingIdentity.Creator)
+			logger.Warn("Identity update creator mismatch",
+				"providedCreator", tx.Creator,
+				"originalCreator", existingIdentity.Creator,
+				"quidId", tx.QuidID,
+				"txId", tx.ID)
 			return false
 		}
 	}
 
 	// Verify signature
 	if tx.Signature == "" || tx.PublicKey == "" {
-		log.Printf("Missing signature or public key in identity transaction")
+		logger.Warn("Missing signature or public key in identity transaction", "txId", tx.ID, "quidId", tx.QuidID)
 		return false
 	}
 
@@ -108,12 +113,12 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 	txCopy.Signature = ""
 	signableData, err := json.Marshal(txCopy)
 	if err != nil {
-		log.Printf("Failed to marshal transaction for signature verification: %v", err)
+		logger.Error("Failed to marshal transaction for signature verification", "txId", tx.ID, "error", err)
 		return false
 	}
 
 	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
-		log.Printf("Invalid signature in identity transaction")
+		logger.Warn("Invalid signature in identity transaction", "txId", tx.ID, "quidId", tx.QuidID)
 		return false
 	}
 
@@ -128,7 +133,7 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	node.TrustDomainsMutex.RUnlock()
 
 	if !domainExists && tx.TrustDomain != "" {
-		log.Printf("Title transaction from unknown trust domain: %s", tx.TrustDomain)
+		logger.Warn("Title transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
 		return false
 	}
 
@@ -138,7 +143,7 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	node.IdentityRegistryMutex.RUnlock()
 
 	if !assetExists {
-		log.Printf("Asset %s not found in identity registry", tx.AssetID)
+		logger.Warn("Asset not found in identity registry", "assetId", tx.AssetID, "txId", tx.ID)
 		return false
 	}
 
@@ -149,13 +154,16 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	}
 
 	if totalPercentage != 100.0 {
-		log.Printf("Total ownership percentage doesn't equal 100%%: %.2f", totalPercentage)
+		logger.Warn("Total ownership percentage doesn't equal 100%",
+			"totalPercentage", totalPercentage,
+			"assetId", tx.AssetID,
+			"txId", tx.ID)
 		return false
 	}
 
 	// Verify main signature from issuer
 	if tx.Signature == "" || tx.PublicKey == "" {
-		log.Printf("Missing signature or public key in title transaction")
+		logger.Warn("Missing signature or public key in title transaction", "txId", tx.ID, "assetId", tx.AssetID)
 		return false
 	}
 
@@ -164,12 +172,12 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	txCopyForIssuer.Signature = ""
 	issuerSignableData, err := json.Marshal(txCopyForIssuer)
 	if err != nil {
-		log.Printf("Failed to marshal transaction for issuer signature verification: %v", err)
+		logger.Error("Failed to marshal transaction for issuer signature verification", "txId", tx.ID, "error", err)
 		return false
 	}
 
 	if !VerifySignature(tx.PublicKey, issuerSignableData, tx.Signature) {
-		log.Printf("Invalid issuer signature in title transaction")
+		logger.Warn("Invalid issuer signature in title transaction", "txId", tx.ID, "assetId", tx.AssetID)
 		return false
 	}
 
@@ -182,7 +190,7 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 
 		if exists {
 			if !areOwnershipStakesEqual(tx.PreviousOwners, currentTitle.Owners) {
-				log.Printf("Previous owners don't match current title")
+				logger.Warn("Previous owners don't match current title", "assetId", tx.AssetID, "txId", tx.ID)
 				return false
 			}
 		}
@@ -193,7 +201,7 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 		txCopyForOwners.Signatures = nil
 		ownerSignableData, err := json.Marshal(txCopyForOwners)
 		if err != nil {
-			log.Printf("Failed to marshal transaction for owner signature verification: %v", err)
+			logger.Error("Failed to marshal transaction for owner signature verification", "txId", tx.ID, "error", err)
 			return false
 		}
 
@@ -205,25 +213,25 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 			node.IdentityRegistryMutex.RUnlock()
 
 			if !ownerExists {
-				log.Printf("Previous owner %s not found in identity registry", stake.OwnerID)
+				logger.Warn("Previous owner not found in identity registry", "ownerId", stake.OwnerID, "txId", tx.ID)
 				return false
 			}
 
 			if ownerIdentity.PublicKey == "" {
-				log.Printf("Previous owner %s has no public key", stake.OwnerID)
+				logger.Warn("Previous owner has no public key", "ownerId", stake.OwnerID, "txId", tx.ID)
 				return false
 			}
 
 			// Get the signature for this owner
 			ownerSig, hasSig := tx.Signatures[stake.OwnerID]
 			if !hasSig || ownerSig == "" {
-				log.Printf("Missing signature from previous owner %s", stake.OwnerID)
+				logger.Warn("Missing signature from previous owner", "ownerId", stake.OwnerID, "txId", tx.ID)
 				return false
 			}
 
 			// Verify the owner's signature
 			if !VerifySignature(ownerIdentity.PublicKey, ownerSignableData, ownerSig) {
-				log.Printf("Invalid signature from previous owner %s", stake.OwnerID)
+				logger.Warn("Invalid signature from previous owner", "ownerId", stake.OwnerID, "txId", tx.ID)
 				return false
 			}
 		}

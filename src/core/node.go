@@ -8,11 +8,37 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
+
+// Package-level logger
+var logger *slog.Logger
+
+// initLogger initializes the structured logger based on the log level
+func initLogger(logLevel string) {
+	var level slog.Level
+	switch strings.ToLower(logLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: level,
+	})
+	logger = slog.New(handler)
+}
 
 // QuidnugNode is the main server structure
 type QuidnugNode struct {
@@ -40,35 +66,26 @@ type QuidnugNode struct {
 }
 
 func main() {
+	// Load configuration
+	cfg := LoadConfig()
+
+	// Initialize structured logger
+	initLogger(cfg.LogLevel)
+
 	// Initialize node
 	quidnugNode, err := NewQuidnugNode()
 	if err != nil {
-		log.Fatalf("Failed to initialize quidnug node: %v", err)
-	}
-
-	// Get port from environment or use default
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	// Get seed nodes from environment or use defaults
-	var seedNodes []string
-	seedNodesEnv := os.Getenv("SEED_NODES")
-	if seedNodesEnv != "" {
-		json.Unmarshal([]byte(seedNodesEnv), &seedNodes)
-	} else {
-		// Default seed nodes
-		seedNodes = []string{"seed1.quidnug.net:8080", "seed2.quidnug.net:8080"}
+		logger.Error("Failed to initialize quidnug node", "error", err)
+		os.Exit(1)
 	}
 
 	// Discover other nodes
-	go quidnugNode.DiscoverNodes(seedNodes)
+	go quidnugNode.DiscoverNodes(cfg.SeedNodes)
 
 	// Start block generation for managed trust domains
 	go func() {
 		for {
-			time.Sleep(60 * time.Second) // Generate block every minute
+			time.Sleep(cfg.BlockInterval)
 
 			quidnugNode.TrustDomainsMutex.RLock()
 			managedDomains := make([]string, 0, len(quidnugNode.TrustDomains))
@@ -80,19 +97,22 @@ func main() {
 			for _, domain := range managedDomains {
 				block, err := quidnugNode.GenerateBlock(domain)
 				if err != nil {
-					log.Printf("Failed to generate block for domain %s: %v", domain, err)
+					logger.Debug("Failed to generate block", "domain", domain, "error", err)
 					continue
 				}
 
 				if err := quidnugNode.AddBlock(*block); err != nil {
-					log.Printf("Failed to add generated block: %v", err)
+					logger.Error("Failed to add generated block", "domain", domain, "error", err)
 				}
 			}
 		}
 	}()
 
 	// Start HTTP server
-	log.Fatal(quidnugNode.StartServer(port))
+	if err := quidnugNode.StartServer(cfg.Port); err != nil {
+		logger.Error("Server failed", "error", err)
+		os.Exit(1)
+	}
 }
 
 // NewQuidnugNode initializes a new quidnug node
@@ -144,7 +164,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		Validators:     map[string]float64{nodeID: 1.0},
 	}
 
-	log.Printf("Initialized quidnug node with ID: %s", nodeID)
+	if logger != nil {
+		logger.Info("Initialized quidnug node", "nodeId", nodeID)
+	}
 	return node, nil
 }
 
@@ -192,7 +214,7 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
 
-	log.Printf("Added trust transaction %s to pending pool", tx.ID)
+	logger.Info("Added trust transaction to pending pool", "txId", tx.ID, "domain", tx.TrustDomain)
 	return tx.ID, nil
 }
 
@@ -242,7 +264,7 @@ func (node *QuidnugNode) AddIdentityTransaction(tx IdentityTransaction) (string,
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
 
-	log.Printf("Added identity transaction %s to pending pool", tx.ID)
+	logger.Info("Added identity transaction to pending pool", "txId", tx.ID, "quidId", tx.QuidID, "domain", tx.TrustDomain)
 	return tx.ID, nil
 }
 
@@ -288,7 +310,7 @@ func (node *QuidnugNode) AddTitleTransaction(tx TitleTransaction) (string, error
 	// Broadcast to other nodes in the same trust domain
 	go node.BroadcastTransaction(tx)
 
-	log.Printf("Added title transaction %s to pending pool", tx.ID)
+	logger.Info("Added title transaction to pending pool", "txId", tx.ID, "assetId", tx.AssetID, "domain", tx.TrustDomain)
 	return tx.ID, nil
 }
 
@@ -363,8 +385,11 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	// Update pending transactions (remove the ones included in this block)
 	node.PendingTxs = remainingTxs
 
-	log.Printf("Generated new block %d for trust domain %s with %d transactions",
-		newBlock.Index, trustDomain, len(domainTxs))
+	logger.Info("Generated new block",
+		"blockIndex", newBlock.Index,
+		"domain", trustDomain,
+		"txCount", len(domainTxs),
+		"hash", newBlock.Hash)
 
 	return &newBlock, nil
 }
@@ -393,156 +418,13 @@ func (node *QuidnugNode) AddBlock(block Block) error {
 	}
 	node.TrustDomainsMutex.Unlock()
 
-	log.Printf("Added block %d with hash %s to blockchain", block.Index, block.Hash)
+	logger.Info("Added block to blockchain",
+		"blockIndex", block.Index,
+		"hash", block.Hash,
+		"domain", block.TrustProof.TrustDomain)
 	return nil
 }
 
-// RegisterTrustDomain registers a new trust domain
-func (node *QuidnugNode) GetTrustDomainScore(domain string) float64 {
-	node.TrustDomainsMutex.RLock()
-	defer node.TrustDomainsMutex.RUnlock()
-
-	if trustDomain, exists := node.TrustDomains[domain]; exists {
-		if score, found := trustDomain.Validators[node.NodeID]; found {
-			return score
-		}
-	}
-
-	// Default score for unknown domains or validators
-	return 0.5
-}
-
-// Get trust level between two quids
-func (node *QuidnugNode) GetTrustLevel(truster, trustee string) float64 {
-	node.TrustRegistryMutex.RLock()
-	defer node.TrustRegistryMutex.RUnlock()
-	
-	// Check if truster has a trust relationship with trustee
-	if trustMap, exists := node.TrustRegistry[truster]; exists {
-		if trustLevel, found := trustMap[trustee]; found {
-			return trustLevel
-		}
-	}
-	
-	// Default trust level if no explicit relationship exists
-	return 0.0
-}
-
-// Get quid identity information
-func (node *QuidnugNode) GetQuidIdentity(quidID string) (IdentityTransaction, bool) {
-	node.IdentityRegistryMutex.RLock()
-	defer node.IdentityRegistryMutex.RUnlock()
-	
-	identity, exists := node.IdentityRegistry[quidID]
-	return identity, exists
-}
-
-// Get asset ownership information
-func (node *QuidnugNode) GetAssetOwnership(assetID string) (TitleTransaction, bool) {
-	node.TitleRegistryMutex.RLock()
-	defer node.TitleRegistryMutex.RUnlock()
-	
-	title, exists := node.TitleRegistry[assetID]
-	return title, exists
-}
-
-// Discover other nodes in the network
-func (node *QuidnugNode) DiscoverNodes(seedNodes []string) {
-	for _, seedAddress := range seedNodes {
-		// Make HTTP request to the seed node's discovery endpoint
-		resp, err := http.Get(fmt.Sprintf("http://%s/api/nodes", seedAddress))
-		if err != nil {
-			log.Printf("Failed to connect to seed node %s: %v", seedAddress, err)
-			continue
-		}
-		defer resp.Body.Close()
-
-		var nodesResponse struct {
-			Nodes []Node `json:"nodes"`
-		}
-
-		if err := json.NewDecoder(resp.Body).Decode(&nodesResponse); err != nil {
-			log.Printf("Failed to decode node list from %s: %v", seedAddress, err)
-			continue
-		}
-
-		// Add discovered nodes to our known nodes list
-		node.KnownNodesMutex.Lock()
-		for _, discoveredNode := range nodesResponse.Nodes {
-			node.KnownNodes[discoveredNode.ID] = discoveredNode
-			log.Printf("Discovered node: %s at %s", discoveredNode.ID, discoveredNode.Address)
-		}
-		node.KnownNodesMutex.Unlock()
-	}
-}
-
-// Get nodes from a specific trust domain
-func (node *QuidnugNode) GetTrustDomainNodes(domainName string) []Node {
-	var domainNodes []Node
-
-	node.TrustDomainsMutex.RLock()
-	domain, exists := node.TrustDomains[domainName]
-	node.TrustDomainsMutex.RUnlock()
-
-	if !exists {
-		return domainNodes
-	}
-
-	node.KnownNodesMutex.RLock()
-	defer node.KnownNodesMutex.RUnlock()
-
-	for _, validatorID := range domain.ValidatorNodes {
-		if knownNode, exists := node.KnownNodes[validatorID]; exists {
-			domainNodes = append(domainNodes, knownNode)
-		}
-	}
-
-	return domainNodes
-}
-
-// Broadcast a transaction to other nodes in the trust domain
-func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
-	// Extract trust domain based on transaction type
-	var domainName string
-	
-	switch t := tx.(type) {
-	case TrustTransaction:
-		domainName = t.TrustDomain
-	case IdentityTransaction:
-		domainName = t.TrustDomain
-	case TitleTransaction:
-		domainName = t.TrustDomain
-	default:
-		log.Printf("Cannot broadcast unknown transaction type")
-		return
-	}
-	
-	if domainName == "" {
-		domainName = "default"
-	}
-
-	// Get nodes in this trust domain
-	domainNodes := node.GetTrustDomainNodes(domainName)
-
-	// Broadcast to each node
-	for _, targetNode := range domainNodes {
-		if targetNode.ID == node.NodeID {
-			continue // Skip broadcasting to self
-		}
-
-		// Convert transaction to JSON
-		txJSON, err := json.Marshal(tx)
-		if err != nil {
-			log.Printf("Failed to marshal transaction: %v", err)
-			continue
-		}
-
-		// In a real implementation, this would make an HTTP POST request
-		// to the target node's transaction endpoint
-		log.Printf("Broadcasting transaction to node %s at %s",
-			targetNode.ID, targetNode.Address)
-	}
-}
 
 // Register a new trust domain
 func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
@@ -577,7 +459,7 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	// Register the domain
 	node.TrustDomains[domain.Name] = domain
 
-	log.Printf("Registered new trust domain: %s", domain.Name)
+	logger.Info("Registered new trust domain", "domain", domain.Name, "validators", len(domain.ValidatorNodes))
 	return nil
 }
 

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 )
 
@@ -13,7 +12,7 @@ func (node *QuidnugNode) DiscoverNodes(seedNodes []string) {
 		// Make HTTP request to the seed node's discovery endpoint
 		resp, err := http.Get(fmt.Sprintf("http://%s/api/nodes", seedAddress))
 		if err != nil {
-			log.Printf("Failed to connect to seed node %s: %v", seedAddress, err)
+			logger.Warn("Failed to connect to seed node", "seedAddress", seedAddress, "error", err)
 			continue
 		}
 		defer resp.Body.Close()
@@ -23,7 +22,7 @@ func (node *QuidnugNode) DiscoverNodes(seedNodes []string) {
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&nodesResponse); err != nil {
-			log.Printf("Failed to decode node list from %s: %v", seedAddress, err)
+			logger.Warn("Failed to decode node list", "seedAddress", seedAddress, "error", err)
 			continue
 		}
 
@@ -31,7 +30,7 @@ func (node *QuidnugNode) DiscoverNodes(seedNodes []string) {
 		node.KnownNodesMutex.Lock()
 		for _, discoveredNode := range nodesResponse.Nodes {
 			node.KnownNodes[discoveredNode.ID] = discoveredNode
-			log.Printf("Discovered node: %s at %s", discoveredNode.ID, discoveredNode.Address)
+			logger.Info("Discovered node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address)
 		}
 		node.KnownNodesMutex.Unlock()
 	}
@@ -74,7 +73,7 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 	case TitleTransaction:
 		domainName = t.TrustDomain
 	default:
-		log.Printf("Cannot broadcast unknown transaction type")
+		logger.Warn("Cannot broadcast unknown transaction type")
 		return
 	}
 
@@ -94,14 +93,16 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 		// Convert transaction to JSON
 		txJSON, err := json.Marshal(tx)
 		if err != nil {
-			log.Printf("Failed to marshal transaction: %v", err)
+			logger.Error("Failed to marshal transaction", "error", err)
 			continue
 		}
 
 		// In a real implementation, this would make an HTTP POST request
 		// to the target node's transaction endpoint
-		log.Printf("Broadcasting transaction to node %s at %s",
-			targetNode.ID, targetNode.Address)
+		logger.Debug("Broadcasting transaction to node",
+			"targetNodeId", targetNode.ID,
+			"targetAddress", targetNode.Address,
+			"domain", domainName)
 		_ = txJSON // Silence unused variable warning
 	}
 }
@@ -131,8 +132,12 @@ func (node *QuidnugNode) QueryOtherDomain(domainName, queryType, queryParam stri
 
 	// In a real implementation, this would make an HTTP request to the
 	// target node's query endpoint with the appropriate query parameters
-	log.Printf("Querying node %s at %s for domain %s with query type: %s, param: %s",
-		targetNode.ID, targetNode.Address, domainName, queryType, queryParam)
+	logger.Debug("Querying node for domain",
+		"targetNodeId", targetNode.ID,
+		"targetAddress", targetNode.Address,
+		"domain", domainName,
+		"queryType", queryType,
+		"queryParam", queryParam)
 
 	// Mock response for demonstration
 	switch queryType {

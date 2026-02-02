@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -38,7 +37,7 @@ func (node *QuidnugNode) StartServer(port string) error {
 	router.HandleFunc("/api/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
 
 	// Start HTTP server
-	log.Printf("Starting quidnug node server on port %s", port)
+	logger.Info("Starting quidnug node server", "port", port, "nodeId", node.NodeID)
 	return http.ListenAndServe(":"+port, router)
 }
 

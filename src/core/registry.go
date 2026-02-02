@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 )
 
 // processBlockTransactions processes transactions in a block to update registries
@@ -46,8 +45,10 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 	// Update trust level
 	node.TrustRegistry[tx.Truster][tx.Trustee] = tx.TrustLevel
 
-	log.Printf("Updated trust registry: %s trusts %s at level %.2f",
-		tx.Truster, tx.Trustee, tx.TrustLevel)
+	logger.Debug("Updated trust registry",
+		"truster", tx.Truster,
+		"trustee", tx.Trustee,
+		"trustLevel", tx.TrustLevel)
 }
 
 // updateIdentityRegistry updates the identity registry with an identity transaction
@@ -58,7 +59,7 @@ func (node *QuidnugNode) updateIdentityRegistry(tx IdentityTransaction) {
 	// Add or update identity
 	node.IdentityRegistry[tx.QuidID] = tx
 
-	log.Printf("Updated identity registry: %s (%s)", tx.QuidID, tx.Name)
+	logger.Debug("Updated identity registry", "quidId", tx.QuidID, "name", tx.Name)
 }
 
 // updateTitleRegistry updates the title registry with a title transaction
@@ -69,8 +70,7 @@ func (node *QuidnugNode) updateTitleRegistry(tx TitleTransaction) {
 	// Add or update title
 	node.TitleRegistry[tx.AssetID] = tx
 
-	log.Printf("Updated title registry: Asset %s now has %d owners",
-		tx.AssetID, len(tx.Owners))
+	logger.Debug("Updated title registry", "assetId", tx.AssetID, "ownerCount", len(tx.Owners))
 }
 
 // GetTrustLevel returns the trust level between two quids
