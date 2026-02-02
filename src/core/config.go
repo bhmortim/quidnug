@@ -2,24 +2,44 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the application configuration
 type Config struct {
-	Port               string        `json:"port"`
-	SeedNodes          []string      `json:"seedNodes"`
-	LogLevel           string        `json:"logLevel"`
-	BlockInterval      time.Duration `json:"blockInterval"`
-	RateLimitPerMinute int           `json:"rateLimitPerMinute"`
-	MaxBodySizeBytes   int64         `json:"maxBodySizeBytes"`
-	DataDir            string        `json:"dataDir"`
-	ShutdownTimeout    time.Duration `json:"shutdownTimeout"`
-	HTTPClientTimeout  time.Duration `json:"httpClientTimeout"`
-	NodeAuthSecret     string        `json:"nodeAuthSecret"`
-	RequireNodeAuth    bool          `json:"requireNodeAuth"`
+	Port               string        `json:"port" yaml:"port"`
+	SeedNodes          []string      `json:"seedNodes" yaml:"seed_nodes"`
+	LogLevel           string        `json:"logLevel" yaml:"log_level"`
+	BlockInterval      time.Duration `json:"blockInterval" yaml:"-"`
+	RateLimitPerMinute int           `json:"rateLimitPerMinute" yaml:"rate_limit_per_minute"`
+	MaxBodySizeBytes   int64         `json:"maxBodySizeBytes" yaml:"max_body_size_bytes"`
+	DataDir            string        `json:"dataDir" yaml:"data_dir"`
+	ShutdownTimeout    time.Duration `json:"shutdownTimeout" yaml:"-"`
+	HTTPClientTimeout  time.Duration `json:"httpClientTimeout" yaml:"-"`
+	NodeAuthSecret     string        `json:"nodeAuthSecret" yaml:"node_auth_secret"`
+	RequireNodeAuth    bool          `json:"requireNodeAuth" yaml:"require_node_auth"`
+}
+
+// fileConfig is used for parsing config files with string durations
+type fileConfig struct {
+	Port               string   `json:"port" yaml:"port"`
+	SeedNodes          []string `json:"seedNodes" yaml:"seed_nodes"`
+	LogLevel           string   `json:"logLevel" yaml:"log_level"`
+	BlockInterval      string   `json:"blockInterval" yaml:"block_interval"`
+	RateLimitPerMinute int      `json:"rateLimitPerMinute" yaml:"rate_limit_per_minute"`
+	MaxBodySizeBytes   int64    `json:"maxBodySizeBytes" yaml:"max_body_size_bytes"`
+	DataDir            string   `json:"dataDir" yaml:"data_dir"`
+	ShutdownTimeout    string   `json:"shutdownTimeout" yaml:"shutdown_timeout"`
+	HTTPClientTimeout  string   `json:"httpClientTimeout" yaml:"http_client_timeout"`
+	NodeAuthSecret     string   `json:"nodeAuthSecret" yaml:"node_auth_secret"`
+	RequireNodeAuth    bool     `json:"requireNodeAuth" yaml:"require_node_auth"`
 }
 
 // Default values
@@ -31,8 +51,100 @@ const (
 	DefaultHTTPClientTimeout  = 5 * time.Second
 )
 
-// LoadConfig reads configuration from environment variables with defaults
+// DefaultConfigSearchPaths defines the default locations to search for config files
+var DefaultConfigSearchPaths = []string{
+	"./config.yaml",
+	"./config.json",
+	"/etc/quidnug/config.yaml",
+}
+
+// LoadConfigFromFile loads configuration from a file (YAML or JSON)
+func LoadConfigFromFile(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var fc fileConfig
+	ext := strings.ToLower(filepath.Ext(path))
+
+	switch ext {
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &fc); err != nil {
+			return nil, fmt.Errorf("failed to parse YAML config: %w", err)
+		}
+	case ".json":
+		if err := json.Unmarshal(data, &fc); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON config: %w", err)
+		}
+	default:
+		// Try YAML first, then JSON
+		if err := yaml.Unmarshal(data, &fc); err != nil {
+			if err := json.Unmarshal(data, &fc); err != nil {
+				return nil, fmt.Errorf("failed to parse config file (tried YAML and JSON): %w", err)
+			}
+		}
+	}
+
+	return fileConfigToConfig(&fc)
+}
+
+// fileConfigToConfig converts a fileConfig to a Config, parsing duration strings
+func fileConfigToConfig(fc *fileConfig) (*Config, error) {
+	cfg := &Config{
+		Port:               fc.Port,
+		SeedNodes:          fc.SeedNodes,
+		LogLevel:           fc.LogLevel,
+		RateLimitPerMinute: fc.RateLimitPerMinute,
+		MaxBodySizeBytes:   fc.MaxBodySizeBytes,
+		DataDir:            fc.DataDir,
+		NodeAuthSecret:     fc.NodeAuthSecret,
+		RequireNodeAuth:    fc.RequireNodeAuth,
+	}
+
+	if fc.BlockInterval != "" {
+		duration, err := time.ParseDuration(fc.BlockInterval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid block_interval: %w", err)
+		}
+		cfg.BlockInterval = duration
+	}
+
+	if fc.ShutdownTimeout != "" {
+		duration, err := time.ParseDuration(fc.ShutdownTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid shutdown_timeout: %w", err)
+		}
+		cfg.ShutdownTimeout = duration
+	}
+
+	if fc.HTTPClientTimeout != "" {
+		duration, err := time.ParseDuration(fc.HTTPClientTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid http_client_timeout: %w", err)
+		}
+		cfg.HTTPClientTimeout = duration
+	}
+
+	return cfg, nil
+}
+
+// findConfigFile searches for a config file in the default paths
+func findConfigFile() string {
+	for _, path := range DefaultConfigSearchPaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// LoadConfig reads configuration with the following precedence (highest to lowest):
+// 1. Environment variables
+// 2. Config file (specified by CONFIG_FILE env var or found in default paths)
+// 3. Default values
 func LoadConfig() *Config {
+	// Start with defaults
 	cfg := &Config{
 		Port:               "8080",
 		SeedNodes:          []string{"seed1.quidnug.net:8080", "seed2.quidnug.net:8080"},
@@ -45,6 +157,52 @@ func LoadConfig() *Config {
 		HTTPClientTimeout:  DefaultHTTPClientTimeout,
 	}
 
+	// Try to load from config file
+	configPath := os.Getenv("CONFIG_FILE")
+	if configPath == "" {
+		configPath = findConfigFile()
+	}
+
+	if configPath != "" {
+		if fileCfg, err := LoadConfigFromFile(configPath); err == nil {
+			// Apply file config values (only non-zero values)
+			if fileCfg.Port != "" {
+				cfg.Port = fileCfg.Port
+			}
+			if len(fileCfg.SeedNodes) > 0 {
+				cfg.SeedNodes = fileCfg.SeedNodes
+			}
+			if fileCfg.LogLevel != "" {
+				cfg.LogLevel = fileCfg.LogLevel
+			}
+			if fileCfg.BlockInterval > 0 {
+				cfg.BlockInterval = fileCfg.BlockInterval
+			}
+			if fileCfg.RateLimitPerMinute > 0 {
+				cfg.RateLimitPerMinute = fileCfg.RateLimitPerMinute
+			}
+			if fileCfg.MaxBodySizeBytes > 0 {
+				cfg.MaxBodySizeBytes = fileCfg.MaxBodySizeBytes
+			}
+			if fileCfg.DataDir != "" {
+				cfg.DataDir = fileCfg.DataDir
+			}
+			if fileCfg.ShutdownTimeout > 0 {
+				cfg.ShutdownTimeout = fileCfg.ShutdownTimeout
+			}
+			if fileCfg.HTTPClientTimeout > 0 {
+				cfg.HTTPClientTimeout = fileCfg.HTTPClientTimeout
+			}
+			if fileCfg.NodeAuthSecret != "" {
+				cfg.NodeAuthSecret = fileCfg.NodeAuthSecret
+			}
+			if fileCfg.RequireNodeAuth {
+				cfg.RequireNodeAuth = fileCfg.RequireNodeAuth
+			}
+		}
+	}
+
+	// Environment variables override everything
 	if port := os.Getenv("PORT"); port != "" {
 		cfg.Port = port
 	}

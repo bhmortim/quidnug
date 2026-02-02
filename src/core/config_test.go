@@ -2,9 +2,25 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func clearConfigEnvVars() {
+	os.Unsetenv("CONFIG_FILE")
+	os.Unsetenv("PORT")
+	os.Unsetenv("SEED_NODES")
+	os.Unsetenv("LOG_LEVEL")
+	os.Unsetenv("BLOCK_INTERVAL")
+	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
+	os.Unsetenv("MAX_BODY_SIZE_BYTES")
+	os.Unsetenv("DATA_DIR")
+	os.Unsetenv("SHUTDOWN_TIMEOUT")
+	os.Unsetenv("HTTP_CLIENT_TIMEOUT")
+	os.Unsetenv("NODE_AUTH_SECRET")
+	os.Unsetenv("REQUIRE_NODE_AUTH")
+}
 
 func TestLoadConfigDefaults(t *testing.T) {
 	// Clear any existing env vars
@@ -256,4 +272,323 @@ func TestLoadConfigInvalidMaxBodySize(t *testing.T) {
 	}
 
 	os.Unsetenv("MAX_BODY_SIZE_BYTES")
+}
+
+func TestLoadConfigFromYAMLFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	// Create a temporary YAML config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "9090"
+seed_nodes:
+  - "node1.example.com:8080"
+  - "node2.example.com:8080"
+log_level: "debug"
+block_interval: "45s"
+rate_limit_per_minute: 150
+max_body_size_bytes: 2097152
+data_dir: "/custom/data"
+shutdown_timeout: "60s"
+http_client_timeout: "10s"
+node_auth_secret: "mysecret"
+require_node_auth: true
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	cfg, err := LoadConfigFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile failed: %v", err)
+	}
+
+	if cfg.Port != "9090" {
+		t.Errorf("Expected port '9090', got '%s'", cfg.Port)
+	}
+
+	if len(cfg.SeedNodes) != 2 || cfg.SeedNodes[0] != "node1.example.com:8080" {
+		t.Errorf("Expected seed nodes from file, got %v", cfg.SeedNodes)
+	}
+
+	if cfg.LogLevel != "debug" {
+		t.Errorf("Expected log level 'debug', got '%s'", cfg.LogLevel)
+	}
+
+	if cfg.BlockInterval != 45*time.Second {
+		t.Errorf("Expected block interval 45s, got %v", cfg.BlockInterval)
+	}
+
+	if cfg.RateLimitPerMinute != 150 {
+		t.Errorf("Expected rate limit 150, got %d", cfg.RateLimitPerMinute)
+	}
+
+	if cfg.MaxBodySizeBytes != 2097152 {
+		t.Errorf("Expected max body size 2097152, got %d", cfg.MaxBodySizeBytes)
+	}
+
+	if cfg.DataDir != "/custom/data" {
+		t.Errorf("Expected data dir '/custom/data', got '%s'", cfg.DataDir)
+	}
+
+	if cfg.ShutdownTimeout != 60*time.Second {
+		t.Errorf("Expected shutdown timeout 60s, got %v", cfg.ShutdownTimeout)
+	}
+
+	if cfg.HTTPClientTimeout != 10*time.Second {
+		t.Errorf("Expected HTTP client timeout 10s, got %v", cfg.HTTPClientTimeout)
+	}
+
+	if cfg.NodeAuthSecret != "mysecret" {
+		t.Errorf("Expected node auth secret 'mysecret', got '%s'", cfg.NodeAuthSecret)
+	}
+
+	if !cfg.RequireNodeAuth {
+		t.Error("Expected require_node_auth to be true")
+	}
+}
+
+func TestLoadConfigFromJSONFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	jsonContent := `{
+		"port": "7070",
+		"seedNodes": ["jsonnode1:8080", "jsonnode2:8080"],
+		"logLevel": "warn",
+		"blockInterval": "90s",
+		"rateLimitPerMinute": 200,
+		"maxBodySizeBytes": 524288,
+		"dataDir": "/json/data",
+		"shutdownTimeout": "15s",
+		"httpClientTimeout": "3s"
+	}`
+	if err := os.WriteFile(configPath, []byte(jsonContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	cfg, err := LoadConfigFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile failed: %v", err)
+	}
+
+	if cfg.Port != "7070" {
+		t.Errorf("Expected port '7070', got '%s'", cfg.Port)
+	}
+
+	if len(cfg.SeedNodes) != 2 || cfg.SeedNodes[0] != "jsonnode1:8080" {
+		t.Errorf("Expected seed nodes from JSON file, got %v", cfg.SeedNodes)
+	}
+
+	if cfg.LogLevel != "warn" {
+		t.Errorf("Expected log level 'warn', got '%s'", cfg.LogLevel)
+	}
+
+	if cfg.BlockInterval != 90*time.Second {
+		t.Errorf("Expected block interval 90s, got %v", cfg.BlockInterval)
+	}
+}
+
+func TestLoadConfigEnvOverridesFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	// Create a config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "9090"
+log_level: "debug"
+block_interval: "45s"
+data_dir: "/file/data"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	// Set CONFIG_FILE and some env overrides
+	os.Setenv("CONFIG_FILE", configPath)
+	os.Setenv("PORT", "3000")
+	os.Setenv("LOG_LEVEL", "error")
+
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	// Port should be from env, not file
+	if cfg.Port != "3000" {
+		t.Errorf("Expected port '3000' from env, got '%s'", cfg.Port)
+	}
+
+	// Log level should be from env, not file
+	if cfg.LogLevel != "error" {
+		t.Errorf("Expected log level 'error' from env, got '%s'", cfg.LogLevel)
+	}
+
+	// Block interval should be from file (no env override)
+	if cfg.BlockInterval != 45*time.Second {
+		t.Errorf("Expected block interval 45s from file, got %v", cfg.BlockInterval)
+	}
+
+	// Data dir should be from file (no env override)
+	if cfg.DataDir != "/file/data" {
+		t.Errorf("Expected data dir '/file/data' from file, got '%s'", cfg.DataDir)
+	}
+}
+
+func TestLoadConfigMissingFileUsesDefaults(t *testing.T) {
+	clearConfigEnvVars()
+
+	// Point to a non-existent config file
+	os.Setenv("CONFIG_FILE", "/nonexistent/config.yaml")
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	// Should fall back to defaults
+	if cfg.Port != "8080" {
+		t.Errorf("Expected default port '8080', got '%s'", cfg.Port)
+	}
+
+	if cfg.LogLevel != "info" {
+		t.Errorf("Expected default log level 'info', got '%s'", cfg.LogLevel)
+	}
+
+	if cfg.BlockInterval != 60*time.Second {
+		t.Errorf("Expected default block interval 60s, got %v", cfg.BlockInterval)
+	}
+}
+
+func TestLoadConfigMalformedYAML(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	malformedContent := `
+port: "9090"
+  invalid_indentation: true
+seed_nodes:
+- missing_quotes
+`
+	if err := os.WriteFile(configPath, []byte(malformedContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	_, err := LoadConfigFromFile(configPath)
+	if err == nil {
+		t.Error("Expected error for malformed YAML, got nil")
+	}
+}
+
+func TestLoadConfigMalformedJSON(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	malformedContent := `{"port": "9090", invalid json}`
+	if err := os.WriteFile(configPath, []byte(malformedContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	_, err := LoadConfigFromFile(configPath)
+	if err == nil {
+		t.Error("Expected error for malformed JSON, got nil")
+	}
+}
+
+func TestLoadConfigInvalidDurationInFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "9090"
+block_interval: "not-a-duration"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	_, err := LoadConfigFromFile(configPath)
+	if err == nil {
+		t.Error("Expected error for invalid duration, got nil")
+	}
+}
+
+func TestLoadConfigPartialFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	// Create a config file with only some values set
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "5000"
+log_level: "warn"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	os.Setenv("CONFIG_FILE", configPath)
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	// Values from file
+	if cfg.Port != "5000" {
+		t.Errorf("Expected port '5000' from file, got '%s'", cfg.Port)
+	}
+
+	if cfg.LogLevel != "warn" {
+		t.Errorf("Expected log level 'warn' from file, got '%s'", cfg.LogLevel)
+	}
+
+	// Default values for unset fields
+	if len(cfg.SeedNodes) != 2 {
+		t.Errorf("Expected 2 default seed nodes, got %d", len(cfg.SeedNodes))
+	}
+
+	if cfg.BlockInterval != 60*time.Second {
+		t.Errorf("Expected default block interval 60s, got %v", cfg.BlockInterval)
+	}
+
+	if cfg.RateLimitPerMinute != DefaultRateLimitPerMinute {
+		t.Errorf("Expected default rate limit %d, got %d", DefaultRateLimitPerMinute, cfg.RateLimitPerMinute)
+	}
+}
+
+func TestLoadConfigFileWithConfigFileEnv(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "custom-config.yaml")
+
+	yamlContent := `
+port: "6060"
+log_level: "debug"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	os.Setenv("CONFIG_FILE", configPath)
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	if cfg.Port != "6060" {
+		t.Errorf("Expected port '6060' from CONFIG_FILE, got '%s'", cfg.Port)
+	}
+
+	if cfg.LogLevel != "debug" {
+		t.Errorf("Expected log level 'debug' from CONFIG_FILE, got '%s'", cfg.LogLevel)
+	}
 }

@@ -1,0 +1,72 @@
+# Quidnug Node Configuration
+# 
+# This file shows all available configuration options with their default values.
+# Copy this file to config.yaml and modify as needed.
+#
+# Configuration precedence (highest to lowest):
+# 1. Environment variables
+# 2. Config file (this file)
+# 3. Default values
+#
+# To use a custom config file location, set the CONFIG_FILE environment variable:
+#   CONFIG_FILE=/path/to/config.yaml ./quidnug
+#
+# Default search paths for config file:
+#   - ./config.yaml
+#   - ./config.json
+#   - /etc/quidnug/config.yaml
+
+# HTTP server port
+# Environment variable: PORT
+port: "8080"
+
+# Seed nodes to connect to on startup
+# These are the initial nodes used to discover the network
+# Environment variable: SEED_NODES (JSON array, e.g., '["node1:8080","node2:8080"]')
+seed_nodes:
+  - "seed1.quidnug.net:8080"
+  - "seed2.quidnug.net:8080"
+
+# Logging level: debug, info, warn, error
+# Environment variable: LOG_LEVEL
+log_level: "info"
+
+# Interval between block generation attempts
+# Uses Go duration format: "30s", "1m", "1h", etc.
+# Environment variable: BLOCK_INTERVAL
+block_interval: "60s"
+
+# Maximum requests per minute per IP address
+# Environment variable: RATE_LIMIT_PER_MINUTE
+rate_limit_per_minute: 100
+
+# Maximum request body size in bytes (default: 1MB)
+# Environment variable: MAX_BODY_SIZE_BYTES
+max_body_size_bytes: 1048576
+
+# Directory for persistent data storage
+# Environment variable: DATA_DIR
+data_dir: "./data"
+
+# Graceful shutdown timeout
+# Uses Go duration format: "30s", "1m", etc.
+# Environment variable: SHUTDOWN_TIMEOUT
+shutdown_timeout: "30s"
+
+# HTTP client timeout for outgoing requests to other nodes
+# Uses Go duration format: "5s", "10s", etc.
+# Environment variable: HTTP_CLIENT_TIMEOUT
+http_client_timeout: "5s"
+
+# Node-to-node authentication settings
+# These are used for authenticated communication between nodes
+
+# Shared secret for HMAC-SHA256 node authentication
+# Should be a strong, random string shared between trusted nodes
+# Environment variable: NODE_AUTH_SECRET
+node_auth_secret: ""
+
+# Whether to require authentication for node-to-node communication
+# When true, requests from other nodes must include valid HMAC signatures
+# Environment variable: REQUIRE_NODE_AUTH (set to "true" to enable)
+require_node_auth: false

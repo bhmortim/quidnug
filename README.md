@@ -723,8 +723,43 @@ docker run -p 8080:8080 -v quidnug-data:/data quidnug-node
 
 ## Configuration Reference
 
+Quidnug can be configured through environment variables and/or a YAML/JSON configuration file. The configuration precedence is (highest to lowest):
+
+1. **Environment variables** - Always take priority
+2. **Config file** - Values from YAML or JSON file
+3. **Default values** - Built-in defaults
+
+### Config File
+
+Create a `config.yaml` file (see `config.example.yaml` for a documented template):
+
+```yaml
+port: "8080"
+seed_nodes:
+  - "seed1.quidnug.net:8080"
+  - "seed2.quidnug.net:8080"
+log_level: "info"
+block_interval: "60s"
+rate_limit_per_minute: 100
+max_body_size_bytes: 1048576
+data_dir: "./data"
+shutdown_timeout: "30s"
+http_client_timeout: "5s"
+node_auth_secret: ""
+require_node_auth: false
+```
+
+**Config file search order:**
+1. Path specified by `CONFIG_FILE` environment variable
+2. `./config.yaml`
+3. `./config.json`
+4. `/etc/quidnug/config.yaml`
+
+### Environment Variables
+
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `CONFIG_FILE` | *(auto-detected)* | Path to config file (YAML or JSON) |
 | `PORT` | `8080` | HTTP server port |
 | `SEED_NODES` | `["seed1.quidnug.net:8080","seed2.quidnug.net:8080"]` | JSON array of seed node addresses |
 | `LOG_LEVEL` | `info` | Logging level: `debug`, `info`, `warn`, `error` |
@@ -733,8 +768,11 @@ docker run -p 8080:8080 -v quidnug-data:/data quidnug-node
 | `MAX_BODY_SIZE_BYTES` | `1048576` | Max request body size (1MB) |
 | `DATA_DIR` | `./data` | Directory for persisted data |
 | `SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
+| `HTTP_CLIENT_TIMEOUT` | `5s` | Timeout for outgoing HTTP requests |
+| `NODE_AUTH_SECRET` | *(empty)* | Shared secret for node-to-node authentication |
+| `REQUIRE_NODE_AUTH` | `false` | Set to `true` to require authenticated node communication |
 
-### Environment Examples
+### Configuration Examples
 
 ```bash
 # Windows PowerShell - Standalone mode
