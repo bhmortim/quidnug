@@ -179,7 +179,7 @@ func TestMaxTrustVisitedSize(t *testing.T) {
 func padInt(n, width int) string {
 	s := ""
 	for i := 0; i < width; i++ {
-		s = string('0'+n%10) + s
+		s = string(rune('0'+n%10)) + s
 		n /= 10
 	}
 	return s
