@@ -124,6 +124,54 @@ describe('QuidnugClient', () => {
     });
   });
 
+  describe('importQuid', () => {
+    it('should import quid with valid private and public keys', async () => {
+      const result = await client.importQuid({
+        privateKey: 'validPrivateKeyBase64',
+        publicKey: 'validPublicKeyBase64'
+      });
+      assert.ok(result.id);
+      assert.strictEqual(result.privateKey, 'validPrivateKeyBase64');
+      assert.strictEqual(result.publicKey, 'validPublicKeyBase64');
+      assert.strictEqual(result.imported, true);
+    });
+
+    it('should throw error when privateKey is missing', async () => {
+      await assert.rejects(
+        () => client.importQuid({ publicKey: 'someKey' }),
+        { message: 'privateKey is required (Base64-encoded PKCS8 format)' }
+      );
+    });
+
+    it('should throw error when publicKey is missing', async () => {
+      await assert.rejects(
+        () => client.importQuid({ privateKey: 'someKey' }),
+        { message: 'publicKey is required (Base64-encoded SPKI format). Web Crypto API cannot derive public key from private key.' }
+      );
+    });
+
+    it('should throw error when no keys provided', async () => {
+      await assert.rejects(
+        () => client.importQuid({}),
+        { message: 'privateKey is required (Base64-encoded PKCS8 format)' }
+      );
+    });
+
+    it('should throw error for null input', async () => {
+      await assert.rejects(
+        () => client.importQuid(null),
+        /privateKey is required/
+      );
+    });
+
+    it('should throw error for undefined input', async () => {
+      await assert.rejects(
+        () => client.importQuid(),
+        /privateKey is required/
+      );
+    });
+  });
+
   describe('createTrustTransaction', () => {
     it('should throw error without quid', async () => {
       await assert.rejects(

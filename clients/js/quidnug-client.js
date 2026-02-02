@@ -235,16 +235,31 @@ class QuidnugClient {
   }
   
   /**
-   * Import an existing quid from private key
-   * @param {string} privateKeyBase64 - Base64 encoded private key
-   * @returns {Promise<Object>} Quid object
+   * Import an existing quid from a private/public key pair.
+   * 
+   * Both keys are required because the Web Crypto API cannot derive a public key
+   * from a private key. The old signature `importQuid(privateKeyBase64)` is no
+   * longer supported.
+   * 
+   * @param {Object} keys - Key pair object
+   * @param {string} keys.privateKey - Base64-encoded PKCS8 format private key
+   * @param {string} keys.publicKey - Base64-encoded SPKI format public key
+   * @returns {Promise<Object>} Quid object with id, publicKey, privateKey, and imported flag
+   * @throws {Error} If privateKey is missing: "privateKey is required (Base64-encoded PKCS8 format)"
+   * @throws {Error} If publicKey is missing: "publicKey is required (Base64-encoded SPKI format). Web Crypto API cannot derive public key from private key."
+   * @throws {Error} If key format is invalid: "Failed to import quid: ..."
    */
-  async importQuid(privateKeyBase64) {
+  async importQuid({ privateKey, publicKey } = {}) {
+    if (!privateKey) {
+      throw new Error('privateKey is required (Base64-encoded PKCS8 format)');
+    }
+    if (!publicKey) {
+      throw new Error('publicKey is required (Base64-encoded SPKI format). Web Crypto API cannot derive public key from private key.');
+    }
+    
     try {
-      const privateKeyBuffer = this._base64ToArrayBuffer(privateKeyBase64);
-      
-      // Import private key
-      const privateKey = await window.crypto.subtle.importKey(
+      const privateKeyBuffer = this._base64ToArrayBuffer(privateKey);
+      await window.crypto.subtle.importKey(
         'pkcs8',
         privateKeyBuffer,
         {
@@ -255,22 +270,28 @@ class QuidnugClient {
         ['sign']
       );
       
-      // Derive public key (this is a simplified approach - in a real implementation
-      // you would properly export the public key from the private key)
-      const publicKeyInfo = await window.crypto.subtle.exportKey('spki', privateKey);
-      const publicKey = this._arrayBufferToBase64(publicKeyInfo);
+      const publicKeyBuffer = this._base64ToArrayBuffer(publicKey);
+      await window.crypto.subtle.importKey(
+        'spki',
+        publicKeyBuffer,
+        {
+          name: 'ECDSA',
+          namedCurve: 'P-256'
+        },
+        true,
+        ['verify']
+      );
       
-      // Generate quid ID
       const id = await this._generateQuidId(publicKey);
       
       return {
         id,
         publicKey,
-        privateKey: privateKeyBase64,
+        privateKey,
         imported: true
       };
     } catch (error) {
-      throw new Error(`Invalid private key: ${error.message}`);
+      throw new Error(`Failed to import quid: ${error.message}`);
     }
   }
   
