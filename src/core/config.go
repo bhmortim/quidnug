@@ -18,6 +18,8 @@ type Config struct {
 	DataDir            string        `json:"dataDir"`
 	ShutdownTimeout    time.Duration `json:"shutdownTimeout"`
 	HTTPClientTimeout  time.Duration `json:"httpClientTimeout"`
+	NodeAuthSecret     string        `json:"nodeAuthSecret"`
+	RequireNodeAuth    bool          `json:"requireNodeAuth"`
 }
 
 // Default values
@@ -90,6 +92,14 @@ func LoadConfig() *Config {
 		if duration, err := time.ParseDuration(httpTimeout); err == nil {
 			cfg.HTTPClientTimeout = duration
 		}
+	}
+
+	if nodeAuthSecret := os.Getenv("NODE_AUTH_SECRET"); nodeAuthSecret != "" {
+		cfg.NodeAuthSecret = nodeAuthSecret
+	}
+
+	if requireNodeAuth := os.Getenv("REQUIRE_NODE_AUTH"); requireNodeAuth == "true" {
+		cfg.RequireNodeAuth = true
 	}
 
 	return cfg

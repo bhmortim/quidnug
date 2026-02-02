@@ -128,10 +128,12 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
 
-	// Apply middleware: request ID first, then metrics, then body size limit, then rate limiting
+	// Apply middleware chain (outermost to innermost processing order):
+	// RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> RequestID -> Router
 	rateLimiter := NewIPRateLimiter(rateLimitPerMinute)
 	handler := RequestIDMiddleware(router)
 	handler = MetricsMiddleware(handler)
+	handler = NodeAuthMiddleware(handler)
 	handler = BodySizeLimitMiddleware(maxBodySizeBytes)(handler)
 	handler = RateLimitMiddleware(rateLimiter)(handler)
 

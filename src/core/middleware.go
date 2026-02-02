@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"regexp"
@@ -217,4 +219,70 @@ func ContainsControlCharacters(s string) bool {
 		}
 	}
 	return false
+}
+
+// NodeAuthMiddleware creates middleware that verifies node-to-node request signatures.
+// It checks POST requests to transaction endpoints when RequireNodeAuth is enabled.
+func NodeAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only verify POST requests to transaction endpoints
+		if r.Method == "POST" && isNodeToNodeEndpoint(r.URL.Path) {
+			if !verifyNodeAuth(w, r) {
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isNodeToNodeEndpoint checks if a path is a node-to-node transaction endpoint
+func isNodeToNodeEndpoint(path string) bool {
+	return strings.Contains(path, "/transactions/trust") ||
+		strings.Contains(path, "/transactions/identity") ||
+		strings.Contains(path, "/transactions/title")
+}
+
+// verifyNodeAuth verifies the authentication of a node-to-node request.
+// Returns true if verification passes or auth is not required.
+func verifyNodeAuth(w http.ResponseWriter, r *http.Request) bool {
+	if !IsNodeAuthRequired() {
+		return true
+	}
+
+	secret := GetNodeAuthSecret()
+	if secret == "" {
+		logger.Error("Node authentication required but no secret configured")
+		http.Error(w, "Server authentication not configured", http.StatusInternalServerError)
+		return false
+	}
+
+	signature := r.Header.Get(NodeSignatureHeader)
+	timestampStr := r.Header.Get(NodeTimestampHeader)
+
+	if signature == "" || timestampStr == "" {
+		http.Error(w, "Missing authentication headers", http.StatusUnauthorized)
+		return false
+	}
+
+	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid timestamp", http.StatusUnauthorized)
+		return false
+	}
+
+	// Read body for verification
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return false
+	}
+	// Restore body for downstream handlers
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	if !VerifyRequest(r.Method, r.URL.Path, body, secret, timestamp, signature) {
+		http.Error(w, "Invalid signature or stale timestamp", http.StatusUnauthorized)
+		return false
+	}
+
+	return true
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -145,9 +146,28 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 
 // broadcastToNode sends a transaction to a single node (fire-and-forget)
 func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON []byte) {
-	endpoint := fmt.Sprintf("http://%s/api/transactions/%s", targetNode.Address, txType)
+	path := fmt.Sprintf("/api/transactions/%s", txType)
+	endpoint := fmt.Sprintf("http://%s%s", targetNode.Address, path)
 
-	resp, err := node.httpClient.Post(endpoint, "application/json", bytes.NewReader(txJSON))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(txJSON))
+	if err != nil {
+		logger.Warn("Failed to create broadcast request",
+			"targetNodeId", targetNode.ID,
+			"targetAddress", targetNode.Address,
+			"error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add authentication headers if secret is configured
+	if secret := GetNodeAuthSecret(); secret != "" {
+		timestamp := time.Now().Unix()
+		signature := SignRequest("POST", path, txJSON, secret, timestamp)
+		req.Header.Set(NodeSignatureHeader, signature)
+		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
+	}
+
+	resp, err := node.httpClient.Do(req)
 	if err != nil {
 		logger.Warn("Failed to broadcast transaction to node",
 			"targetNodeId", targetNode.ID,
@@ -242,11 +262,9 @@ func (node *QuidnugNode) findNodesForExactDomain(domainName string) []Node {
 
 // queryNode performs an HTTP GET query to a specific node
 func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, queryParam string) (interface{}, error) {
-	endpoint := fmt.Sprintf("http://%s/api/domains/%s/query?type=%s&param=%s",
-		targetNode.Address,
-		url.PathEscape(domainName),
-		url.QueryEscape(queryType),
-		url.QueryEscape(queryParam))
+	path := fmt.Sprintf("/api/domains/%s/query", url.PathEscape(domainName))
+	queryString := fmt.Sprintf("type=%s&param=%s", url.QueryEscape(queryType), url.QueryEscape(queryParam))
+	endpoint := fmt.Sprintf("http://%s%s?%s", targetNode.Address, path, queryString)
 
 	logger.Debug("Querying node for domain",
 		"targetNodeId", targetNode.ID,
@@ -255,7 +273,21 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 		"queryType", queryType,
 		"queryParam", queryParam)
 
-	resp, err := node.httpClient.Get(endpoint)
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for node %s: %w", targetNode.Address, err)
+	}
+
+	// Add authentication headers if secret is configured
+	if secret := GetNodeAuthSecret(); secret != "" {
+		timestamp := time.Now().Unix()
+		// For GET requests, body is empty
+		signature := SignRequest("GET", path, nil, secret, timestamp)
+		req.Header.Set(NodeSignatureHeader, signature)
+		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
+	}
+
+	resp, err := node.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node %s: %w", targetNode.Address, err)
 	}
