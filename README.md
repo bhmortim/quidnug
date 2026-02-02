@@ -1009,6 +1009,36 @@ make build
 ./bin/quidnug
 ```
 
+## Running Tests
+
+### Unit Tests
+
+Unit tests run quickly and don't require network access:
+
+```bash
+make test
+# Or: go test -v -race ./...
+```
+
+### Integration Tests
+
+Integration tests verify distributed protocol behavior across multiple nodes. They are tagged separately to allow faster unit test runs:
+
+```bash
+make test-integration
+# Or: go test -v -race -tags=integration ./...
+```
+
+Integration tests cover:
+- **Transaction propagation**: Verifies transactions broadcast to all cluster nodes
+- **Block synchronization**: Tests block generation and reception across nodes
+- **Cross-domain queries**: Tests hierarchical domain walking for trust queries
+- **Node discovery**: Verifies nodes can discover each other through seed nodes
+- **Graceful shutdown**: Ensures clean shutdown during block generation
+- **Multi-node trust computation**: Validates consistent trust computation across nodes
+
+**Note**: Integration tests start multiple HTTP servers on high ports (19000+) and may take longer to run.
+
 ## Additional Resources
 
 - **[Integration Guide](docs/integration-guide.md)**: Detailed guide for building applications

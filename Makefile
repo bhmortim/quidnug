@@ -1,4 +1,4 @@
-.PHONY: build test lint docker-build docker-run clean
+.PHONY: build test test-integration lint docker-build docker-run clean
 
 BINARY_NAME=quidnug
 DOCKER_IMAGE=quidnug:latest
@@ -9,6 +9,9 @@ build:
 
 test:
 	go test -v -race ./...
+
+test-integration:
+	go test -v -race -tags=integration ./...
 
 lint:
 	golangci-lint run ./...
