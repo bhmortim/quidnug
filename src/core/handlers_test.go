@@ -15,7 +15,8 @@ func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router.HandleFunc("/api/health", node.HealthCheckHandler).Methods("GET")
 	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
-	router.HandleFunc("/api/trust/{truster}/{trustee}", node.GetTrustHandler).Methods("GET")
+	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
+	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
 	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 	router.HandleFunc("/api/nodes", node.GetNodesHandler).Methods("GET")
@@ -163,12 +164,12 @@ func TestGetTrustHandler(t *testing.T) {
 			t.Fatalf("Failed to parse response: %v", err)
 		}
 
-		if response["truster"] != "quid_truster_001" {
-			t.Errorf("Expected truster 'quid_truster_001', got '%v'", response["truster"])
+		if response["observer"] != "quid_truster_001" {
+			t.Errorf("Expected observer 'quid_truster_001', got '%v'", response["observer"])
 		}
 
-		if response["trustee"] != "quid_trustee_001" {
-			t.Errorf("Expected trustee 'quid_trustee_001', got '%v'", response["trustee"])
+		if response["target"] != "quid_trustee_001" {
+			t.Errorf("Expected target 'quid_trustee_001', got '%v'", response["target"])
 		}
 
 		if response["domain"] != "test.domain.com" {
@@ -178,6 +179,20 @@ func TestGetTrustHandler(t *testing.T) {
 		if response["trustLevel"] != 0.85 {
 			t.Errorf("Expected trustLevel 0.85, got '%v'", response["trustLevel"])
 		}
+
+		trustPath, ok := response["trustPath"].([]interface{})
+		if !ok {
+			t.Error("Expected trustPath to be an array")
+		} else if len(trustPath) != 2 {
+			t.Errorf("Expected trustPath length 2, got %d", len(trustPath))
+		}
+
+		pathDepth, ok := response["pathDepth"].(float64)
+		if !ok {
+			t.Error("Expected pathDepth to be a number")
+		} else if int(pathDepth) != 1 {
+			t.Errorf("Expected pathDepth 1, got %v", pathDepth)
+		}
 	})
 
 	t.Run("non-existing trust relationship", func(t *testing.T) {
@@ -185,8 +200,22 @@ func TestGetTrustHandler(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
-		if w.Code != http.StatusNotFound {
-			t.Errorf("Expected status 404, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 for non-existing relationship, got '%v'", response["trustLevel"])
+		}
+
+		trustPath, ok := response["trustPath"].([]interface{})
+		if ok && len(trustPath) != 0 {
+			t.Errorf("Expected empty trustPath for non-existing relationship, got %v", trustPath)
 		}
 	})
 
@@ -204,6 +233,42 @@ func TestGetTrustHandler(t *testing.T) {
 
 		if response["domain"] != "default" {
 			t.Errorf("Expected domain 'default', got '%v'", response["domain"])
+		}
+	})
+
+	t.Run("maxDepth query parameter", func(t *testing.T) {
+		node.TrustRegistryMutex.Lock()
+		node.TrustRegistry["quid_truster_001"]["intermediate_001"] = 0.9
+		if node.TrustRegistry["intermediate_001"] == nil {
+			node.TrustRegistry["intermediate_001"] = make(map[string]float64)
+		}
+		node.TrustRegistry["intermediate_001"]["distant_target"] = 0.9
+		node.TrustRegistryMutex.Unlock()
+
+		req := httptest.NewRequest("GET", "/api/trust/quid_truster_001/distant_target?maxDepth=1", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", response["trustLevel"])
+		}
+
+		req2 := httptest.NewRequest("GET", "/api/trust/quid_truster_001/distant_target?maxDepth=3", nil)
+		w2 := httptest.NewRecorder()
+		router.ServeHTTP(w2, req2)
+
+		var response2 map[string]interface{}
+		json.Unmarshal(w2.Body.Bytes(), &response2)
+
+		if response2["trustLevel"] == 0.0 {
+			t.Error("Expected non-zero trustLevel with maxDepth=3")
 		}
 	})
 }
@@ -376,4 +441,155 @@ func TestGetDomainsHandler(t *testing.T) {
 	if _, ok := response["domains"]; !ok {
 		t.Error("Expected 'domains' key in response")
 	}
+}
+
+func TestRelationalTrustQueryHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	node.TrustRegistryMutex.Lock()
+	if node.TrustRegistry["observer_quid_01"] == nil {
+		node.TrustRegistry["observer_quid_01"] = make(map[string]float64)
+	}
+	node.TrustRegistry["observer_quid_01"]["target_quid_001"] = 0.75
+	node.TrustRegistryMutex.Unlock()
+
+	t.Run("valid query with observer and target", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"observer":"observer_quid_01","target":"target_quid_001","domain":"test.domain"}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["observer"] != "observer_quid_01" {
+			t.Errorf("Expected observer 'observer_quid_01', got '%v'", response["observer"])
+		}
+
+		if response["target"] != "target_quid_001" {
+			t.Errorf("Expected target 'target_quid_001', got '%v'", response["target"])
+		}
+
+		if response["trustLevel"] != 0.75 {
+			t.Errorf("Expected trustLevel 0.75, got '%v'", response["trustLevel"])
+		}
+
+		if response["domain"] != "test.domain" {
+			t.Errorf("Expected domain 'test.domain', got '%v'", response["domain"])
+		}
+
+		trustPath, ok := response["trustPath"].([]interface{})
+		if !ok {
+			t.Error("Expected trustPath to be an array")
+		} else if len(trustPath) != 2 {
+			t.Errorf("Expected trustPath length 2, got %d", len(trustPath))
+		}
+
+		pathDepth, ok := response["pathDepth"].(float64)
+		if !ok {
+			t.Error("Expected pathDepth to be a number")
+		} else if int(pathDepth) != 1 {
+			t.Errorf("Expected pathDepth 1, got %v", pathDepth)
+		}
+	})
+
+	t.Run("missing observer", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"target":"target_quid_001","domain":"test.domain"}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("missing target", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"observer":"observer_quid_01","domain":"test.domain"}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("query with maxDepth parameter", func(t *testing.T) {
+		node.TrustRegistryMutex.Lock()
+		if node.TrustRegistry["hop1_quid_00001"] == nil {
+			node.TrustRegistry["hop1_quid_00001"] = make(map[string]float64)
+		}
+		node.TrustRegistry["hop1_quid_00001"]["hop2_quid_00001"] = 0.8
+		if node.TrustRegistry["hop2_quid_00001"] == nil {
+			node.TrustRegistry["hop2_quid_00001"] = make(map[string]float64)
+		}
+		node.TrustRegistry["hop2_quid_00001"]["hop3_quid_00001"] = 0.8
+		node.TrustRegistryMutex.Unlock()
+
+		body := bytes.NewBufferString(`{"observer":"hop1_quid_00001","target":"hop3_quid_00001","maxDepth":1}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", response["trustLevel"])
+		}
+
+		body2 := bytes.NewBufferString(`{"observer":"hop1_quid_00001","target":"hop3_quid_00001","maxDepth":3}`)
+		req2 := httptest.NewRequest("POST", "/api/trust/query", body2)
+		req2.Header.Set("Content-Type", "application/json")
+		w2 := httptest.NewRecorder()
+		router.ServeHTTP(w2, req2)
+
+		var response2 map[string]interface{}
+		json.Unmarshal(w2.Body.Bytes(), &response2)
+
+		expected := 0.8 * 0.8
+		if response2["trustLevel"] != expected {
+			t.Errorf("Expected trustLevel %f with maxDepth=3, got '%v'", expected, response2["trustLevel"])
+		}
+	})
+
+	t.Run("query that returns no path", func(t *testing.T) {
+		body := bytes.NewBufferString(`{"observer":"isolated_quid_1","target":"isolated_quid_2","domain":"test.domain"}`)
+		req := httptest.NewRequest("POST", "/api/trust/query", body)
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+
+		if response["trustLevel"] != 0.0 {
+			t.Errorf("Expected trustLevel 0.0 for no path, got '%v'", response["trustLevel"])
+		}
+
+		pathDepth, ok := response["pathDepth"].(float64)
+		if !ok || int(pathDepth) != 0 {
+			t.Errorf("Expected pathDepth 0, got '%v'", response["pathDepth"])
+		}
+	})
 }

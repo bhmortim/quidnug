@@ -237,8 +237,8 @@ describe('QuidnugClient', () => {
   describe('getTrustLevel', () => {
     it('should throw error for missing parameters', async () => {
       await assert.rejects(
-        () => client.getTrustLevel(null, 'trustee', 'domain'),
-        { message: 'Missing required parameters: truster, trustee, domain' }
+        () => client.getTrustLevel(null, 'target', 'domain'),
+        { message: 'Missing required parameters: observer, target, domain' }
       );
     });
   });
@@ -285,6 +285,88 @@ describe('QuidnugClient', () => {
         () => client.findNodesForDomain(null),
         { message: 'Missing required parameter: domain' }
       );
+    });
+  });
+
+  describe('queryRelationalTrust', () => {
+    it('should throw error for missing observer', async () => {
+      await assert.rejects(
+        () => client.queryRelationalTrust({ target: 'target123', domain: 'test' }),
+        { message: 'Missing required parameters: observer, target' }
+      );
+    });
+
+    it('should throw error for missing target', async () => {
+      await assert.rejects(
+        () => client.queryRelationalTrust({ observer: 'observer123', domain: 'test' }),
+        { message: 'Missing required parameters: observer, target' }
+      );
+    });
+  });
+
+  describe('computeTransitiveTrust', () => {
+    it('should return full trust for same observer and target', () => {
+      const result = client.computeTransitiveTrust({}, 'quid1', 'quid1', 5);
+      assert.strictEqual(result.trustLevel, 1.0);
+      assert.deepStrictEqual(result.trustPath, ['quid1']);
+    });
+
+    it('should compute direct trust', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.8 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid2', 5);
+      assert.strictEqual(result.trustLevel, 0.8);
+      assert.deepStrictEqual(result.trustPath, ['quid1', 'quid2']);
+    });
+
+    it('should compute transitive trust with decay', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.8 },
+        'quid2': { 'quid3': 0.5 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid3', 5);
+      assert.strictEqual(result.trustLevel, 0.4);
+      assert.deepStrictEqual(result.trustPath, ['quid1', 'quid2', 'quid3']);
+    });
+
+    it('should return zero trust when no path exists', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.8 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid3', 5);
+      assert.strictEqual(result.trustLevel, 0);
+      assert.deepStrictEqual(result.trustPath, []);
+    });
+
+    it('should handle cycles without infinite loop', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.8 },
+        'quid2': { 'quid1': 0.9, 'quid3': 0.7 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid3', 5);
+      const expected = 0.8 * 0.7;
+      assert.strictEqual(result.trustLevel, expected);
+    });
+
+    it('should respect maxDepth limit', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.9 },
+        'quid2': { 'quid3': 0.9 },
+        'quid3': { 'quid4': 0.9 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid4', 2);
+      assert.strictEqual(result.trustLevel, 0);
+    });
+
+    it('should find best path when multiple paths exist', () => {
+      const graph = {
+        'quid1': { 'quid2': 0.5, 'quid3': 0.9 },
+        'quid2': { 'quid4': 0.5 },
+        'quid3': { 'quid4': 0.9 }
+      };
+      const result = client.computeTransitiveTrust(graph, 'quid1', 'quid4', 5);
+      assert.strictEqual(result.trustLevel, 0.81);
     });
   });
 });
