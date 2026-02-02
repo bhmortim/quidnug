@@ -293,13 +293,14 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		},
 	}
 
-	// Initialize default trust domain
+	// Initialize default trust domain with this node's public key
 	node.TrustDomains["default"] = TrustDomain{
-		Name:           "default",
-		ValidatorNodes: []string{nodeID},
-		TrustThreshold: 0.75,
-		BlockchainHead: genesisBlock.Hash,
-		Validators:     map[string]float64{nodeID: 1.0},
+		Name:                "default",
+		ValidatorNodes:      []string{nodeID},
+		TrustThreshold:      0.75,
+		BlockchainHead:      genesisBlock.Hash,
+		Validators:          map[string]float64{nodeID: 1.0},
+		ValidatorPublicKeys: map[string]string{nodeID: publicKeyHex},
 	}
 
 	// Set node's quid identity from its public key
@@ -838,6 +839,14 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 
 	// Add this node as a validator with full participation weight
 	domain.Validators[node.NodeID] = 1.0
+
+	// Initialize ValidatorPublicKeys map if empty
+	if domain.ValidatorPublicKeys == nil {
+		domain.ValidatorPublicKeys = make(map[string]string)
+	}
+
+	// Add this node's public key for signature verification
+	domain.ValidatorPublicKeys[node.NodeID] = node.GetPublicKeyHex()
 
 	// Register the domain
 	node.TrustDomains[domain.Name] = domain

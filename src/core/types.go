@@ -100,6 +100,9 @@ type TrustDomain struct {
 	// Validators maps validator node IDs to their participation weight (0.0-1.0).
 	// This represents voting power in consensus, not an absolute trust score.
 	Validators map[string]float64 `json:"validators"`
+	// ValidatorPublicKeys maps validator node IDs to their hex-encoded public keys.
+	// Used to cryptographically verify block signatures from domain validators.
+	ValidatorPublicKeys map[string]string `json:"validatorPublicKeys"`
 }
 
 // RelationalTrustQuery represents a query for trust between two quids

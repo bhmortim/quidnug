@@ -460,7 +460,7 @@ func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
 	}
 
 	// Trust validation (subjective - different nodes may have different views)
-	return node.ValidateTrustProofTiered(block.TrustProof)
+	return node.ValidateTrustProofTiered(block)
 }
 
 // ValidateBlock validates a block (backward compatibility wrapper).
@@ -469,9 +469,12 @@ func (node *QuidnugNode) ValidateBlock(block Block) bool {
 	return node.ValidateBlockTiered(block) == BlockTrusted
 }
 
-// ValidateTrustProofTiered validates a trust proof and returns tiered acceptance.
+// ValidateTrustProofTiered validates a block's trust proof and returns tiered acceptance.
+// Performs cryptographic signature verification against registered validator public keys.
 // Returns BlockInvalid if cryptographically invalid, otherwise returns acceptance tier based on trust.
-func (node *QuidnugNode) ValidateTrustProofTiered(proof TrustProof) BlockAcceptance {
+func (node *QuidnugNode) ValidateTrustProofTiered(block Block) BlockAcceptance {
+	proof := block.TrustProof
+
 	// Read domain data while holding the lock, then release before computing trust
 	node.TrustDomainsMutex.RLock()
 	domain, exists := node.TrustDomains[proof.TrustDomain]
@@ -495,8 +498,26 @@ func (node *QuidnugNode) ValidateTrustProofTiered(proof TrustProof) BlockAccepta
 		return BlockInvalid
 	}
 
-	// Validate signatures (in a real implementation, this would verify cryptographic signatures)
+	// Verify validator has a registered public key in the domain
+	registeredPubKey, hasRegisteredKey := domain.ValidatorPublicKeys[proof.ValidatorID]
+	if !hasRegisteredKey || registeredPubKey == "" {
+		logger.Debug("Validator public key not registered in domain",
+			"validator", proof.ValidatorID,
+			"domain", proof.TrustDomain)
+		return BlockInvalid
+	}
+
+	// Validate signatures exist
 	if len(proof.ValidatorSigs) == 0 {
+		return BlockInvalid
+	}
+
+	// Cryptographically verify signature against registered public key
+	signableData := GetBlockSignableData(block)
+	if !VerifySignature(registeredPubKey, signableData, proof.ValidatorSigs[0]) {
+		logger.Debug("Validator signature verification failed against registered public key",
+			"validator", proof.ValidatorID,
+			"domain", proof.TrustDomain)
 		return BlockInvalid
 	}
 
@@ -538,8 +559,45 @@ func (node *QuidnugNode) ValidateTrustProofTiered(proof TrustProof) BlockAccepta
 // This means validation is subjective - different nodes may accept different blocks
 // based on their own trust relationships with the validator.
 // This is a backward compatibility wrapper - returns true only for BlockTrusted.
+// NOTE: This method does not verify cryptographic signatures. Use ValidateBlockTiered
+// for full validation including signature verification.
 func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
-	return node.ValidateTrustProofTiered(proof) == BlockTrusted
+	// Read domain data
+	node.TrustDomainsMutex.RLock()
+	domain, exists := node.TrustDomains[proof.TrustDomain]
+	node.TrustDomainsMutex.RUnlock()
+
+	if !exists {
+		return false
+	}
+
+	// Verify validator is part of the domain
+	validatorFound := false
+	for _, validatorID := range domain.ValidatorNodes {
+		if validatorID == proof.ValidatorID {
+			validatorFound = true
+			break
+		}
+	}
+
+	if !validatorFound {
+		return false
+	}
+
+	// Check signatures exist (but cannot verify without block data)
+	if len(proof.ValidatorSigs) == 0 {
+		return false
+	}
+
+	// If this node IS the validator, it trusts itself fully
+	if proof.ValidatorID == node.NodeID {
+		return true
+	}
+
+	// Compute relational trust
+	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, 5)
+
+	return trustLevel >= domain.TrustThreshold
 }
 
 // areOwnershipStakesEqual is a helper function to compare ownership stakes
