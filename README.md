@@ -5,133 +5,623 @@
 [![codecov](https://codecov.io/gh/quidnug/quidnug/branch/main/graph/badge.svg)](https://codecov.io/gh/quidnug/quidnug)
 [![Go Report Card](https://goreportcard.com/badge/github.com/quidnug/quidnug)](https://goreportcard.com/report/github.com/quidnug/quidnug)
 
-Quidnug is a Trust protocol. A cryptographically secured implementation for the Quidnug network, providing a foundation for trust, identity, and ownership management through a hierarchical domain structure.
+**A decentralized protocol for relational trust, identity, and ownership—where trust is personal, not universal.**
 
 ## What is Quidnug?
 
-Quidnug is a security and encryption platform for establishing cryptographic trust relationships between entities (quids). Similar to how Bitcoin wallets serve as cryptographic identities in the cryptocurrency space, quids function as the base entities in the Quidnug system. A quid's relevance or authority in the network is determined by the trust relationships extended to it by other quids.
+Quidnug is a cryptographic protocol for establishing and computing trust relationships between entities. Unlike traditional reputation systems that assign a single "trust score" to everyone, Quidnug computes trust *from your perspective* based on your personal network of relationships.
+
+**Think about how trust works in real life:**
+
+When a close friend recommends a contractor, you trust that recommendation more than a stranger's online review. When your doctor refers you to a specialist, that carries more weight than a random name from a directory. Trust isn't universal—it flows through relationships.
+
+Quidnug brings this natural model of trust to digital systems. Every entity (person, organization, device, document) is represented as a **quid**—a cryptographic identity similar to a Bitcoin wallet. Quids establish explicit trust relationships with each other, and the system computes transitive trust through these networks on demand.
+
+```
+Traditional System:           Quidnug:
+                              
+"Bob has 4.5 stars"           "From YOUR perspective, 
+                               Bob has 0.72 trust
+                               (via your colleague Carol)"
+```
+
+This fundamental shift—from absolute scores to relational trust—makes systems more resistant to gaming, more contextual, and more aligned with how humans actually evaluate trustworthiness.
+
+## Why Relational Trust?
+
+### The Problem with Absolute Trust Scores
+
+Traditional reputation systems assign a single, universal score to each entity:
+
+| Problem | Example |
+|---------|---------|
+| **Gaming & Sybil Attacks** | Fake reviews, purchased followers, bot armies can inflate scores |
+| **Context Blindness** | A 5-star plumber rating doesn't tell you if they're good for *your* specific job |
+| **No Accountability** | Anonymous reviewers have no stake in their recommendations |
+| **Platform Lock-in** | Your reputation is owned by the platform, not you |
+| **One Size Fits All** | Everyone sees the same score regardless of their context |
+
+### The Relational Trust Solution
+
+Quidnug addresses these problems by making trust **observer-centric**:
+
+| Principle | How It Works |
+|-----------|--------------|
+| **Personal** | Trust is computed from *your* perspective through *your* network |
+| **Accountable** | Every trust relationship is signed by a real cryptographic identity |
+| **Transitive** | Trust flows through intermediaries with natural decay |
+| **Contextual** | Different trust domains for different purposes |
+| **Portable** | You own your identity and relationships, not any platform |
+
+### Real-World Parallel
+
+Consider how you'd evaluate a potential business partner:
+
+1. You don't know them directly, so you ask around
+2. Your trusted colleague Carol says "I worked with them—they're solid"
+3. You trust Carol's judgment, so you extend some trust to the partner
+4. But not *as much* as if you knew them directly—there's natural decay through intermediaries
+
+Quidnug formalizes this process cryptographically:
+
+```
+Your trust in Partner = Your trust in Carol × Carol's trust in Partner
+                      = 0.9 × 0.8 = 0.72
+```
 
 ## Core Concepts
 
 ### Quids
-- Cryptographic identities with public/private key pairs
-- Similar to Bitcoin wallets - the private key is used to sign transactions
-- Each quid has a unique ID derived from its public key
+
+A **quid** is a cryptographic identity—the fundamental entity in Quidnug:
+
+- **Public/private key pair** (ECDSA P-256) for signing and verification
+- **Unique ID** derived from the SHA-256 hash of the public key (16 hex characters)
+- **Self-sovereign**: You control your identity without any central authority
+- **Universal**: Can represent people, organizations, devices, documents, or any entity
+
+```go
+type Quid struct {
+    ID        string                 `json:"id"`        // 16-char hex from public key hash
+    PublicKey []byte                 `json:"publicKey"` // ECDSA P-256 public key
+    Created   int64                  `json:"created"`   // Unix timestamp
+    MetaData  map[string]interface{} `json:"metaData,omitempty"`
+}
+```
 
 ### Trust Relationships
-- **Relational, not absolute**: Trust is always computed from an observer's perspective to a target quid. There is no global "trust score" for any quid.
-- Explicit trust levels (0.0 to 1.0) between quids
-- Domain-specific and can have expiration dates
-- **Transitive with multiplicative decay**: Trust propagates through the network. If A trusts B at 0.8 and B trusts C at 0.7, then A's transitive trust in C is 0.8 × 0.7 = 0.56.
-- Trust is computed on-demand using graph traversal, finding the best path from observer to target
+
+Trust in Quidnug has these key characteristics:
+
+| Characteristic | Description |
+|----------------|-------------|
+| **Relational** | Always computed from an observer's perspective to a target |
+| **Explicit** | Trust levels range from 0.0 (no trust) to 1.0 (full trust) |
+| **Signed** | Every trust statement is cryptographically signed |
+| **Domain-specific** | Trust can be scoped to specific contexts |
+| **Expirable** | Trust relationships can have expiration dates |
+| **Transitive** | Trust propagates through networks with multiplicative decay |
+
+### Transitive Trust Computation
+
+When you query trust in someone you don't know directly, Quidnug finds the best path through your network:
+
+```
+Direct trust:     A → B (0.8)           = 0.8
+Two-hop trust:    A → B (0.8) → C (0.7) = 0.56
+Three-hop trust:  A → B → C → D         = 0.8 × 0.7 × 0.9 = 0.504
+```
+
+The algorithm:
+1. Uses breadth-first search from observer to target
+2. Multiplies trust levels along each path (natural decay)
+3. Returns the **maximum** trust path when multiple paths exist
+4. Respects depth limits (default: 5 hops)
 
 ### Hierarchical Trust Domains
-- Structured domains like `2025-spring.elections.williamson.counties.texas.us.gov`
-- Each domain can have its own validation rules and trust thresholds
-- Domains can inherit properties from parent domains
+
+Domains organize trust into contexts, similar to DNS:
+
+```
+elections.williamson.counties.texas.us.gov
+credentials.doctors.texas.medical-board.gov
+titles.travis-county.texas.property
+degrees.university-of-texas.edu
+certifications.aws.cloud-providers.tech
+```
+
+Each domain can have:
+- **Independent validators**: Trusted quids that validate transactions
+- **Custom trust thresholds**: Minimum trust required for various operations
+- **Inheritance**: Child domains can inherit rules from parents
 
 ### Transaction Types
 
-1. **Trust Transactions**: Establish trust relationships between quids
-   ```
-   Quid A trusts Quid B at level 0.8 for domain X
-   ```
+| Type | Purpose | Example |
+|------|---------|---------|
+| **Trust** | Establish trust between quids | "I trust Dr. Smith at 0.9 for medical advice" |
+| **Identity** | Define attributes for a quid | "This quid represents Acme Corp, located in Austin" |
+| **Title** | Establish ownership relationships | "Property X is owned 60% by Alice, 40% by Bob" |
 
-2. **Identity Transactions**: Define attributes for quids
-   ```
-   Quid A declares that Quid B has attributes {...} for domain X
-   ```
+## How It Works
 
-3. **Title Transactions**: Define ownership relationships
-   ```
-   Quid A declares that Asset C is owned by Quids D (60%) and E (40%) for domain X
-   ```
+### Scenario: Alice Wants to Hire Bob as a Contractor
 
-## Project Structure
+Alice doesn't know Bob directly, but wants to assess whether she can trust him for a home renovation project.
 
-```
-quidnug/
-├── src/core/           # Go node implementation
-│   ├── node.go         # Main entry point, QuidnugNode struct
-│   ├── types.go        # Type definitions (transactions, blocks, domains)
-│   ├── config.go       # Configuration loading from environment
-│   ├── handlers.go     # HTTP API handlers
-│   ├── validation.go   # Transaction and block validation
-│   ├── crypto.go       # ECDSA signing and verification
-│   ├── network.go      # Node discovery and broadcasting
-│   ├── registry.go     # State registry operations
-│   ├── middleware.go   # Rate limiting, request validation
-│   └── persistence.go  # Pending transaction persistence
-├── clients/js/         # JavaScript client library
-├── docs/               # Documentation
-│   ├── api-spec.yaml   # OpenAPI 3.0 specification
-│   └── integration-guide.md
-├── go.mod              # Go module definition
-├── Makefile            # Build automation
-└── Dockerfile          # Container build
+**Step 1: Alice queries her trust in Bob**
+
+```bash
+curl "http://localhost:8080/api/trust/alice_quid/bob_quid?domain=contractors.home&maxDepth=5"
 ```
 
-## Features
+**Step 2: The system traverses Alice's trust network**
 
-- **Cryptographically Secure**: All transactions are signed with quid private keys
-- **Verifiable Trust**: Trust relationships can be cryptographically verified
-- **Domain Authority**: Nodes can manage specific trust domains
-- **Transitive Trust**: Trust scores propagate through the network
-- **Hierarchical Structure**: Support for domain hierarchies like DNS
-- **Proof of Trust Consensus**: Blocks are validated by trusted quids in each domain
-- **Cross-Domain Queries**: Recursive querying across domain boundaries
+```
+Alice's Trust Network:
+                                    
+    Alice ──0.9──► Carol ──0.8──► Bob
+      │                            ▲
+      └──0.7──► Dave ──0.6──► Eve ─┘
+                              0.5
+```
 
-## Implementation Details
+**Step 3: The system finds multiple paths and selects the best one**
 
-### Quid Implementation
-```go
-type Quid struct {
-    ID            string                 `json:"id"`        
-    PublicKey     []byte                 `json:"publicKey"` 
-    Created       int64                  `json:"created"`   
-    MetaData      map[string]interface{} `json:"metaData,omitempty"`
-}
+```
+Path 1: Alice → Carol → Bob     = 0.9 × 0.8 = 0.72  ← Best path
+Path 2: Alice → Dave → Eve → Bob = 0.7 × 0.6 × 0.5 = 0.21
+```
 
-type QuidKeypair struct {
-    Quid         Quid
-    PrivateKey   []byte   // Private key used for signing
+**Step 4: Alice receives the result with full transparency**
+
+```json
+{
+  "observer": "alice_quid",
+  "target": "bob_quid",
+  "trustLevel": 0.72,
+  "trustPath": ["alice_quid", "carol_quid", "bob_quid"],
+  "pathDepth": 2,
+  "domain": "contractors.home"
 }
 ```
 
-### Trust Graph
+**Step 5: Alice can make an informed decision**
 
-Trust edges are stored in the registry, but trust *values* are computed relationally:
+Alice sees that her trust in Bob (0.72) comes through Carol, a longtime colleague she trusts highly. This context helps her understand *why* she might trust Bob—it's essentially Carol's recommendation, weighted by Alice's trust in Carol.
 
-```go
-// Trust edges are stored per truster -> trustee relationship
-// TrustRegistry maps: truster -> trustee -> trustLevel
-TrustRegistry map[string]map[string]float64
+## Use Cases & Applications
 
-// Relational trust is computed on-demand from observer to target
-type RelationalTrustResult struct {
-    Observer   string   `json:"observer"`   // Who is asking
-    Target     string   `json:"target"`     // Who is being assessed
-    TrustLevel float64  `json:"trustLevel"` // Computed transitive trust (0.0-1.0)
-    TrustPath  []string `json:"trustPath"`  // Path of quid IDs for best trust route
-    PathDepth  int      `json:"pathDepth"`  // Number of hops in the path
-    Domain     string   `json:"domain"`     // Trust domain (optional)
+Quidnug provides infrastructure for building trust-aware applications across many domains.
+
+### Identity & Authentication
+
+**Self-Sovereign Identity**
+
+Users control their own cryptographic identity without relying on central authorities like Google, Facebook, or government databases.
+
+```javascript
+// User creates their own identity
+const myQuid = await quidnugClient.generateQuid();
+// ID: "a1b2c3d4e5f6g7h8" - derived from public key, owned by user
+
+// Register identity attributes
+await quidnugClient.submitTransaction({
+  type: "IDENTITY",
+  quidId: myQuid.id,
+  name: "Alice Chen",
+  attributes: { profession: "Software Engineer", location: "Austin, TX" }
+});
+```
+
+**Passwordless Authentication**
+
+Authenticate users through cryptographic signatures instead of passwords:
+
+```javascript
+// Server sends a challenge
+const challenge = crypto.randomBytes(32).toString('hex');
+
+// User signs the challenge with their quid's private key
+const signature = await quidnugClient.signData(challenge, userQuid.privateKey);
+
+// Server verifies the signature matches the quid's public key
+const isValid = await quidnugClient.verifySignature(userQuid.id, challenge, signature);
+```
+
+**Example: Job Platform with Verified Credentials**
+
+A job platform where employers verify candidates through trusted credential issuers:
+
+```javascript
+// Employer queries trust in a candidate's university credential
+const credentialTrust = await quidnugClient.getTrustLevel(
+  employerQuid,              // Observer: the employer
+  universityQuid,            // Target: the university that issued the degree
+  "credentials.education",
+  { maxDepth: 4 }
+);
+
+if (credentialTrust.trustLevel >= 0.8) {
+  // Employer trusts this university (directly or through accreditation bodies)
+  const degree = await quidnugClient.getIdentity(candidateDegreeQuid, "credentials.education");
+  // Verify the degree was actually issued by this trusted university
 }
 ```
 
-**Key principle**: Trust is never stored as an absolute value per quid. It is always computed dynamically based on the observer's perspective through the trust graph.
+### Decentralized Reputation & Reviews
 
-### Trust Domain Structure
-```go
-type TrustDomain struct {
-    FullPath        string             `json:"fullPath"`
-    ParentDomain    string             `json:"parentDomain"`
-    SubDomains      []string           `json:"subDomains"`
-    ValidatorQuids  []string           `json:"validatorQuids"`
-    TrustThreshold  float64            `json:"trustThreshold"`
-    BlockchainHead  string             `json:"blockchainHead"`
-    Validators      map[string]float64 `json:"validators"`
-    MerkleRoot      string             `json:"merkleRoot,omitempty"`
+**Personalized Product Reviews**
+
+Instead of seeing the same 4.5-star average as everyone else, see ratings weighted by your trust network:
+
+```javascript
+// Traditional: "This product has 4.2 stars from 1,247 reviews"
+
+// Quidnug: "From YOUR network's perspective..."
+const reviewers = await getProductReviewers(productId);
+let weightedScore = 0;
+let totalWeight = 0;
+
+for (const reviewer of reviewers) {
+  const trust = await quidnugClient.getTrustLevel(
+    myQuid,           // Your perspective
+    reviewer.quidId,  // The reviewer
+    "reviews.products"
+  );
+  
+  if (trust.trustLevel > 0) {
+    weightedScore += reviewer.rating * trust.trustLevel;
+    totalWeight += trust.trustLevel;
+  }
 }
+
+const myPersonalizedRating = weightedScore / totalWeight;
+// "Based on people YOU trust, this product rates 4.7"
+```
+
+**Example: Service Provider Marketplace**
+
+A marketplace where contractor ratings come from your trusted network:
+
+```javascript
+// Find contractors for home renovation
+const contractors = await searchContractors("plumbing", "Austin, TX");
+
+// Rank by YOUR trust, not global average
+const rankedContractors = await Promise.all(contractors.map(async (contractor) => {
+  const trust = await quidnugClient.getTrustLevel(
+    homeownerQuid,
+    contractor.quidId,
+    "contractors.home-services.texas"
+  );
+  return { ...contractor, personalTrust: trust.trustLevel, trustPath: trust.trustPath };
+}));
+
+// Sort by personal trust score
+rankedContractors.sort((a, b) => b.personalTrust - a.personalTrust);
+
+// Display with trust context:
+// "Mike's Plumbing - 0.81 trust (via your neighbor Sarah)"
+// "Joe's Pipes - 0.65 trust (via your coworker Tom → his brother)"
+```
+
+### Supply Chain & Provenance
+
+**Asset Tracking with Cryptographic Proof**
+
+Track ownership history with immutable, signed records:
+
+```javascript
+// Register a new asset
+await quidnugClient.submitTransaction({
+  type: "TITLE",
+  assetId: "wine_bottle_lot_2024_001",
+  domain: "provenance.wine.napa-valley",
+  owners: [{ ownerId: vineyardQuid, percentage: 100.0 }],
+  titleType: "certificate_of_origin"
+});
+
+// Transfer through supply chain (each step is signed by current owner)
+await quidnugClient.submitTransaction({
+  type: "TITLE",
+  assetId: "wine_bottle_lot_2024_001",
+  domain: "provenance.wine.napa-valley",
+  owners: [{ ownerId: distributorQuid, percentage: 100.0 }],
+  previousOwners: [{ ownerId: vineyardQuid, percentage: 100.0 }],
+  signatures: { [vineyardQuid]: vineyardSignature }
+});
+```
+
+**Example: Luxury Goods Authentication**
+
+Verify authenticity through a chain of trusted parties:
+
+```javascript
+// Consumer wants to verify a luxury watch is authentic
+const watchProvenance = await quidnugClient.getAssetOwnership(
+  watchSerialQuid,
+  "authenticity.luxury.watches"
+);
+
+// Check if the manufacturer in the provenance is trusted
+const manufacturerTrust = await quidnugClient.getTrustLevel(
+  consumerQuid,                    // Buyer's perspective
+  watchProvenance.originalOwner,   // Claimed manufacturer
+  "authenticity.luxury.watches"
+);
+
+if (manufacturerTrust.trustLevel >= 0.9) {
+  // Trace the chain: Manufacturer → Authorized Dealer → Current Seller
+  const chainValid = await verifyOwnershipChain(watchProvenance.ownershipHistory);
+  // Each transfer was signed by the previous owner
+}
+```
+
+### Professional Credentials
+
+**License Verification Through Trust Chains**
+
+Verify professional licenses through trusted regulatory authorities:
+
+```javascript
+// Healthcare platform verifying a doctor's license
+const doctorLicense = await quidnugClient.getIdentity(
+  doctorQuid,
+  "credentials.doctors.texas.medical-board.gov"
+);
+
+// Platform checks if it trusts the issuing medical board
+const medicalBoardTrust = await quidnugClient.getTrustLevel(
+  healthcarePlatformQuid,  // Platform's perspective
+  doctorLicense.issuer,    // Texas Medical Board quid
+  "credentials.medical"
+);
+
+// Also verify the license hasn't expired
+if (medicalBoardTrust.trustLevel >= 0.95 && doctorLicense.validUntil > Date.now()) {
+  // License is valid and issued by a trusted authority
+}
+```
+
+**Example: Academic Credential Verification**
+
+Verify degrees through trusted educational institutions:
+
+```javascript
+// Employer verifies a candidate's degree
+const degree = await quidnugClient.getIdentity(
+  candidateDegreeQuid,
+  "credentials.education.degrees"
+);
+
+// Check trust path: Employer → Accreditation Body → University
+const universityTrust = await quidnugClient.getTrustLevel(
+  employerQuid,
+  degree.issuerQuid,  // University that issued the degree
+  "credentials.education.degrees"
+);
+
+console.log(`Trust in ${degree.institutionName}: ${universityTrust.trustLevel}`);
+console.log(`Trust path: ${universityTrust.trustPath.join(" → ")}`);
+// "Trust path: employer_quid → accreditation_board → university_quid"
+```
+
+### Governance & Voting
+
+**Trust-Weighted Voting**
+
+Weight votes by the voter's trust relationship to the decision context:
+
+```javascript
+// DAO proposal voting where votes are weighted by trust
+const proposal = await getProposal(proposalId);
+const votes = await getVotesForProposal(proposalId);
+
+let weightedYes = 0;
+let weightedNo = 0;
+
+for (const vote of votes) {
+  // Compute voter's trust from the DAO's perspective
+  const voterTrust = await quidnugClient.getTrustLevel(
+    daoQuid,           // DAO's perspective
+    vote.voterQuid,    // The voter
+    "governance.dao.proposals"
+  );
+  
+  if (vote.choice === "yes") {
+    weightedYes += voterTrust.trustLevel;
+  } else {
+    weightedNo += voterTrust.trustLevel;
+  }
+}
+
+const result = weightedYes > weightedNo ? "PASSED" : "FAILED";
+```
+
+**Example: Open Source Project Governance**
+
+Maintainer decisions weighted by community trust:
+
+```javascript
+// Evaluate a pull request merge decision
+const prApprovals = await getPullRequestApprovals(prId);
+
+let totalApprovalWeight = 0;
+for (const approval of prApprovals) {
+  const maintainerTrust = await quidnugClient.getTrustLevel(
+    projectQuid,           // Project's perspective
+    approval.reviewerQuid, // The approving maintainer
+    "governance.opensource.code-review"
+  );
+  totalApprovalWeight += maintainerTrust.trustLevel;
+}
+
+// Require approval weight >= 2.0 (e.g., two highly trusted maintainers or several contributors)
+if (totalApprovalWeight >= 2.0) {
+  await mergePullRequest(prId);
+}
+```
+
+### Financial & Legal
+
+**Multi-Signature Escrow**
+
+Require multiple trusted parties to release funds:
+
+```javascript
+// Create escrow requiring signatures from buyer, seller, and arbiter
+const escrowTx = await quidnugClient.submitTransaction({
+  type: "TITLE",
+  assetId: escrowFundsQuid,
+  domain: "financial.escrow",
+  owners: [{ ownerId: escrowContractQuid, percentage: 100.0 }],
+  signatures: {
+    [buyerQuid]: buyerSignature,
+    [sellerQuid]: sellerSignature,
+    [arbiterQuid]: arbiterSignature
+  },
+  attributes: {
+    releaseConditions: "2_of_3_signatures",
+    participants: [buyerQuid, sellerQuid, arbiterQuid]
+  }
+});
+```
+
+**Example: Peer-to-Peer Lending**
+
+Assess creditworthiness through trust networks:
+
+```javascript
+// Lender evaluates borrower through their trust network
+const borrowerTrust = await quidnugClient.getTrustLevel(
+  lenderQuid,
+  borrowerQuid,
+  "financial.lending.p2p"
+);
+
+// Also check trust in borrower's references
+const references = await getBorrowerReferences(borrowerQuid);
+let referenceScore = 0;
+
+for (const ref of references) {
+  const refTrust = await quidnugClient.getTrustLevel(lenderQuid, ref.quidId, "financial.lending.p2p");
+  referenceScore += refTrust.trustLevel * ref.endorsementStrength;
+}
+
+// Combine direct trust and reference trust for lending decision
+const creditScore = (borrowerTrust.trustLevel * 0.6) + (referenceScore * 0.4);
+const maxLoanAmount = creditScore * BASE_LOAN_LIMIT;
+```
+
+## Quick Start
+
+### 1. Start a Node
+
+```bash
+# Build and run
+go build -o quidnug-node ./src/core
+SEED_NODES='[]' LOG_LEVEL=debug ./quidnug-node
+
+# Or use Docker
+docker run -p 8080:8080 quidnug-node
+```
+
+### 2. Create Your Identity
+
+```bash
+# Generate a new quid (your cryptographic identity)
+curl -X POST http://localhost:8080/api/quids -H "Content-Type: application/json" -d '{
+  "name": "Alice",
+  "metadata": {"type": "individual", "location": "Austin, TX"}
+}'
+
+# Response:
+# {
+#   "quid": {
+#     "id": "a1b2c3d4e5f6g7h8",
+#     "publicKey": "BHx2F8...",
+#     "created": 1699900000
+#   },
+#   "privateKey": "MHQCAQEEIGx2..."  <-- Store this securely!
+# }
+```
+
+### 3. Establish Trust
+
+```bash
+# Trust someone you know directly
+curl -X POST http://localhost:8080/api/transactions/trust -H "Content-Type: application/json" -d '{
+  "truster": "a1b2c3d4e5f6g7h8",
+  "trustee": "b2c3d4e5f6g7h8i9",
+  "trustDomain": "professional.network",
+  "trustLevel": 0.9,
+  "description": "Worked together for 3 years at Acme Corp",
+  "signature": "MEUCIQDx2...",
+  "publicKey": "BHx2F8..."
+}'
+
+# Response:
+# {
+#   "txId": "tx_abc123...",
+#   "status": "accepted",
+#   "timestamp": 1699900100
+# }
+```
+
+### 4. Query Relational Trust
+
+```bash
+# Find your trust in someone you don't know directly
+curl "http://localhost:8080/api/trust/a1b2c3d4e5f6g7h8/c3d4e5f6g7h8i9j0?domain=professional.network&maxDepth=5"
+
+# Response:
+# {
+#   "observer": "a1b2c3d4e5f6g7h8",
+#   "target": "c3d4e5f6g7h8i9j0",
+#   "trustLevel": 0.72,
+#   "trustPath": ["a1b2c3d4e5f6g7h8", "b2c3d4e5f6g7h8i9", "c3d4e5f6g7h8i9j0"],
+#   "pathDepth": 2,
+#   "domain": "professional.network"
+# }
+```
+
+### 5. Define Identity Attributes
+
+```bash
+curl -X POST http://localhost:8080/api/transactions/identity -H "Content-Type: application/json" -d '{
+  "quidId": "org_quid_id",
+  "trustDomain": "business.example.com",
+  "name": "Acme Corporation",
+  "description": "Leading provider of anvils and rocket-powered products",
+  "attributes": {
+    "type": "organization",
+    "industry": "manufacturing",
+    "founded": 1920,
+    "headquarters": "Austin, TX"
+  },
+  "creator": "a1b2c3d4e5f6g7h8",
+  "signature": "MEUCIQDy3...",
+  "publicKey": "BHx2F8..."
+}'
+```
+
+### 6. Declare Asset Ownership
+
+```bash
+curl -X POST http://localhost:8080/api/transactions/title -H "Content-Type: application/json" -d '{
+  "assetId": "property_123_main_st",
+  "trustDomain": "titles.travis-county.texas.property",
+  "owners": [
+    {"ownerId": "alice_quid", "percentage": 60.0},
+    {"ownerId": "bob_quid", "percentage": 40.0}
+  ],
+  "titleType": "deed",
+  "signatures": {
+    "alice_quid": "MEUCIQDa1...",
+    "bob_quid": "MEUCIQDb2..."
+  }
+}'
 ```
 
 ## Getting Started
@@ -147,23 +637,36 @@ cd quidnug
 go mod tidy
 
 # Build the node
-go build -o quidnug-node ./src/core
-
-# Or use make
 make build  # Creates bin/quidnug
+
+# Or build directly
+go build -o quidnug-node ./src/core
 ```
 
 ### Running a Node
 
 ```bash
-# Run with default settings
+# Run with default settings (connects to seed nodes)
 ./quidnug-node
 
-# Run with custom port
-PORT=9000 ./quidnug-node
+# Run in standalone mode (local development)
+SEED_NODES='[]' LOG_LEVEL=debug ./quidnug-node
 
-# Run with a specific domain
-DOMAIN="elections.williamson.counties.texas.us.gov" ./quidnug-node
+# Run with custom port and domain
+PORT=9000 DOMAIN="myapp.example.com" ./quidnug-node
+```
+
+### Docker Support
+
+```bash
+# Build Docker image
+docker build -t quidnug-node .
+
+# Run container
+docker run -p 8080:8080 -e SEED_NODES='[]' quidnug-node
+
+# Run with persistent data
+docker run -p 8080:8080 -v quidnug-data:/data quidnug-node
 ```
 
 ## Configuration Reference
@@ -179,119 +682,253 @@ DOMAIN="elections.williamson.counties.texas.us.gov" ./quidnug-node
 | `DATA_DIR` | `./data` | Directory for persisted data |
 | `SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
 
-### Standalone Mode
-
-For local development without external seed nodes:
+### Environment Examples
 
 ```bash
-# Windows PowerShell
+# Windows PowerShell - Standalone mode
 $env:SEED_NODES='[]'
 $env:LOG_LEVEL='debug'
-.\quidnug-node.exe
+.\bin\quidnug.exe
 
-# Linux/macOS
-SEED_NODES='[]' LOG_LEVEL=debug ./quidnug-node
-```
+# Linux/macOS - Standalone mode
+SEED_NODES='[]' LOG_LEVEL=debug ./bin/quidnug
 
-### Docker Support
-
-```bash
-# Build Docker image
-docker build -t quidnug-node .
-
-# Run Docker container
-docker run -p 8080:8080 quidnug-node
+# Production with custom settings
+PORT=443 \
+SEED_NODES='["node1.example.com:8080","node2.example.com:8080"]' \
+LOG_LEVEL=info \
+DATA_DIR=/var/lib/quidnug \
+./bin/quidnug
 ```
 
 ## API Endpoints
 
 ### Transaction Endpoints
-- `POST /api/transactions/trust` - Submit a trust transaction
-- `POST /api/transactions/identity` - Submit an identity transaction
-- `POST /api/transactions/title` - Submit a title transaction
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/transactions/trust` | Submit a trust transaction |
+| `POST` | `/api/transactions/identity` | Submit an identity transaction |
+| `POST` | `/api/transactions/title` | Submit a title transaction |
 
 ### Query Endpoints
-- `GET /api/trust/{observer}/{target}?domain=X&maxDepth=Y` - Get relational trust from observer to target
-- `POST /api/trust/query` - Query relational trust with full options
-- `GET /api/identity/{quidId}?domain=X` - Get quid identity
-- `GET /api/title/{assetId}?domain=X` - Get asset ownership
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/trust/{observer}/{target}` | Get relational trust from observer to target |
+| `POST` | `/api/trust/query` | Query relational trust with full options |
+| `GET` | `/api/identity/{quidId}` | Get quid identity attributes |
+| `GET` | `/api/title/{assetId}` | Get asset ownership information |
 
 ### Domain Endpoints
-- `GET /api/domains` - List managed domains
-- `POST /api/domains` - Register a new domain
-- `GET /api/domains/{domain}/query` - Query a specific domain
 
-## Example Usage
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/domains` | List domains managed by this node |
+| `POST` | `/api/domains` | Register a new domain |
+| `GET` | `/api/domains/{domain}/query` | Query a specific domain |
 
-### Establishing Trust
-```bash
-curl -X POST http://localhost:8080/api/transactions/trust -d '{
-  "trustee": "quid_b_id",
-  "domain": "example.com",
-  "trustLevel": 0.8
-}'
-```
+### System Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Node health check |
+| `GET` | `/api/status` | Node status and statistics |
+
+## Example API Responses
 
 ### Querying Relational Trust
+
 ```bash
-# Get trust from your perspective (observer) to a target quid
-curl "http://localhost:8080/api/trust/your_quid_id/target_quid_id?domain=example.com&maxDepth=5"
-
-# Response includes the computed trust and the path taken:
-# {
-#   "observer": "your_quid_id",
-#   "target": "target_quid_id",
-#   "trustLevel": 0.56,
-#   "trustPath": ["your_quid_id", "intermediate_quid", "target_quid_id"],
-#   "pathDepth": 2,
-#   "domain": "example.com"
-# }
-
-# Alternative: POST query with full options
-curl -X POST http://localhost:8080/api/trust/query -d '{
-  "observer": "your_quid_id",
-  "target": "target_quid_id",
-  "domain": "example.com",
-  "maxDepth": 5
-}'
+curl "http://localhost:8080/api/trust/alice123/charlie789?domain=contractors.example.com&maxDepth=4"
 ```
 
-### Defining an Identity
+**Response:**
+```json
+{
+  "observer": "alice123",
+  "target": "charlie789",
+  "trustLevel": 0.72,
+  "trustPath": ["alice123", "bob456", "charlie789"],
+  "pathDepth": 2,
+  "domain": "contractors.example.com"
+}
+```
+
+### Getting Identity
+
 ```bash
-curl -X POST http://localhost:8080/api/transactions/identity -d '{
-  "subjectQuid": "quid_id",
-  "domain": "example.com",
-  "name": "Example Entity",
+curl "http://localhost:8080/api/identity/org_abc123?domain=business.example.com"
+```
+
+**Response:**
+```json
+{
+  "quidId": "org_abc123",
+  "name": "Acme Corporation",
+  "description": "Leading provider of innovative solutions",
   "attributes": {
     "type": "organization",
-    "location": "Austin, TX"
-  }
-}'
+    "industry": "technology",
+    "employees": 500,
+    "headquarters": "Austin, TX"
+  },
+  "creator": "founder_quid",
+  "created": 1699900000,
+  "lastUpdated": 1699950000
+}
 ```
 
-### Declaring Ownership
+### Getting Asset Ownership
+
 ```bash
-curl -X POST http://localhost:8080/api/transactions/title -d '{
-  "assetQuid": "asset_id",
-  "domain": "example.com",
-  "ownershipMap": [
-    {"ownerId": "owner1_id", "percentage": 60.0},
-    {"ownerId": "owner2_id", "percentage": 40.0}
-  ],
-  "titleType": "deed"
-}'
+curl "http://localhost:8080/api/title/property_123?domain=titles.travis-county.texas.property"
 ```
 
-## Building Applications on Quidnug
+**Response:**
+```json
+{
+  "assetId": "property_123",
+  "owners": [
+    {"ownerId": "alice_quid", "percentage": 60.0, "stakeType": "fee_simple"},
+    {"ownerId": "bob_quid", "percentage": 40.0, "stakeType": "fee_simple"}
+  ],
+  "titleType": "deed",
+  "created": 1699900000,
+  "lastTransfer": 1699950000,
+  "domain": "titles.travis-county.texas.property"
+}
+```
 
-The Quidnug platform serves as a foundation for various trust-based applications:
+## Comparison with Other Systems
 
-- **Identity Verification Systems**: Establish verifiable digital identities
-- **Decentralized Authorization**: Permission systems based on trust levels
-- **Supply Chain Tracking**: Verify asset provenance and ownership
-- **Credential Issuance**: Issue and verify credentials based on trust
-- **Governance Systems**: Create voting and decision-making structures
-- **Trust-Based Access Control**: Control resource access based on trust relationships
+| Feature | Quidnug | Traditional Reputation | Blockchain Identity |
+|---------|---------|------------------------|---------------------|
+| **Trust Model** | Relational (observer-specific) | Absolute (global score) | Absolute (attestations) |
+| **Gaming Resistance** | High (can't fake relationships) | Low (Sybil attacks, fake reviews) | Medium (attestation spam) |
+| **Context-Aware** | Yes (domain-specific trust) | No (same score everywhere) | Sometimes (depends on implementation) |
+| **Privacy** | You control your data | Platform controls your data | Public by default |
+| **Decentralized** | Yes (no central authority) | No (platform-controlled) | Yes |
+| **Transitive Trust** | Yes (with natural decay) | No | Rarely |
+| **Trust Explanation** | Yes (shows trust path) | No (opaque algorithm) | Sometimes |
+| **Portability** | Full (cryptographic ownership) | None (locked to platform) | Partial (chain-specific) |
+
+## Trust Domain Examples
+
+Domains organize trust into hierarchical contexts. Here are examples across industries:
+
+### Government
+```
+elections.williamson.counties.texas.us.gov
+permits.building.austin.cities.texas.us.gov
+licenses.drivers.texas.dmv.gov
+```
+
+### Healthcare
+```
+credentials.doctors.texas.medical-board.gov
+credentials.nurses.texas.nursing-board.gov
+prescriptions.controlled-substances.dea.gov
+```
+
+### Real Estate
+```
+titles.travis-county.texas.property
+deeds.residential.travis-county.texas.property
+liens.commercial.travis-county.texas.property
+```
+
+### Education
+```
+degrees.undergraduate.university-of-texas.edu
+transcripts.graduate.stanford.edu
+certifications.continuing-education.coursera.edu
+```
+
+### Professional & Technology
+```
+certifications.aws.cloud-providers.tech
+certifications.kubernetes.cncf.io
+licenses.cpa.texas.accountancy-board.gov
+```
+
+### Finance
+```
+accounts.checking.chase.banks.us
+loans.mortgage.wells-fargo.banks.us
+insurance.auto.state-farm.insurance.us
+```
+
+## Project Structure
+
+```
+quidnug/
+├── src/core/              # Go node implementation
+│   ├── node.go            # Main entry point, QuidnugNode struct
+│   ├── types.go           # Type definitions (transactions, blocks, domains)
+│   ├── config.go          # Configuration loading from environment
+│   ├── handlers.go        # HTTP API handlers
+│   ├── validation.go      # Transaction and block validation
+│   ├── crypto.go          # ECDSA signing and verification
+│   ├── network.go         # Node discovery and broadcasting
+│   ├── registry.go        # State registry and trust computation
+│   ├── middleware.go      # Rate limiting, request validation
+│   └── persistence.go     # Transaction persistence
+├── clients/js/            # JavaScript client library
+│   ├── quidnug-client.js  # Client implementation
+│   └── quidnug-client.test.js
+├── docs/                  # Documentation
+│   ├── api-spec.yaml      # OpenAPI 3.0 specification
+│   ├── integration-guide.md
+│   └── architecture.md
+├── go.mod                 # Go module definition
+├── Makefile               # Build automation
+├── Dockerfile             # Container build
+└── README.md
+```
+
+## Building from Source
+
+```bash
+# Prerequisites: Go 1.21+
+
+# Clone and enter directory
+git clone https://github.com/quidnug/quidnug.git
+cd quidnug
+
+# Download dependencies
+go mod tidy
+
+# Run tests
+make test
+# Or: go test -race ./...
+
+# Build binary
+make build
+# Or: go build -o bin/quidnug ./src/core
+
+# Run
+./bin/quidnug
+```
+
+## Additional Resources
+
+- **[Integration Guide](docs/integration-guide.md)**: Detailed guide for building applications
+- **[API Specification](docs/api-spec.yaml)**: OpenAPI 3.0 specification
+- **[Architecture](docs/architecture.md)**: System design and internals
+- **[JavaScript Client](clients/js/)**: Browser and Node.js client library
+
+## Contributing
+
+Contributions are welcome! Please see our contributing guidelines and code of conduct.
+
+```bash
+# Run tests before submitting
+make test
+
+# Run linter
+make lint
+```
 
 ## License
 
