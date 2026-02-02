@@ -82,6 +82,7 @@ type QuidnugNode struct {
 	TentativeBlocksMutex sync.RWMutex
 
 	// Dual-layer trust registry
+	VerifiedTrustEdges      map[string]map[string]TrustEdge
 	UnverifiedTrustRegistry map[string]map[string]TrustEdge
 	UnverifiedRegistryMutex sync.RWMutex
 
@@ -276,6 +277,7 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		IdentityRegistry:         make(map[string]IdentityTransaction),
 		TitleRegistry:            make(map[string]TitleTransaction),
 		TentativeBlocks:          make(map[string][]Block),
+		VerifiedTrustEdges:       make(map[string]map[string]TrustEdge),
 		UnverifiedTrustRegistry:  make(map[string]map[string]TrustEdge),
 		DistrustThreshold:        0.0,
 		TransactionTrustThreshold: 0.0,

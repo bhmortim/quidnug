@@ -207,3 +207,181 @@ func (node *QuidnugNode) GetAssetOwnership(assetID string) (TitleTransaction, bo
 	title, exists := node.TitleRegistry[assetID]
 	return title, exists
 }
+
+// AddVerifiedTrustEdge adds an edge to the verified registry (from trusted validator)
+func (node *QuidnugNode) AddVerifiedTrustEdge(edge TrustEdge) {
+	node.TrustRegistryMutex.Lock()
+	defer node.TrustRegistryMutex.Unlock()
+
+	// Update simple TrustRegistry for backward compatibility
+	if _, exists := node.TrustRegistry[edge.Truster]; !exists {
+		node.TrustRegistry[edge.Truster] = make(map[string]float64)
+	}
+	node.TrustRegistry[edge.Truster][edge.Trustee] = edge.TrustLevel
+
+	// Store full TrustEdge with verified flag
+	if _, exists := node.VerifiedTrustEdges[edge.Truster]; !exists {
+		node.VerifiedTrustEdges[edge.Truster] = make(map[string]TrustEdge)
+	}
+	edge.Verified = true
+	node.VerifiedTrustEdges[edge.Truster][edge.Trustee] = edge
+
+	logger.Debug("Added verified trust edge",
+		"truster", edge.Truster,
+		"trustee", edge.Trustee,
+		"trustLevel", edge.TrustLevel,
+		"sourceBlock", edge.SourceBlock)
+}
+
+// AddUnverifiedTrustEdge adds an edge to the unverified registry (from any valid block)
+func (node *QuidnugNode) AddUnverifiedTrustEdge(edge TrustEdge) {
+	node.UnverifiedRegistryMutex.Lock()
+	defer node.UnverifiedRegistryMutex.Unlock()
+
+	if _, exists := node.UnverifiedTrustRegistry[edge.Truster]; !exists {
+		node.UnverifiedTrustRegistry[edge.Truster] = make(map[string]TrustEdge)
+	}
+	edge.Verified = false
+	node.UnverifiedTrustRegistry[edge.Truster][edge.Trustee] = edge
+
+	logger.Debug("Added unverified trust edge",
+		"truster", edge.Truster,
+		"trustee", edge.Trustee,
+		"trustLevel", edge.TrustLevel,
+		"validatorQuid", edge.ValidatorQuid)
+}
+
+// PromoteTrustEdge moves an edge from unverified to verified (when validator becomes trusted)
+func (node *QuidnugNode) PromoteTrustEdge(truster, trustee string) {
+	// Extract edge from unverified registry
+	node.UnverifiedRegistryMutex.Lock()
+	var edge TrustEdge
+	var found bool
+	if trusterEdges, exists := node.UnverifiedTrustRegistry[truster]; exists {
+		if e, ok := trusterEdges[trustee]; ok {
+			edge = e
+			found = true
+			delete(trusterEdges, trustee)
+			if len(trusterEdges) == 0 {
+				delete(node.UnverifiedTrustRegistry, truster)
+			}
+		}
+	}
+	node.UnverifiedRegistryMutex.Unlock()
+
+	if !found {
+		return
+	}
+
+	// Add to verified registry
+	node.AddVerifiedTrustEdge(edge)
+
+	logger.Debug("Promoted trust edge to verified",
+		"truster", truster,
+		"trustee", trustee)
+}
+
+// DemoteTrustEdge moves an edge from verified to unverified (when validator becomes distrusted)
+func (node *QuidnugNode) DemoteTrustEdge(truster, trustee string) {
+	// Extract edge from verified registry
+	node.TrustRegistryMutex.Lock()
+	var edge TrustEdge
+	var found bool
+	if trusterEdges, exists := node.VerifiedTrustEdges[truster]; exists {
+		if e, ok := trusterEdges[trustee]; ok {
+			edge = e
+			found = true
+			delete(trusterEdges, trustee)
+			if len(trusterEdges) == 0 {
+				delete(node.VerifiedTrustEdges, truster)
+			}
+		}
+	}
+	// Also remove from simple TrustRegistry
+	if trusterMap, exists := node.TrustRegistry[truster]; exists {
+		delete(trusterMap, trustee)
+		if len(trusterMap) == 0 {
+			delete(node.TrustRegistry, truster)
+		}
+	}
+	node.TrustRegistryMutex.Unlock()
+
+	if !found {
+		return
+	}
+
+	// Add to unverified registry
+	node.AddUnverifiedTrustEdge(edge)
+
+	logger.Debug("Demoted trust edge to unverified",
+		"truster", truster,
+		"trustee", trustee)
+}
+
+// GetTrustEdges returns trust edges for a quid, optionally including unverified
+func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) map[string]TrustEdge {
+	result := make(map[string]TrustEdge)
+
+	// Get verified edges first (they take precedence)
+	node.TrustRegistryMutex.RLock()
+	if trusterEdges, exists := node.VerifiedTrustEdges[quidID]; exists {
+		for trustee, edge := range trusterEdges {
+			result[trustee] = edge
+		}
+	}
+	node.TrustRegistryMutex.RUnlock()
+
+	// Add unverified edges if requested (verified takes precedence for same truster/trustee)
+	if includeUnverified {
+		node.UnverifiedRegistryMutex.RLock()
+		if trusterEdges, exists := node.UnverifiedTrustRegistry[quidID]; exists {
+			for trustee, edge := range trusterEdges {
+				if _, hasVerified := result[trustee]; !hasVerified {
+					result[trustee] = edge
+				}
+			}
+		}
+		node.UnverifiedRegistryMutex.RUnlock()
+	}
+
+	return result
+}
+
+// ExtractTrustEdgesFromBlock extracts all trust transaction edges from a block
+func (node *QuidnugNode) ExtractTrustEdgesFromBlock(block Block, verified bool) []TrustEdge {
+	var edges []TrustEdge
+
+	for _, txInterface := range block.Transactions {
+		txJson, err := json.Marshal(txInterface)
+		if err != nil {
+			continue
+		}
+
+		var baseTx BaseTransaction
+		if err := json.Unmarshal(txJson, &baseTx); err != nil {
+			continue
+		}
+
+		if baseTx.Type != TxTypeTrust {
+			continue
+		}
+
+		var tx TrustTransaction
+		if err := json.Unmarshal(txJson, &tx); err != nil {
+			continue
+		}
+
+		edge := TrustEdge{
+			Truster:       tx.Truster,
+			Trustee:       tx.Trustee,
+			TrustLevel:    tx.TrustLevel,
+			SourceBlock:   block.Hash,
+			ValidatorQuid: block.TrustProof.ValidatorID,
+			Verified:      verified,
+			Timestamp:     tx.Timestamp,
+		}
+		edges = append(edges, edge)
+	}
+
+	return edges
+}
