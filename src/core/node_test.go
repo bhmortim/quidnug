@@ -9,6 +9,7 @@ import (
 
 // newTestNode creates a QuidnugNode with pre-populated test data for testing
 func newTestNode() *QuidnugNode {
+	initLogger("info")
 	node, _ := NewQuidnugNode()
 
 	// Get the node's public key for test identities
