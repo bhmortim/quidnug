@@ -305,9 +305,10 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 			}
 		}
 
-		// Get signable data for owners (transaction with all signatures cleared)
+		// Get signable data for owners (transaction with all signatures and issuer pubkey cleared)
 		txCopyForOwners := tx
 		txCopyForOwners.Signature = ""
+		txCopyForOwners.PublicKey = ""
 		txCopyForOwners.Signatures = nil
 		ownerSignableData, err := json.Marshal(txCopyForOwners)
 		if err != nil {

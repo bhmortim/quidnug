@@ -152,11 +152,15 @@ func signTitleTx(node *QuidnugNode, tx TitleTransaction) TitleTransaction {
 
 // signTitleTxWithOwners signs a title transaction and adds owner signatures for transfers
 func signTitleTxWithOwners(node *QuidnugNode, tx TitleTransaction) TitleTransaction {
-	// First, create owner signatures (before main signature is set)
+	// Create owner signatures FIRST (before any main signature)
 	if len(tx.PreviousOwners) > 0 {
 		tx.Signatures = make(map[string]string)
+
+		// Create signable data for owners - must match validation expectations
+		// Validation clears Signature, PublicKey, and Signatures
 		txCopyForOwners := tx
 		txCopyForOwners.Signature = ""
+		txCopyForOwners.PublicKey = ""
 		txCopyForOwners.Signatures = nil
 		ownerSignableData, _ := json.Marshal(txCopyForOwners)
 
@@ -166,7 +170,7 @@ func signTitleTxWithOwners(node *QuidnugNode, tx TitleTransaction) TitleTransact
 		}
 	}
 
-	// Then sign the main transaction (includes owner signatures)
+	// Then sign the main transaction
 	tx.PublicKey = node.GetPublicKeyHex()
 	tx.Signature = ""
 	signableData, _ := json.Marshal(tx)
