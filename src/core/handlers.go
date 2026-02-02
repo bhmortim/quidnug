@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,7 +50,8 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	// API spec endpoints
 	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
-	router.HandleFunc("/api/trust/{truster}/{trustee}", node.GetTrustHandler).Methods("GET")
+	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
+	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
 	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
 	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
 
@@ -251,18 +253,29 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			result = identity
 
 		case "trust":
-			// Parse truster and trustee from param (format: "truster:trustee")
+			// Parse observer and target from param (format: "observer:target")
 			parts := strings.Split(queryParam, ":")
 			if len(parts) != 2 {
-				http.Error(w, "Invalid trust query format", http.StatusBadRequest)
+				http.Error(w, "Invalid trust query format. Use observer:target", http.StatusBadRequest)
 				return
 			}
-			trustLevel := node.GetTrustLevel(parts[0], parts[1])
-			result = map[string]interface{}{
-				"truster":     parts[0],
-				"trustee":     parts[1],
-				"trust_level": trustLevel,
-				"domain":      domainName,
+			observer := parts[0]
+			target := parts[1]
+
+			trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, 5)
+
+			pathDepth := 0
+			if len(trustPath) > 1 {
+				pathDepth = len(trustPath) - 1
+			}
+
+			result = RelationalTrustResult{
+				Observer:   observer,
+				Target:     target,
+				TrustLevel: trustLevel,
+				TrustPath:  trustPath,
+				PathDepth:  pathDepth,
+				Domain:     domainName,
 			}
 
 		case "title":
@@ -293,11 +306,45 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 
 // QueryTrustRegistryHandler handles trust registry queries
 func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *http.Request) {
+	// Support both old (truster/trustee) and new (observer/target) parameter names
+	observer := r.URL.Query().Get("observer")
+	target := r.URL.Query().Get("target")
 	truster := r.URL.Query().Get("truster")
 	trustee := r.URL.Query().Get("trustee")
+	maxDepthStr := r.URL.Query().Get("maxDepth")
 
+	w.Header().Set("Content-Type", "application/json")
+
+	// If observer/target provided, compute relational trust
+	if observer != "" && target != "" {
+		maxDepth := 5
+		if maxDepthStr != "" {
+			if parsed, err := strconv.Atoi(maxDepthStr); err == nil && parsed > 0 {
+				maxDepth = parsed
+			}
+		}
+
+		trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
+
+		pathDepth := 0
+		if len(trustPath) > 1 {
+			pathDepth = len(trustPath) - 1
+		}
+
+		result := RelationalTrustResult{
+			Observer:   observer,
+			Target:     target,
+			TrustLevel: trustLevel,
+			TrustPath:  trustPath,
+			PathDepth:  pathDepth,
+		}
+
+		json.NewEncoder(w).Encode(result)
+		return
+	}
+
+	// Fall back to existing behavior for truster/trustee (direct trust)
 	if truster != "" && trustee != "" {
-		// Query specific trust relationship
 		trustLevel := node.GetTrustLevel(truster, trustee)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"truster":     truster,
@@ -305,7 +352,6 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 			"trust_level": trustLevel,
 		})
 	} else if truster != "" {
-		// Query all relationships for a truster
 		node.TrustRegistryMutex.RLock()
 		relationships := node.TrustRegistry[truster]
 		node.TrustRegistryMutex.RUnlock()
@@ -315,7 +361,6 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 			"relationships": relationships,
 		})
 	} else {
-		// Return overview of trust registry
 		node.TrustRegistryMutex.RLock()
 		defer node.TrustRegistryMutex.RUnlock()
 
@@ -410,38 +455,85 @@ func (node *QuidnugNode) CreateQuidHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// GetTrustHandler returns trust level between two quids
+// GetTrustHandler returns relational trust level between two quids
 func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	truster := vars["truster"]
-	trustee := vars["trustee"]
+	observer := vars["observer"]
+	target := vars["target"]
 	domain := r.URL.Query().Get("domain")
+	maxDepthStr := r.URL.Query().Get("maxDepth")
 
 	if domain == "" {
 		domain = "default"
 	}
 
-	node.TrustRegistryMutex.RLock()
-	trustMap, trusterExists := node.TrustRegistry[truster]
-	var trustLevel float64
-	var relationshipExists bool
-	if trusterExists {
-		trustLevel, relationshipExists = trustMap[trustee]
+	maxDepth := 5
+	if maxDepthStr != "" {
+		if parsed, err := strconv.Atoi(maxDepthStr); err == nil && parsed > 0 {
+			maxDepth = parsed
+		}
 	}
-	node.TrustRegistryMutex.RUnlock()
 
-	if !relationshipExists {
-		http.Error(w, "No trust relationship found", http.StatusNotFound)
-		return
+	trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
+
+	pathDepth := 0
+	if len(trustPath) > 1 {
+		pathDepth = len(trustPath) - 1
+	}
+
+	result := RelationalTrustResult{
+		Observer:   observer,
+		Target:     target,
+		TrustLevel: trustLevel,
+		TrustPath:  trustPath,
+		PathDepth:  pathDepth,
+		Domain:     domain,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"truster":    truster,
-		"trustee":    trustee,
-		"domain":     domain,
-		"trustLevel": trustLevel,
-	})
+	json.NewEncoder(w).Encode(result)
+}
+
+// RelationalTrustQueryHandler handles POST requests for relational trust queries
+func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *http.Request) {
+	var query RelationalTrustQuery
+	if err := DecodeJSONBody(w, r, &query); err != nil {
+		return
+	}
+
+	if query.Observer == "" || query.Target == "" {
+		http.Error(w, "observer and target are required", http.StatusBadRequest)
+		return
+	}
+
+	domain := query.Domain
+	if domain == "" {
+		domain = "default"
+	}
+
+	maxDepth := query.MaxDepth
+	if maxDepth <= 0 {
+		maxDepth = 5
+	}
+
+	trustLevel, trustPath, _ := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
+
+	pathDepth := 0
+	if len(trustPath) > 1 {
+		pathDepth = len(trustPath) - 1
+	}
+
+	result := RelationalTrustResult{
+		Observer:   query.Observer,
+		Target:     query.Target,
+		TrustLevel: trustLevel,
+		TrustPath:  trustPath,
+		PathDepth:  pathDepth,
+		Domain:     domain,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // GetIdentityHandler returns identity information for a quid
