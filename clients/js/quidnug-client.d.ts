@@ -315,6 +315,10 @@ export interface QuidnugClientOptions {
   defaultNode?: string;
   /** Enable debug logging */
   debug?: boolean;
+  /** Maximum number of retry attempts for failed requests (default: 3) */
+  maxRetries?: number;
+  /** Base delay in milliseconds for exponential backoff (default: 1000) */
+  retryBaseDelayMs?: number;
 }
 
 /**
@@ -496,6 +500,10 @@ declare class QuidnugClient {
   defaultNode: string | undefined;
   /** Debug mode flag */
   debug: boolean;
+  /** Maximum number of retry attempts for failed requests */
+  maxRetries: number;
+  /** Base delay in milliseconds for exponential backoff */
+  retryBaseDelayMs: number;
 
   /**
    * Initialize the Quidnug client.

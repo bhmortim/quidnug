@@ -23,6 +23,8 @@ class QuidnugClient {
     this.nodes = [];
     this.defaultNode = options.defaultNode;
     this.debug = options.debug || false;
+    this.maxRetries = options.maxRetries !== undefined ? options.maxRetries : 3;
+    this.retryBaseDelayMs = options.retryBaseDelayMs !== undefined ? options.retryBaseDelayMs : 1000;
     
     if (this.defaultNode) {
       this.addNode(this.defaultNode);
@@ -75,6 +77,50 @@ class QuidnugClient {
         console.error(`Error checking node ${nodeUrl}:`, error);
       }
     }
+  }
+
+  /**
+   * Fetch with retry and exponential backoff
+   * @private
+   * @param {string} url - URL to fetch
+   * @param {Object} options - Fetch options
+   * @param {number} [maxRetries] - Maximum number of retries (uses instance default if not specified)
+   * @param {number} [baseDelayMs] - Base delay in milliseconds (uses instance default if not specified)
+   * @returns {Promise<Response>} Fetch response
+   */
+  async _fetchWithRetry(url, options = {}, maxRetries, baseDelayMs) {
+    const retries = maxRetries !== undefined ? maxRetries : this.maxRetries;
+    const baseDelay = baseDelayMs !== undefined ? baseDelayMs : this.retryBaseDelayMs;
+    
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+        // Don't retry on 4xx client errors (except 429 rate limit)
+        if (response.ok || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+          return response;
+        }
+        // Retry on 5xx server errors and 429 rate limit
+        if (attempt < retries) {
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 100;
+          if (this.debug) {
+            console.log(`Retry ${attempt + 1}/${retries} for ${url} after ${Math.round(delay)}ms (HTTP ${response.status})`);
+          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        lastError = new Error(`HTTP ${response.status}`);
+      } catch (error) {
+        lastError = error;
+        if (attempt < retries) {
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 100;
+          if (this.debug) {
+            console.log(`Retry ${attempt + 1}/${retries} for ${url} after ${Math.round(delay)}ms (${error.message})`);
+          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    throw lastError;
   }
 
   /**
@@ -209,7 +255,7 @@ class QuidnugClient {
     // Register with node if available
     try {
       const nodeUrl = this._getHealthyNode();
-      const response = await fetch(`${nodeUrl}/api/quids`, {
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/quids`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -596,7 +642,7 @@ class QuidnugClient {
           throw new Error(`Unknown transaction type: ${transaction.type}`);
       }
       
-      const response = await fetch(`${nodeUrl}/api/${endpoint}`, {
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -643,7 +689,7 @@ class QuidnugClient {
         url += `&maxDepth=${options.maxDepth}`;
       }
       
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code === 'NOT_FOUND') {
@@ -681,7 +727,7 @@ class QuidnugClient {
         url += `?domain=${encodeURIComponent(domain)}`;
       }
       
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code === 'NOT_FOUND') {
@@ -711,7 +757,7 @@ class QuidnugClient {
         url += `?domain=${encodeURIComponent(domain)}`;
       }
       
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code === 'NOT_FOUND') {
@@ -787,7 +833,7 @@ class QuidnugClient {
     try {
       const nodeUrl = this._getHealthyNode();
       
-      const response = await fetch(`${nodeUrl}/api/trust/query`, {
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/trust/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -891,7 +937,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -919,7 +965,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -947,7 +993,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -979,7 +1025,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -1009,7 +1055,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -1041,7 +1087,7 @@ class QuidnugClient {
         url += `?${params.toString()}`;
       }
 
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -1065,7 +1111,7 @@ class QuidnugClient {
       const nodeUrl = this._getHealthyNode();
       const url = `${nodeUrl}/api/domains/${domain}/query?type=${type}&param=${encodeURIComponent(param)}`;
       
-      const response = await fetch(url);
+      const response = await this._fetchWithRetry(url);
       return await this._parseResponse(response);
     } catch (error) {
       if (error.code) throw error;
@@ -1086,7 +1132,7 @@ class QuidnugClient {
     try {
       // Get list of all known nodes
       const nodeUrl = this._getHealthyNode();
-      const response = await fetch(`${nodeUrl}/api/nodes`);
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/nodes`);
       const result = await this._parseResponse(response);
       
       const nodes = result.data || [];

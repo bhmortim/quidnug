@@ -15,8 +15,9 @@
     }
   },
   "scripts": {
-    "test": "node --test quidnug-client.test.js",
-    "test:watch": "node --test --watch quidnug-client.test.js"
+    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js",
+    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js",
+    "test:retry": "node --test quidnug-client.retry.test.js"
   },
   "files": [
     "quidnug-client.js",
