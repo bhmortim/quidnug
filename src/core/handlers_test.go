@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1461,8 +1462,9 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 
 		data2 := response2["data"].(map[string]interface{})
 		expected := 0.8 * 0.8
-		if data2["trustLevel"] != expected {
-			t.Errorf("Expected trustLevel %f with maxDepth=3, got '%v'", expected, data2["trustLevel"])
+		actualTrust, _ := data2["trustLevel"].(float64)
+		if math.Abs(actualTrust-expected) > 0.0001 {
+		 t.Errorf("Expected trustLevel %f with maxDepth=3, got '%v'", expected, data2["trustLevel"])
 		}
 	})
 
