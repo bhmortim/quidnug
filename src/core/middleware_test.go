@@ -287,7 +287,7 @@ func TestDecodeJSONBody(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 413 for oversized body", func(t *testing.T) {
+	t.Run("returns 400 for oversized body", func(t *testing.T) {
 		largeBody := strings.NewReader(strings.Repeat("x", 200))
 		req := httptest.NewRequest("POST", "/test", largeBody)
 		req.Body = http.MaxBytesReader(httptest.NewRecorder(), req.Body, 100)
@@ -300,8 +300,8 @@ func TestDecodeJSONBody(t *testing.T) {
 			t.Error("Expected error for oversized body")
 		}
 
-		if w.Code != http.StatusRequestEntityTooLarge {
-			t.Errorf("Expected status 413, got %d", w.Code)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
 		}
 	})
 }

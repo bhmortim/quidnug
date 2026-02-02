@@ -41,13 +41,13 @@ func TestValidateTrustProof_ValidatorNotInDomain(t *testing.T) {
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
-		ValidatorNodes: []string{"validator1234567"},
+		ValidatorNodes: []string{"3456789012345678"},
 		TrustThreshold: 0.5,
 	}
 
 	proof := TrustProof{
 		TrustDomain:   "testdomain",
-		ValidatorID:   "notavalidator123",
+		ValidatorID:   "4567890123456789",
 		ValidatorSigs: []string{"somesignature"},
 	}
 
@@ -73,7 +73,7 @@ func TestValidateTrustProof_NoSignatures(t *testing.T) {
 func TestValidateTrustProof_RelationalTrustRequired(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	// Set up a trust domain with an external validator
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -107,7 +107,7 @@ func TestValidateTrustProof_RelationalTrustRequired(t *testing.T) {
 func TestValidateTrustProof_TrustBelowThreshold(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -134,8 +134,8 @@ func TestValidateTrustProof_TrustBelowThreshold(t *testing.T) {
 func TestValidateTrustProof_TransitiveTrust(t *testing.T) {
 	node := newTestNode()
 
-	intermediary := "intermediary12345"
-	validatorID := "validator1234567"
+	intermediary := "5678901234567890"
+	validatorID := "3456789012345678"
 
 	// Set up a trust domain with an external validator
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -168,8 +168,8 @@ func TestValidateTrustProof_TransitiveTrust(t *testing.T) {
 func TestValidateTrustProof_TransitiveTrustBelowThreshold(t *testing.T) {
 	node := newTestNode()
 
-	intermediary := "intermediary12345"
-	validatorID := "validator1234567"
+	intermediary := "5678901234567890"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -199,7 +199,7 @@ func TestValidateTrustProof_TransitiveTrustBelowThreshold(t *testing.T) {
 func TestValidateTrustProof_IgnoresStaticScore(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -253,13 +253,13 @@ func TestValidateTrustProofTiered_ValidatorNotInDomain(t *testing.T) {
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
-		ValidatorNodes: []string{"validator1234567"},
+		ValidatorNodes: []string{"3456789012345678"},
 		TrustThreshold: 0.5,
 	}
 
 	proof := TrustProof{
 		TrustDomain:   "testdomain",
-		ValidatorID:   "notavalidator123",
+		ValidatorID:   "4567890123456789",
 		ValidatorSigs: []string{"somesignature"},
 	}
 
@@ -332,7 +332,7 @@ func TestValidateTrustProofTiered_SelfAsValidator(t *testing.T) {
 func TestValidateTrustProofTiered_TrustMeetsThreshold(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -375,7 +375,7 @@ func TestValidateTrustProofTiered_TrustMeetsThreshold(t *testing.T) {
 func TestValidateTrustProofTiered_TrustAboveThreshold(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -415,7 +415,7 @@ func TestValidateTrustProofTiered_TrustAboveThreshold(t *testing.T) {
 func TestValidateTrustProofTiered_Tentative(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 	node.DistrustThreshold = 0.1
 
@@ -456,7 +456,7 @@ func TestValidateTrustProofTiered_Tentative(t *testing.T) {
 func TestValidateTrustProofTiered_Untrusted_BelowDistrustThreshold(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 	node.DistrustThreshold = 0.3
 
@@ -497,7 +497,7 @@ func TestValidateTrustProofTiered_Untrusted_BelowDistrustThreshold(t *testing.T)
 func TestValidateTrustProofTiered_Untrusted_AtDistrustThreshold(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 	node.DistrustThreshold = 0.3
 
@@ -538,7 +538,7 @@ func TestValidateTrustProofTiered_Untrusted_AtDistrustThreshold(t *testing.T) {
 func TestValidateTrustProofTiered_Untrusted_ZeroTrust(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -574,7 +574,7 @@ func TestValidateTrustProofTiered_Untrusted_ZeroTrust(t *testing.T) {
 func TestValidateTrustProofTiered_ThresholdBoundary_JustAboveDistrust(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 	node.DistrustThreshold = 0.3
 
@@ -615,7 +615,7 @@ func TestValidateTrustProofTiered_ThresholdBoundary_JustAboveDistrust(t *testing
 func TestValidateTrustProofTiered_ThresholdBoundary_JustBelowTrust(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	validatorPubKey := "04abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"
 	node.DistrustThreshold = 0.1
 
@@ -777,8 +777,8 @@ func TestValidateBlockTiered_InvalidTransaction(t *testing.T) {
 			TrustDomain: "default",
 			Timestamp:   1234567890,
 		},
-		Truster:    "truster123456789",
-		Trustee:    "trustee123456789",
+		Truster:    "1234567890123456",
+		Trustee:    "2345678901234567",
 		TrustLevel: 2.0, // Invalid: > 1.0
 	}
 
@@ -824,7 +824,7 @@ func TestValidateBlockTiered_TrustedBlock(t *testing.T) {
 func TestValidateBlockTiered_TentativeBlock(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -859,7 +859,7 @@ func TestValidateBlockTiered_TentativeBlock(t *testing.T) {
 func TestValidateBlockTiered_UntrustedBlock(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -889,7 +889,7 @@ func TestValidateBlockTiered_UntrustedBlock(t *testing.T) {
 func TestValidateBlockTiered_SeparatesCryptoFromTrust(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -945,7 +945,7 @@ func TestValidateTrustProof_BackwardCompatibility(t *testing.T) {
 	}
 
 	// Test that it returns false for tentative
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -1067,7 +1067,7 @@ func TestReceiveBlock_Trusted(t *testing.T) {
 func TestReceiveBlock_Tentative(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -1122,7 +1122,7 @@ func TestReceiveBlock_Tentative(t *testing.T) {
 func TestReceiveBlock_Untrusted(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
@@ -1177,13 +1177,13 @@ func TestReceiveBlock_EdgeExtraction(t *testing.T) {
 			TrustDomain: "default",
 			Timestamp:   1234567890,
 		},
-		Truster:    "truster123456789",
-		Trustee:    "trustee123456789",
+		Truster:    "1234567890123456",
+		Trustee:    "2345678901234567",
 		TrustLevel: 0.7,
 	}
 
 	// Create block from untrusted validator
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",
 		ValidatorNodes: []string{validatorID},
@@ -1207,11 +1207,11 @@ func TestReceiveBlock_EdgeExtraction(t *testing.T) {
 	node.ReceiveBlock(block)
 
 	// Check that unverified edge was extracted
-	edges := node.GetTrustEdges("truster123456789", true)
+	edges := node.GetTrustEdges("1234567890123456", true)
 	if len(edges) == 0 {
 		t.Error("Expected edge to be extracted to unverified registry")
 	} else {
-		edge, exists := edges["trustee123456789"]
+		edge, exists := edges["2345678901234567"]
 		if !exists {
 			t.Error("Expected edge truster->trustee to exist")
 		} else if edge.TrustLevel != 0.7 {
@@ -1250,7 +1250,7 @@ func TestStoreTentativeBlock_Duplicate(t *testing.T) {
 func TestReEvaluateTentativeBlocks_Promotion(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -1315,7 +1315,7 @@ func TestReEvaluateTentativeBlocks_Promotion(t *testing.T) {
 func TestReEvaluateTentativeBlocks_StillTentative(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -1363,7 +1363,7 @@ func TestReEvaluateTentativeBlocks_StillTentative(t *testing.T) {
 func TestReEvaluateTentativeBlocks_Demotion(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.3
 
 	node.TrustDomains["testdomain"] = TrustDomain{
@@ -1448,7 +1448,7 @@ func TestValidateBlock_BackwardCompatibility(t *testing.T) {
 	}
 
 	// Tentative block should return false from ValidateBlock
-	validatorID := "validator1234567"
+	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 	node.TrustDomains["testdomain"] = TrustDomain{
 		Name:           "testdomain",

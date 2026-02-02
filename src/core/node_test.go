@@ -24,7 +24,7 @@ func newTestNode() *QuidnugNode {
 	}
 
 	// Add test identities with public keys
-	node.IdentityRegistry["quid_truster_001"] = IdentityTransaction{
+	node.IdentityRegistry["0000000000000001"] = IdentityTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_identity_001",
 			Type:        TxTypeIdentity,
@@ -32,13 +32,13 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000000,
 			PublicKey:   nodePublicKey,
 		},
-		QuidID:      "quid_truster_001",
+		QuidID:      "0000000000000001",
 		Name:        "Test Truster",
-		Creator:     "quid_creator_001",
+		Creator:     "0000000000000006",
 		UpdateNonce: 1,
 	}
 
-	node.IdentityRegistry["quid_trustee_001"] = IdentityTransaction{
+	node.IdentityRegistry["0000000000000002"] = IdentityTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_identity_002",
 			Type:        TxTypeIdentity,
@@ -46,13 +46,13 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000001,
 			PublicKey:   nodePublicKey,
 		},
-		QuidID:      "quid_trustee_001",
+		QuidID:      "0000000000000002",
 		Name:        "Test Trustee",
-		Creator:     "quid_creator_002",
+		Creator:     "0000000000000007",
 		UpdateNonce: 1,
 	}
 
-	node.IdentityRegistry["quid_asset_001"] = IdentityTransaction{
+	node.IdentityRegistry["0000000000000003"] = IdentityTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_identity_003",
 			Type:        TxTypeIdentity,
@@ -60,14 +60,14 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000002,
 			PublicKey:   nodePublicKey,
 		},
-		QuidID:      "quid_asset_001",
+		QuidID:      "0000000000000003",
 		Name:        "Test Asset",
-		Creator:     "quid_creator_003",
+		Creator:     "0000000000000008",
 		UpdateNonce: 1,
 	}
 
 	// Add owner identities with public keys for transfer testing
-	node.IdentityRegistry["quid_owner_001"] = IdentityTransaction{
+	node.IdentityRegistry["0000000000000004"] = IdentityTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_identity_004",
 			Type:        TxTypeIdentity,
@@ -75,13 +75,13 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000004,
 			PublicKey:   nodePublicKey,
 		},
-		QuidID:      "quid_owner_001",
+		QuidID:      "0000000000000004",
 		Name:        "Test Owner 1",
-		Creator:     "quid_creator_004",
+		Creator:     "0000000000000009",
 		UpdateNonce: 1,
 	}
 
-	node.IdentityRegistry["quid_owner_002"] = IdentityTransaction{
+	node.IdentityRegistry["0000000000000005"] = IdentityTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_identity_005",
 			Type:        TxTypeIdentity,
@@ -89,14 +89,14 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000005,
 			PublicKey:   nodePublicKey,
 		},
-		QuidID:      "quid_owner_002",
+		QuidID:      "0000000000000005",
 		Name:        "Test Owner 2",
-		Creator:     "quid_creator_005",
+		Creator:     "000000000000000a",
 		UpdateNonce: 1,
 	}
 
 	// Add a test title for transfer testing
-	node.TitleRegistry["quid_asset_001"] = TitleTransaction{
+	node.TitleRegistry["0000000000000003"] = TitleTransaction{
 		BaseTransaction: BaseTransaction{
 			ID:          "tx_title_001",
 			Type:        TxTypeTitle,
@@ -104,10 +104,10 @@ func newTestNode() *QuidnugNode {
 			Timestamp:   1000003,
 			PublicKey:   nodePublicKey,
 		},
-		AssetID: "quid_asset_001",
+		AssetID: "0000000000000003",
 		Owners: []OwnershipStake{
-			{OwnerID: "quid_owner_001", Percentage: 60.0},
-			{OwnerID: "quid_owner_002", Percentage: 40.0},
+			{OwnerID: "0000000000000004", Percentage: 60.0},
+			{OwnerID: "0000000000000005", Percentage: 40.0},
 		},
 		Signatures: make(map[string]string),
 	}
@@ -181,8 +181,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		})
 		if !node.ValidateTrustTransaction(tx) {
@@ -198,8 +198,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "unknown.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -215,8 +215,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: -0.1,
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -232,8 +232,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 1.5,
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -249,8 +249,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		})
 		if !node.ValidateTrustTransaction(tx) {
@@ -266,8 +266,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.0,
 		})
 		if !node.ValidateTrustTransaction(tx) {
@@ -283,8 +283,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 1.0,
 		})
 		if !node.ValidateTrustTransaction(tx) {
@@ -300,8 +300,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: math.NaN(),
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -317,8 +317,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: math.Inf(1),
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -334,8 +334,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: math.Inf(-1),
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -352,7 +352,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 				Timestamp:   1000000,
 			},
 			Truster:    "INVALID-FORMAT!",
-			Trustee:    "quid_trustee_001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		})
 		if node.ValidateTrustTransaction(tx) {
@@ -368,7 +368,7 @@ func TestValidateTrustTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			Truster:    "quid_truster_001",
+			Truster:    "0000000000000001",
 			Trustee:    "short",
 			TrustLevel: 0.5,
 		})
@@ -386,8 +386,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				Timestamp:   1000000,
 				PublicKey:   node.GetPublicKeyHex(),
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		}
 		if node.ValidateTrustTransaction(tx) {
@@ -404,8 +404,8 @@ func TestValidateTrustTransaction(t *testing.T) {
 				Timestamp:   1000000,
 				Signature:   "deadbeef",
 			},
-			Truster:    "quid_truster_001",
-			Trustee:    "quid_trustee_001",
+			Truster:    "0000000000000001",
+			Trustee:    "0000000000000002",
 			TrustLevel: 0.5,
 		}
 		if node.ValidateTrustTransaction(tx) {
@@ -425,9 +425,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			QuidID:      "quid_new_identity",
+			QuidID:      "000000000000000b",
 			Name:        "New Identity",
-			Creator:     "quid_creator_new",
+			Creator:     "00000000000000cc",
 			UpdateNonce: 1,
 		})
 		if !node.ValidateIdentityTransaction(tx) {
@@ -443,9 +443,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
 			},
-			QuidID:      "quid_truster_001",
+			QuidID:      "0000000000000001",
 			Name:        "Updated Name",
-			Creator:     "quid_creator_001",
+			Creator:     "0000000000000006",
 			UpdateNonce: 2,
 		})
 		if !node.ValidateIdentityTransaction(tx) {
@@ -461,9 +461,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
 			},
-			QuidID:      "quid_truster_001",
+			QuidID:      "0000000000000001",
 			Name:        "Updated Name",
-			Creator:     "quid_creator_001",
+			Creator:     "0000000000000006",
 			UpdateNonce: 0,
 		})
 		if node.ValidateIdentityTransaction(tx) {
@@ -479,9 +479,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
 			},
-			QuidID:      "quid_truster_001",
+			QuidID:      "0000000000000001",
 			Name:        "Updated Name",
-			Creator:     "quid_creator_001",
+			Creator:     "0000000000000006",
 			UpdateNonce: 1,
 		})
 		if node.ValidateIdentityTransaction(tx) {
@@ -497,9 +497,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
 			},
-			QuidID:      "quid_truster_001",
+			QuidID:      "0000000000000001",
 			Name:        "Updated Name",
-			Creator:     "quid_different_creator",
+			Creator:     "000000000000000f",
 			UpdateNonce: 2,
 		})
 		if node.ValidateIdentityTransaction(tx) {
@@ -515,9 +515,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "unknown.domain.com",
 				Timestamp:   1000000,
 			},
-			QuidID:      "quid_new_identity",
+			QuidID:      "000000000000000b",
 			Name:        "New Identity",
-			Creator:     "quid_creator_new",
+			Creator:     "00000000000000cc",
 			UpdateNonce: 1,
 		})
 		if node.ValidateIdentityTransaction(tx) {
@@ -533,9 +533,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				TrustDomain: "",
 				Timestamp:   1000000,
 			},
-			QuidID:      "quid_new_identity",
+			QuidID:      "000000000000000b",
 			Name:        "New Identity",
-			Creator:     "quid_creator_new",
+			Creator:     "00000000000000cc",
 			UpdateNonce: 1,
 		})
 		if !node.ValidateIdentityTransaction(tx) {
@@ -552,9 +552,9 @@ func TestValidateIdentityTransaction(t *testing.T) {
 				Timestamp:   1000000,
 				PublicKey:   node.GetPublicKeyHex(),
 			},
-			QuidID:      "quid_new_identity",
+			QuidID:      "000000000000000b",
 			Name:        "New Identity",
-			Creator:     "quid_creator_new",
+			Creator:     "00000000000000cc",
 			UpdateNonce: 1,
 		}
 		if node.ValidateIdentityTransaction(tx) {
@@ -574,9 +574,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 100.0},
+				{OwnerID: "0000000000000004", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -593,9 +593,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 50.0},
+				{OwnerID: "0000000000000004", Percentage: 50.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -612,9 +612,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_nonexistent_asset",
+			AssetID: "000000000000000e",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 100.0},
+				{OwnerID: "0000000000000004", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -631,12 +631,12 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_new_owner", Percentage: 100.0},
+				{OwnerID: "000000000000000c", Percentage: 100.0},
 			},
 			PreviousOwners: []OwnershipStake{
-				{OwnerID: "quid_wrong_owner", Percentage: 100.0},
+				{OwnerID: "000000000000000d", Percentage: 100.0},
 			},
 		})
 		if node.ValidateTitleTransaction(tx) {
@@ -652,11 +652,11 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 60.0},
-				{OwnerID: "quid_owner_002", Percentage: 25.0},
-				{OwnerID: "quid_owner_003", Percentage: 15.0},
+				{OwnerID: "0000000000000004", Percentage: 60.0},
+				{OwnerID: "0000000000000005", Percentage: 25.0},
+				{OwnerID: "00000000000000f3", Percentage: 15.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -673,9 +673,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "unknown.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 100.0},
+				{OwnerID: "0000000000000004", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -692,9 +692,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 100.0},
+				{OwnerID: "0000000000000004", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -711,13 +711,13 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_new_owner", Percentage: 100.0},
+				{OwnerID: "000000000000000c", Percentage: 100.0},
 			},
 			PreviousOwners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 60.0},
-				{OwnerID: "quid_owner_002", Percentage: 40.0},
+				{OwnerID: "0000000000000004", Percentage: 60.0},
+				{OwnerID: "0000000000000005", Percentage: 40.0},
 			},
 		})
 		if !node.ValidateTitleTransaction(tx) {
@@ -733,10 +733,10 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 60.0},
-				{OwnerID: "quid_owner_002", Percentage: 50.0},
+				{OwnerID: "0000000000000004", Percentage: 60.0},
+				{OwnerID: "0000000000000005", Percentage: 50.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -754,9 +754,9 @@ func TestValidateTitleTransaction(t *testing.T) {
 				Timestamp:   1000000,
 				PublicKey:   node.GetPublicKeyHex(),
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 100.0},
+				{OwnerID: "0000000000000004", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		}
@@ -773,13 +773,13 @@ func TestValidateTitleTransaction(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "quid_asset_001",
+			AssetID: "0000000000000003",
 			Owners: []OwnershipStake{
-				{OwnerID: "quid_new_owner", Percentage: 100.0},
+				{OwnerID: "000000000000000c", Percentage: 100.0},
 			},
 			PreviousOwners: []OwnershipStake{
-				{OwnerID: "quid_owner_001", Percentage: 60.0},
-				{OwnerID: "quid_owner_002", Percentage: 40.0},
+				{OwnerID: "0000000000000004", Percentage: 60.0},
+				{OwnerID: "0000000000000005", Percentage: 40.0},
 			},
 			Signatures: make(map[string]string),
 		})
@@ -799,72 +799,72 @@ func TestAreOwnershipStakesEqual(t *testing.T) {
 		{
 			name: "equal single owner",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 100.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 100.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 100.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 100.0},
 			},
 			expected: true,
 		},
 		{
 			name: "equal multiple owners",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 60.0},
-				{OwnerID: "owner2", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 60.0},
-				{OwnerID: "owner2", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
 			},
 			expected: true,
 		},
 		{
 			name: "equal multiple owners different order",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 60.0},
-				{OwnerID: "owner2", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner2", Percentage: 40.0},
-				{OwnerID: "owner1", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
 			},
 			expected: true,
 		},
 		{
 			name: "different lengths",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 100.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 100.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 60.0},
-				{OwnerID: "owner2", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
 			},
 			expected: false,
 		},
 		{
 			name: "different percentages",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 50.0},
-				{OwnerID: "owner2", Percentage: 50.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 50.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 50.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 60.0},
-				{OwnerID: "owner2", Percentage: 40.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 60.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 40.0},
 			},
 			expected: false,
 		},
 		{
 			name: "different owners",
 			a: []OwnershipStake{
-				{OwnerID: "owner1", Percentage: 100.0},
+				{OwnerID: "aaaaaaaaaaaaaaaa", Percentage: 100.0},
 			},
 			b: []OwnershipStake{
-				{OwnerID: "owner2", Percentage: 100.0},
+				{OwnerID: "bbbbbbbbbbbbbbbb", Percentage: 100.0},
 			},
 			expected: false,
 		},
 		{
-			name: "empty slices",
+			name:     "empty slices",
 			a:        []OwnershipStake{},
 			b:        []OwnershipStake{},
 			expected: true,
@@ -1109,7 +1109,7 @@ func TestNewTestNodeInitialization(t *testing.T) {
 	})
 
 	t.Run("test identities exist", func(t *testing.T) {
-		expectedQuids := []string{"quid_truster_001", "quid_trustee_001", "quid_asset_001"}
+		expectedQuids := []string{"0000000000000001", "0000000000000002", "0000000000000003"}
 		for _, quid := range expectedQuids {
 			if _, exists := node.IdentityRegistry[quid]; !exists {
 				t.Errorf("Identity %s should exist in IdentityRegistry", quid)
@@ -1118,8 +1118,8 @@ func TestNewTestNodeInitialization(t *testing.T) {
 	})
 
 	t.Run("test title exists", func(t *testing.T) {
-		if _, exists := node.TitleRegistry["quid_asset_001"]; !exists {
-			t.Error("quid_asset_001 should exist in TitleRegistry")
+		if _, exists := node.TitleRegistry["0000000000000003"]; !exists {
+			t.Error("0000000000000003 should exist in TitleRegistry")
 		}
 	})
 
@@ -1136,9 +1136,9 @@ func TestNewTestNodeInitialization(t *testing.T) {
 func TestFilterTransactionsForBlock_TrustedCreatorIncluded(t *testing.T) {
 	node := newTestNode()
 
-	// Set up trust: node trusts quid_truster_001
+	// Set up trust: node trusts 0000000000000001
 	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
-		"quid_truster_001": 0.8,
+		"0000000000000001": 0.8,
 	}
 
 	// Set a threshold that the trusted creator should pass
@@ -1152,8 +1152,8 @@ func TestFilterTransactionsForBlock_TrustedCreatorIncluded(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000000,
 		},
-		Truster:    "quid_truster_001",
-		Trustee:    "quid_trustee_001",
+		Truster:    "0000000000000001",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.7,
 	}
 
@@ -1179,8 +1179,8 @@ func TestFilterTransactionsForBlock_UnknownCreatorExcluded(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000000,
 		},
-		Truster:    "unknown_creator_1",
-		Trustee:    "quid_trustee_001",
+		Truster:    "aa00000000000001",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.7,
 	}
 
@@ -1206,8 +1206,8 @@ func TestFilterTransactionsForBlock_AllIncludedWhenThresholdZero(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000000,
 		},
-		Truster:    "unknown_creator_2",
-		Trustee:    "quid_trustee_001",
+		Truster:    "aa00000000000002",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.7,
 	}
 
@@ -1218,9 +1218,9 @@ func TestFilterTransactionsForBlock_AllIncludedWhenThresholdZero(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000001,
 		},
-		QuidID:      "quid_new_001",
+		QuidID:      "00000000000000e1",
 		Name:        "New Identity",
-		Creator:     "another_unknown_cr",
+		Creator:     "aa00000000000003",
 		UpdateNonce: 1,
 	}
 
@@ -1231,9 +1231,9 @@ func TestFilterTransactionsForBlock_AllIncludedWhenThresholdZero(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000002,
 		},
-		AssetID: "quid_asset_001",
+		AssetID: "0000000000000003",
 		Owners: []OwnershipStake{
-			{OwnerID: "unknown_owner_001", Percentage: 100.0},
+			{OwnerID: "aa00000000000004", Percentage: 100.0},
 		},
 		Signatures: make(map[string]string),
 	}
@@ -1251,7 +1251,7 @@ func TestFilterTransactionsForBlock_DistrustedCreatorExcluded(t *testing.T) {
 
 	// Set up low trust (distrust) for a creator
 	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
-		"distrusted_quid01": 0.1, // Low trust
+		"dd00000000000001": 0.1, // Low trust
 	}
 
 	// Set threshold higher than the trust level
@@ -1265,8 +1265,8 @@ func TestFilterTransactionsForBlock_DistrustedCreatorExcluded(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000000,
 		},
-		Truster:    "distrusted_quid01",
-		Trustee:    "quid_trustee_001",
+		Truster:    "dd00000000000001",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.9,
 	}
 
@@ -1283,9 +1283,9 @@ func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
 
 	// Set up trust relationships
 	node.TrustRegistry[node.NodeQuidID] = map[string]float64{
-		"trusted_truster01": 0.8,
-		"trusted_creator01": 0.7,
-		"trusted_owner_001": 0.9,
+		"1100000000000001": 0.8,
+		"1100000000000002": 0.7,
+		"1100000000000003": 0.9,
 	}
 
 	node.TransactionTrustThreshold = 0.5
@@ -1298,8 +1298,8 @@ func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000000,
 		},
-		Truster:    "trusted_truster01",
-		Trustee:    "quid_trustee_001",
+		Truster:    "1100000000000001",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.7,
 	}
 
@@ -1310,9 +1310,9 @@ func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000001,
 		},
-		QuidID:      "quid_new_002",
+		QuidID:      "00000000000000e2",
 		Name:        "Trusted Identity",
-		Creator:     "trusted_creator01",
+		Creator:     "1100000000000002",
 		UpdateNonce: 1,
 	}
 
@@ -1323,9 +1323,9 @@ func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000002,
 		},
-		AssetID: "quid_asset_001",
+		AssetID: "0000000000000003",
 		Owners: []OwnershipStake{
-			{OwnerID: "trusted_owner_001", Percentage: 100.0},
+			{OwnerID: "1100000000000003", Percentage: 100.0},
 		},
 		Signatures: make(map[string]string),
 	}
@@ -1338,8 +1338,8 @@ func TestFilterTransactionsForBlock_MixedTransactionTypes(t *testing.T) {
 			TrustDomain: "test.domain.com",
 			Timestamp:   1000003,
 		},
-		Truster:    "untrusted_quid_01",
-		Trustee:    "quid_trustee_001",
+		Truster:    "ee00000000000001",
+		Trustee:    "0000000000000002",
 		TrustLevel: 0.5,
 	}
 

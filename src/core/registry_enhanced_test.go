@@ -7,7 +7,7 @@ import (
 func TestComputeRelationalTrustEnhanced_SameEntity(t *testing.T) {
 	node := newTestNode()
 
-	result, err := node.ComputeRelationalTrustEnhanced("quid1", "quid1", 5, true)
+	result, err := node.ComputeRelationalTrustEnhanced("1111111111111111", "1111111111111111", 5, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -28,17 +28,17 @@ func TestComputeRelationalTrustEnhanced_VerifiedOnlyPath(t *testing.T) {
 
 	// Set up verified edges: A -> B -> C
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "A",
-		Trustee:    "B",
+		Truster:    "aaaaaaaaaaaaaaaa",
+		Trustee:    "bbbbbbbbbbbbbbbb",
 		TrustLevel: 0.8,
 	})
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "B",
-		Trustee:    "C",
+		Truster:    "bbbbbbbbbbbbbbbb",
+		Trustee:    "cccccccccccccccc",
 		TrustLevel: 0.9,
 	})
 
-	result, err := node.ComputeRelationalTrustEnhanced("A", "C", 5, false)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "cccccccccccccccc", 5, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,27 +63,27 @@ func TestComputeRelationalTrustEnhanced_MixedPathWithGaps(t *testing.T) {
 
 	// Set up verified edge: A -> B (verified)
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "A",
-		Trustee:    "B",
+		Truster:    "aaaaaaaaaaaaaaaa",
+		Trustee:    "bbbbbbbbbbbbbbbb",
 		TrustLevel: 0.8,
 	})
 
 	// Set up unverified edge: B -> C (from validator V)
 	node.AddUnverifiedTrustEdge(TrustEdge{
-		Truster:       "B",
-		Trustee:       "C",
+		Truster:       "bbbbbbbbbbbbbbbb",
+		Trustee:       "cccccccccccccccc",
 		TrustLevel:    0.9,
-		ValidatorQuid: "V",
+		ValidatorQuid: "dddddddddddddddd",
 	})
 
 	// Set up A's trust in validator V
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "A",
-		Trustee:    "V",
+		Truster:    "aaaaaaaaaaaaaaaa",
+		Trustee:    "dddddddddddddddd",
 		TrustLevel: 0.5,
 	})
 
-	result, err := node.ComputeRelationalTrustEnhanced("A", "C", 5, true)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "cccccccccccccccc", 5, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,11 +103,11 @@ func TestComputeRelationalTrustEnhanced_MixedPathWithGaps(t *testing.T) {
 		t.Errorf("expected 1 VerificationGap, got %d", len(result.VerificationGaps))
 	} else {
 		gap := result.VerificationGaps[0]
-		if gap.From != "B" || gap.To != "C" {
-			t.Errorf("expected gap From='B' To='C', got From='%s' To='%s'", gap.From, gap.To)
+		if gap.From != "bbbbbbbbbbbbbbbb" || gap.To != "cccccccccccccccc" {
+			t.Errorf("expected gap From='bbbbbbbbbbbbbbbb' To='cccccccccccccccc', got From='%s' To='%s'", gap.From, gap.To)
 		}
-		if gap.ValidatorQuid != "V" {
-			t.Errorf("expected ValidatorQuid 'V', got '%s'", gap.ValidatorQuid)
+		if gap.ValidatorQuid != "dddddddddddddddd" {
+			t.Errorf("expected ValidatorQuid 'dddddddddddddddd', got '%s'", gap.ValidatorQuid)
 		}
 		if gap.ValidatorTrust != 0.5 {
 			t.Errorf("expected ValidatorTrust 0.5, got %f", gap.ValidatorTrust)
@@ -120,14 +120,14 @@ func TestComputeRelationalTrustEnhanced_UnverifiedDiscounting(t *testing.T) {
 
 	// Set up unverified edge: A -> B (from validator V with no trust)
 	node.AddUnverifiedTrustEdge(TrustEdge{
-		Truster:       "A",
-		Trustee:       "B",
+		Truster:       "aaaaaaaaaaaaaaaa",
+		Trustee:       "bbbbbbbbbbbbbbbb",
 		TrustLevel:    1.0,
-		ValidatorQuid: "V",
+		ValidatorQuid: "dddddddddddddddd",
 	})
 
 	// No trust path from A to V, so validator trust is 0
-	result, err := node.ComputeRelationalTrustEnhanced("A", "B", 5, true)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", 5, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,14 +143,14 @@ func TestComputeRelationalTrustEnhanced_IncludeUnverifiedFalse(t *testing.T) {
 
 	// Set up only unverified edges
 	node.AddUnverifiedTrustEdge(TrustEdge{
-		Truster:       "A",
-		Trustee:       "B",
+		Truster:       "aaaaaaaaaaaaaaaa",
+		Trustee:       "bbbbbbbbbbbbbbbb",
 		TrustLevel:    0.8,
-		ValidatorQuid: "V",
+		ValidatorQuid: "dddddddddddddddd",
 	})
 
 	// With includeUnverified=false, should find no path
-	result, err := node.ComputeRelationalTrustEnhanced("A", "B", 5, false)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", 5, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,26 +168,26 @@ func TestComputeRelationalTrustEnhanced_LowConfidenceMultipleGaps(t *testing.T) 
 
 	// Set up two unverified edges: A -> B -> C (both from validator V)
 	node.AddUnverifiedTrustEdge(TrustEdge{
-		Truster:       "A",
-		Trustee:       "B",
+		Truster:       "aaaaaaaaaaaaaaaa",
+		Trustee:       "bbbbbbbbbbbbbbbb",
 		TrustLevel:    0.8,
-		ValidatorQuid: "V",
+		ValidatorQuid: "dddddddddddddddd",
 	})
 	node.AddUnverifiedTrustEdge(TrustEdge{
-		Truster:       "B",
-		Trustee:       "C",
+		Truster:       "bbbbbbbbbbbbbbbb",
+		Trustee:       "cccccccccccccccc",
 		TrustLevel:    0.9,
-		ValidatorQuid: "V",
+		ValidatorQuid: "dddddddddddddddd",
 	})
 
 	// Set up A's trust in validator V
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "A",
-		Trustee:    "V",
+		Truster:    "aaaaaaaaaaaaaaaa",
+		Trustee:    "dddddddddddddddd",
 		TrustLevel: 1.0,
 	})
 
-	result, err := node.ComputeRelationalTrustEnhanced("A", "C", 5, true)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "cccccccccccccccc", 5, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,12 +208,12 @@ func TestComputeRelationalTrustEnhanced_DirectVerifiedTrust(t *testing.T) {
 
 	// Set up direct verified edge: A -> B
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:    "A",
-		Trustee:    "B",
+		Truster:    "aaaaaaaaaaaaaaaa",
+		Trustee:    "bbbbbbbbbbbbbbbb",
 		TrustLevel: 0.75,
 	})
 
-	result, err := node.ComputeRelationalTrustEnhanced("A", "B", 5, true)
+	result, err := node.ComputeRelationalTrustEnhanced("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", 5, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestComputeRelationalTrustEnhanced_DirectVerifiedTrust(t *testing.T) {
 	if len(result.TrustPath) != 2 {
 		t.Errorf("expected TrustPath length 2, got %d", len(result.TrustPath))
 	}
-	if result.TrustPath[0] != "A" || result.TrustPath[1] != "B" {
-		t.Errorf("expected TrustPath ['A', 'B'], got %v", result.TrustPath)
+	if result.TrustPath[0] != "aaaaaaaaaaaaaaaa" || result.TrustPath[1] != "bbbbbbbbbbbbbbbb" {
+		t.Errorf("expected TrustPath ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb'], got %v", result.TrustPath)
 	}
 }

@@ -684,8 +684,8 @@ func TestConcurrentDomainAccess(t *testing.T) {
 	domainCount := len(node.TrustDomains)
 	node.TrustDomainsMutex.RUnlock()
 
-	if domainCount != numDomains+1 { // +1 for default domain
-		t.Errorf("Expected %d domains, got %d", numDomains+1, domainCount)
+	if domainCount != numDomains+2 { // +2 for default domain and test.domain.com
+		t.Errorf("Expected %d domains, got %d", numDomains+2, domainCount)
 	}
 
 	t.Logf("Concurrent domain access completed: %d domains registered", domainCount)

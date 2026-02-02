@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -16,20 +17,20 @@ func TestComputeRelationalTrust_ResourceLimits(t *testing.T) {
 
 	node.TrustRegistryMutex.Lock()
 	for i := 0; i < numNodes; i++ {
-		truster := "dense_node_" + padInt(i, 4)
+		truster := fmt.Sprintf("de05e00de000%04x", i)
 		if node.TrustRegistry[truster] == nil {
 			node.TrustRegistry[truster] = make(map[string]float64)
 		}
 		// Connect to next nodesPerConnection nodes (wrapping around)
 		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := "dense_node_" + padInt((i+j)%numNodes, 4)
+			trustee := fmt.Sprintf("de05e00de000%04x", (i+j)%numNodes)
 			node.TrustRegistry[truster][trustee] = 0.9
 		}
 	}
 	node.TrustRegistryMutex.Unlock()
 
 	// Try to compute trust across the dense graph
-	_, _, err := node.ComputeRelationalTrust("dense_node_0000", "dense_node_0100", 10)
+	_, _, err := node.ComputeRelationalTrust("de05e00de0000000", "de05e00de0000064", 10)
 
 	// Should return ErrTrustGraphTooLarge
 	if err == nil {
@@ -46,8 +47,8 @@ func TestComputeRelationalTrust_NormalGraphSucceeds(t *testing.T) {
 	// Create a normal-sized trust graph (chain of 10 nodes)
 	node.TrustRegistryMutex.Lock()
 	for i := 0; i < 10; i++ {
-		truster := "chain_node_" + padInt(i, 2)
-		trustee := "chain_node_" + padInt(i+1, 2)
+		truster := fmt.Sprintf("c0a100de000000%02x", i)
+		trustee := fmt.Sprintf("c0a100de000000%02x", i+1)
 		if node.TrustRegistry[truster] == nil {
 			node.TrustRegistry[truster] = make(map[string]float64)
 		}
@@ -55,7 +56,7 @@ func TestComputeRelationalTrust_NormalGraphSucceeds(t *testing.T) {
 	}
 	node.TrustRegistryMutex.Unlock()
 
-	trustLevel, path, err := node.ComputeRelationalTrust("chain_node_00", "chain_node_05", 10)
+	trustLevel, path, err := node.ComputeRelationalTrust("c0a100de00000000", "c0a100de00000005", 10)
 
 	if err != nil {
 		t.Errorf("Expected no error for normal graph, got: %v", err)
@@ -85,12 +86,12 @@ func TestComputeRelationalTrustEnhanced_ResourceLimits(t *testing.T) {
 
 	node.TrustRegistryMutex.Lock()
 	for i := 0; i < numNodes; i++ {
-		truster := "enhanced_node_" + padInt(i, 4)
+		truster := fmt.Sprintf("e00a00ced000%04x", i)
 		if node.VerifiedTrustEdges[truster] == nil {
 			node.VerifiedTrustEdges[truster] = make(map[string]TrustEdge)
 		}
 		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := "enhanced_node_" + padInt((i+j)%numNodes, 4)
+			trustee := fmt.Sprintf("e00a00ced000%04x", (i+j)%numNodes)
 			node.VerifiedTrustEdges[truster][trustee] = TrustEdge{
 				Truster:    truster,
 				Trustee:    trustee,
@@ -102,7 +103,7 @@ func TestComputeRelationalTrustEnhanced_ResourceLimits(t *testing.T) {
 	node.TrustRegistryMutex.Unlock()
 
 	// Try to compute enhanced trust across the dense graph
-	_, err := node.ComputeRelationalTrustEnhanced("enhanced_node_0000", "enhanced_node_0100", 10, false)
+	_, err := node.ComputeRelationalTrustEnhanced("e00a00ced0000000", "e00a00ced0000064", 10, false)
 
 	if err == nil {
 		t.Error("Expected ErrTrustGraphTooLarge error for dense graph, got nil")
@@ -120,27 +121,27 @@ func TestComputeRelationalTrust_PartialResultOnLimit(t *testing.T) {
 	node.TrustRegistryMutex.Lock()
 
 	// Direct path: observer -> target
-	node.TrustRegistry["limit_observer"] = map[string]float64{
-		"limit_target": 0.5,
+	node.TrustRegistry["11b105e00e00bef0"] = map[string]float64{
+		"11b10a00e000be00": 0.5,
 	}
 
 	// Also create a dense subgraph that would explode
 	for i := 0; i < 150; i++ {
-		truster := "limit_dense_" + padInt(i, 4)
+		truster := fmt.Sprintf("11b1de05e000%04x", i)
 		if node.TrustRegistry[truster] == nil {
 			node.TrustRegistry[truster] = make(map[string]float64)
 		}
 		for j := 1; j <= 30; j++ {
-			trustee := "limit_dense_" + padInt((i+j)%150, 4)
+			trustee := fmt.Sprintf("11b1de05e000%04x", (i+j)%150)
 			node.TrustRegistry[truster][trustee] = 0.9
 		}
 	}
 	// Connect observer to dense subgraph
-	node.TrustRegistry["limit_observer"]["limit_dense_0000"] = 0.8
+	node.TrustRegistry["11b105e00e00bef0"]["11b1de05e0000000"] = 0.8
 	node.TrustRegistryMutex.Unlock()
 
 	// Query for a target in the dense subgraph
-	trustLevel, _, err := node.ComputeRelationalTrust("limit_observer", "limit_dense_0100", 10)
+	trustLevel, _, err := node.ComputeRelationalTrust("11b105e00e00bef0", "11b1de05e0000064", 10)
 
 	// Should hit resource limit
 	if err == nil {
@@ -175,16 +176,6 @@ func TestMaxTrustVisitedSize(t *testing.T) {
 	}
 }
 
-// padInt pads an integer with leading zeros to the specified width
-func padInt(n, width int) string {
-	s := ""
-	for i := 0; i < width; i++ {
-		s = string(rune('0'+n%10)) + s
-		n /= 10
-	}
-	return s
-}
-
 // BenchmarkComputeRelationalTrust_BoundedMemory benchmarks memory usage
 func BenchmarkComputeRelationalTrust_BoundedMemory(b *testing.B) {
 	node := newTestNode()
@@ -195,12 +186,12 @@ func BenchmarkComputeRelationalTrust_BoundedMemory(b *testing.B) {
 
 	node.TrustRegistryMutex.Lock()
 	for i := 0; i < numNodes; i++ {
-		truster := "bench_node_" + padInt(i, 4)
+		truster := fmt.Sprintf("be0c000de000%04x", i)
 		if node.TrustRegistry[truster] == nil {
 			node.TrustRegistry[truster] = make(map[string]float64)
 		}
 		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := "bench_node_" + padInt((i+j)%numNodes, 4)
+			trustee := fmt.Sprintf("be0c000de000%04x", (i+j)%numNodes)
 			node.TrustRegistry[truster][trustee] = 0.9
 		}
 	}
@@ -211,7 +202,7 @@ func BenchmarkComputeRelationalTrust_BoundedMemory(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// This should either complete or hit resource limits, but not OOM
-		node.ComputeRelationalTrust("bench_node_0000", "bench_node_0050", DefaultTrustMaxDepth)
+		node.ComputeRelationalTrust("be0c000de0000000", "be0c000de0000032", DefaultTrustMaxDepth)
 	}
 }
 
@@ -225,12 +216,12 @@ func BenchmarkComputeRelationalTrustEnhanced_BoundedMemory(b *testing.B) {
 
 	node.TrustRegistryMutex.Lock()
 	for i := 0; i < numNodes; i++ {
-		truster := "bench_enh_" + padInt(i, 4)
+		truster := fmt.Sprintf("be0ce0000000%04x", i)
 		if node.VerifiedTrustEdges[truster] == nil {
 			node.VerifiedTrustEdges[truster] = make(map[string]TrustEdge)
 		}
 		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := "bench_enh_" + padInt((i+j)%numNodes, 4)
+			trustee := fmt.Sprintf("be0ce0000000%04x", (i+j)%numNodes)
 			node.VerifiedTrustEdges[truster][trustee] = TrustEdge{
 				Truster:    truster,
 				Trustee:    trustee,
@@ -245,6 +236,6 @@ func BenchmarkComputeRelationalTrustEnhanced_BoundedMemory(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		node.ComputeRelationalTrustEnhanced("bench_enh_0000", "bench_enh_0050", DefaultTrustMaxDepth, false)
+		node.ComputeRelationalTrustEnhanced("be0ce00000000000", "be0ce00000000032", DefaultTrustMaxDepth, false)
 	}
 }

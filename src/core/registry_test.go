@@ -27,7 +27,7 @@ func TestGetDirectTrustees(t *testing.T) {
 	}
 
 	// Test non-existent quid returns empty map
-	empty := node.GetDirectTrustees("nonexistent12345")
+	empty := node.GetDirectTrustees("00000000000000ff")
 	if len(empty) != 0 {
 		t.Errorf("Expected 0 trustees for non-existent quid, got %d", len(empty))
 	}

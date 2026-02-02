@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -188,14 +189,14 @@ func TestGetTrustHandler(t *testing.T) {
 	router := setupTestRouter(node)
 
 	node.TrustRegistryMutex.Lock()
-	if node.TrustRegistry["quid_truster_001"] == nil {
-		node.TrustRegistry["quid_truster_001"] = make(map[string]float64)
+	if node.TrustRegistry["0000000000000001"] == nil {
+		node.TrustRegistry["0000000000000001"] = make(map[string]float64)
 	}
-	node.TrustRegistry["quid_truster_001"]["quid_trustee_001"] = 0.85
+	node.TrustRegistry["0000000000000001"]["0000000000000002"] = 0.85
 	node.TrustRegistryMutex.Unlock()
 
 	t.Run("existing trust relationship", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/quid_truster_001/quid_trustee_001?domain=test.domain.com", nil)
+		req := httptest.NewRequest("GET", "/api/trust/0000000000000001/0000000000000002?domain=test.domain.com", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -217,12 +218,12 @@ func TestGetTrustHandler(t *testing.T) {
 			t.Fatal("Expected data to be a map")
 		}
 
-		if data["observer"] != "quid_truster_001" {
-			t.Errorf("Expected observer 'quid_truster_001', got '%v'", data["observer"])
+		if data["observer"] != "0000000000000001" {
+			t.Errorf("Expected observer '0000000000000001', got '%v'", data["observer"])
 		}
 
-		if data["target"] != "quid_trustee_001" {
-			t.Errorf("Expected target 'quid_trustee_001', got '%v'", data["target"])
+		if data["target"] != "0000000000000002" {
+			t.Errorf("Expected target '0000000000000002', got '%v'", data["target"])
 		}
 
 		if data["domain"] != "test.domain.com" {
@@ -249,7 +250,7 @@ func TestGetTrustHandler(t *testing.T) {
 	})
 
 	t.Run("non-existing trust relationship", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/unknown_truster/unknown_trustee?domain=default", nil)
+		req := httptest.NewRequest("GET", "/api/trust/000000000000001d/000000000000001e?domain=default", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -282,7 +283,7 @@ func TestGetTrustHandler(t *testing.T) {
 	})
 
 	t.Run("default domain when not specified", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/quid_truster_001/quid_trustee_001", nil)
+		req := httptest.NewRequest("GET", "/api/trust/0000000000000001/0000000000000002", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -301,14 +302,14 @@ func TestGetTrustHandler(t *testing.T) {
 
 	t.Run("maxDepth query parameter", func(t *testing.T) {
 		node.TrustRegistryMutex.Lock()
-		node.TrustRegistry["quid_truster_001"]["intermediate_001"] = 0.9
-		if node.TrustRegistry["intermediate_001"] == nil {
-			node.TrustRegistry["intermediate_001"] = make(map[string]float64)
+		node.TrustRegistry["0000000000000001"]["000000000000001b"] = 0.9
+		if node.TrustRegistry["000000000000001b"] == nil {
+			node.TrustRegistry["000000000000001b"] = make(map[string]float64)
 		}
-		node.TrustRegistry["intermediate_001"]["distant_target"] = 0.9
+		node.TrustRegistry["000000000000001b"]["000000000000001c"] = 0.9
 		node.TrustRegistryMutex.Unlock()
 
-		req := httptest.NewRequest("GET", "/api/trust/quid_truster_001/distant_target?maxDepth=1", nil)
+		req := httptest.NewRequest("GET", "/api/trust/0000000000000001/000000000000001c?maxDepth=1", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -324,7 +325,7 @@ func TestGetTrustHandler(t *testing.T) {
 			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", data["trustLevel"])
 		}
 
-		req2 := httptest.NewRequest("GET", "/api/trust/quid_truster_001/distant_target?maxDepth=3", nil)
+		req2 := httptest.NewRequest("GET", "/api/trust/0000000000000001/000000000000001c?maxDepth=3", nil)
 		w2 := httptest.NewRecorder()
 		router.ServeHTTP(w2, req2)
 
@@ -343,7 +344,7 @@ func TestGetIdentityHandler(t *testing.T) {
 	router := setupTestRouter(node)
 
 	t.Run("existing identity", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/identity/quid_truster_001", nil)
+		req := httptest.NewRequest("GET", "/api/identity/0000000000000001", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -365,8 +366,8 @@ func TestGetIdentityHandler(t *testing.T) {
 			t.Fatal("Expected data to be a map")
 		}
 
-		if data["quidId"] != "quid_truster_001" {
-			t.Errorf("Expected quidId 'quid_truster_001', got '%v'", data["quidId"])
+		if data["quidId"] != "0000000000000001" {
+			t.Errorf("Expected quidId '0000000000000001', got '%v'", data["quidId"])
 		}
 
 		if data["name"] != "Test Truster" {
@@ -375,7 +376,7 @@ func TestGetIdentityHandler(t *testing.T) {
 	})
 
 	t.Run("non-existing identity", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/identity/unknown_quid", nil)
+		req := httptest.NewRequest("GET", "/api/identity/000000000000001f", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -401,7 +402,7 @@ func TestGetIdentityHandler(t *testing.T) {
 	})
 
 	t.Run("identity with domain query param", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/identity/quid_truster_001?domain=test.domain.com", nil)
+		req := httptest.NewRequest("GET", "/api/identity/0000000000000001?domain=test.domain.com", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -416,7 +417,7 @@ func TestGetTitleHandler(t *testing.T) {
 	router := setupTestRouter(node)
 
 	t.Run("existing title", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/title/quid_asset_001", nil)
+		req := httptest.NewRequest("GET", "/api/title/0000000000000003", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -438,8 +439,8 @@ func TestGetTitleHandler(t *testing.T) {
 			t.Fatal("Expected data to be a map")
 		}
 
-		if data["assetId"] != "quid_asset_001" {
-			t.Errorf("Expected assetId 'quid_asset_001', got '%v'", data["assetId"])
+		if data["assetId"] != "0000000000000003" {
+			t.Errorf("Expected assetId '0000000000000003', got '%v'", data["assetId"])
 		}
 
 		owners, ok := data["owners"].([]interface{})
@@ -451,7 +452,7 @@ func TestGetTitleHandler(t *testing.T) {
 	})
 
 	t.Run("non-existing title", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/title/unknown_asset", nil)
+		req := httptest.NewRequest("GET", "/api/title/0000000000000020", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -468,7 +469,7 @@ func TestGetTitleHandler(t *testing.T) {
 	})
 
 	t.Run("title with domain query param", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/title/quid_asset_001?domain=test.domain.com", nil)
+		req := httptest.NewRequest("GET", "/api/title/0000000000000003?domain=test.domain.com", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -590,8 +591,8 @@ func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
 
 	// Set up verified trust edges: A -> B
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:       "observer_enhanced",
-		Trustee:       "target_enhanced1",
+		Truster:       "000000000000000b",
+		Trustee:       "000000000000000c",
 		TrustLevel:    0.8,
 		SourceBlock:   "block123",
 		ValidatorQuid: node.NodeID,
@@ -600,7 +601,7 @@ func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
 	})
 
 	t.Run("includeUnverified=true returns enhanced result", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/observer_enhanced/target_enhanced1?includeUnverified=true", nil)
+		req := httptest.NewRequest("GET", "/api/trust/000000000000000b/000000000000000c?includeUnverified=true", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -645,7 +646,7 @@ func TestGetTrustHandler_IncludeUnverified(t *testing.T) {
 	})
 
 	t.Run("includeUnverified=false returns standard result", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/observer_enhanced/target_enhanced1?includeUnverified=false", nil)
+		req := httptest.NewRequest("GET", "/api/trust/000000000000000b/000000000000000c?includeUnverified=false", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -671,8 +672,8 @@ func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
 
 	// Set up verified trust edges
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:       "query_observer_01",
-		Trustee:       "query_target_001",
+		Truster:       "000000000000000d",
+		Trustee:       "000000000000000e",
 		TrustLevel:    0.9,
 		SourceBlock:   "block456",
 		ValidatorQuid: node.NodeID,
@@ -681,7 +682,7 @@ func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
 	})
 
 	t.Run("includeUnverified true in request body", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"observer":"query_observer_01","target":"query_target_001","includeUnverified":true}`)
+		body := bytes.NewBufferString(`{"observer":"000000000000000d","target":"000000000000000e","includeUnverified":true}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -720,7 +721,7 @@ func TestRelationalTrustQueryHandler_IncludeUnverified(t *testing.T) {
 	})
 
 	t.Run("includeUnverified false returns standard result", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"observer":"query_observer_01","target":"query_target_001","includeUnverified":false}`)
+		body := bytes.NewBufferString(`{"observer":"000000000000000d","target":"000000000000000e","includeUnverified":false}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -827,8 +828,8 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 
 	// Add verified edges
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:       "edges_quid_0001",
-		Trustee:       "edges_target_001",
+		Truster:       "000000000000000f",
+		Trustee:       "0000000000000010",
 		TrustLevel:    0.85,
 		SourceBlock:   "block789",
 		ValidatorQuid: node.NodeID,
@@ -837,8 +838,8 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 	})
 
 	node.AddVerifiedTrustEdge(TrustEdge{
-		Truster:       "edges_quid_0001",
-		Trustee:       "edges_target_002",
+		Truster:       "000000000000000f",
+		Trustee:       "0000000000000011",
 		TrustLevel:    0.7,
 		SourceBlock:   "block790",
 		ValidatorQuid: node.NodeID,
@@ -847,7 +848,7 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 	})
 
 	t.Run("returns verified edges with provenance", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/trust/edges/edges_quid_0001?includeUnverified=false", nil)
+		req := httptest.NewRequest("GET", "/api/trust/edges/000000000000000f?includeUnverified=false", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -866,8 +867,8 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 
 		data := response["data"].(map[string]interface{})
 
-		if data["quidId"] != "edges_quid_0001" {
-			t.Errorf("Expected quidId 'edges_quid_0001', got '%v'", data["quidId"])
+		if data["quidId"] != "000000000000000f" {
+			t.Errorf("Expected quidId '000000000000000f', got '%v'", data["quidId"])
 		}
 
 		if data["includeUnverified"] != false {
@@ -882,7 +883,7 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 		}
 
 		// Check edge provenance fields
-		if edge1, ok := edges["edges_target_001"].(map[string]interface{}); ok {
+		if edge1, ok := edges["0000000000000010"].(map[string]interface{}); ok {
 			if edge1["trustLevel"] != 0.85 {
 				t.Errorf("Expected trustLevel 0.85, got '%v'", edge1["trustLevel"])
 			}
@@ -893,23 +894,23 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 				t.Errorf("Expected verified true, got '%v'", edge1["verified"])
 			}
 		} else {
-			t.Error("Expected edge to edges_target_001 to exist")
+			t.Error("Expected edge to 0000000000000010 to exist")
 		}
 	})
 
 	t.Run("includeUnverified returns both verified and unverified", func(t *testing.T) {
 		// Add an unverified edge
 		node.AddUnverifiedTrustEdge(TrustEdge{
-			Truster:       "edges_quid_0001",
-			Trustee:       "unverified_tgt01",
+			Truster:       "000000000000000f",
+			Trustee:       "0000000000000012",
 			TrustLevel:    0.5,
 			SourceBlock:   "block999",
-			ValidatorQuid: "untrusted_val_01",
+			ValidatorQuid: "0000000000000013",
 			Verified:      false,
 			Timestamp:     1000002,
 		})
 
-		req := httptest.NewRequest("GET", "/api/trust/edges/edges_quid_0001?includeUnverified=true", nil)
+		req := httptest.NewRequest("GET", "/api/trust/edges/000000000000000f?includeUnverified=true", nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 
@@ -934,7 +935,7 @@ func TestGetTrustEdgesHandler(t *testing.T) {
 		}
 
 		// Check unverified edge
-		if unverifiedEdge, ok := edges["unverified_tgt01"].(map[string]interface{}); ok {
+		if unverifiedEdge, ok := edges["0000000000000012"].(map[string]interface{}); ok {
 			if unverifiedEdge["verified"] != false {
 				t.Errorf("Expected verified false for unverified edge, got '%v'", unverifiedEdge["verified"])
 			}
@@ -1318,14 +1319,14 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 	router := setupTestRouter(node)
 
 	node.TrustRegistryMutex.Lock()
-	if node.TrustRegistry["observer_quid_01"] == nil {
-		node.TrustRegistry["observer_quid_01"] = make(map[string]float64)
+	if node.TrustRegistry["0000000000000014"] == nil {
+		node.TrustRegistry["0000000000000014"] = make(map[string]float64)
 	}
-	node.TrustRegistry["observer_quid_01"]["target_quid_001"] = 0.75
+	node.TrustRegistry["0000000000000014"]["0000000000000015"] = 0.75
 	node.TrustRegistryMutex.Unlock()
 
 	t.Run("valid query with observer and target", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"observer":"observer_quid_01","target":"target_quid_001","domain":"test.domain"}`)
+		body := bytes.NewBufferString(`{"observer":"0000000000000014","target":"0000000000000015","domain":"test.domain"}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -1346,12 +1347,12 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 
 		data := response["data"].(map[string]interface{})
 
-		if data["observer"] != "observer_quid_01" {
-			t.Errorf("Expected observer 'observer_quid_01', got '%v'", data["observer"])
+		if data["observer"] != "0000000000000014" {
+			t.Errorf("Expected observer '0000000000000014', got '%v'", data["observer"])
 		}
 
-		if data["target"] != "target_quid_001" {
-			t.Errorf("Expected target 'target_quid_001', got '%v'", data["target"])
+		if data["target"] != "0000000000000015" {
+			t.Errorf("Expected target '0000000000000015', got '%v'", data["target"])
 		}
 
 		if data["trustLevel"] != 0.75 {
@@ -1378,7 +1379,7 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 	})
 
 	t.Run("missing observer", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"target":"target_quid_001","domain":"test.domain"}`)
+		body := bytes.NewBufferString(`{"target":"0000000000000015","domain":"test.domain"}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -1402,7 +1403,7 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 	})
 
 	t.Run("missing target", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"observer":"observer_quid_01","domain":"test.domain"}`)
+		body := bytes.NewBufferString(`{"observer":"0000000000000014","domain":"test.domain"}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -1422,17 +1423,17 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 
 	t.Run("query with maxDepth parameter", func(t *testing.T) {
 		node.TrustRegistryMutex.Lock()
-		if node.TrustRegistry["hop1_quid_00001"] == nil {
-			node.TrustRegistry["hop1_quid_00001"] = make(map[string]float64)
+		if node.TrustRegistry["0000000000000016"] == nil {
+			node.TrustRegistry["0000000000000016"] = make(map[string]float64)
 		}
-		node.TrustRegistry["hop1_quid_00001"]["hop2_quid_00001"] = 0.8
-		if node.TrustRegistry["hop2_quid_00001"] == nil {
-			node.TrustRegistry["hop2_quid_00001"] = make(map[string]float64)
+		node.TrustRegistry["0000000000000016"]["0000000000000017"] = 0.8
+		if node.TrustRegistry["0000000000000017"] == nil {
+			node.TrustRegistry["0000000000000017"] = make(map[string]float64)
 		}
-		node.TrustRegistry["hop2_quid_00001"]["hop3_quid_00001"] = 0.8
+		node.TrustRegistry["0000000000000017"]["0000000000000018"] = 0.8
 		node.TrustRegistryMutex.Unlock()
 
-		body := bytes.NewBufferString(`{"observer":"hop1_quid_00001","target":"hop3_quid_00001","maxDepth":1}`)
+		body := bytes.NewBufferString(`{"observer":"0000000000000016","target":"0000000000000018","maxDepth":1}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -1450,7 +1451,7 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 			t.Errorf("Expected trustLevel 0.0 with maxDepth=1 (target is 2 hops away), got '%v'", data["trustLevel"])
 		}
 
-		body2 := bytes.NewBufferString(`{"observer":"hop1_quid_00001","target":"hop3_quid_00001","maxDepth":3}`)
+		body2 := bytes.NewBufferString(`{"observer":"0000000000000016","target":"0000000000000018","maxDepth":3}`)
 		req2 := httptest.NewRequest("POST", "/api/trust/query", body2)
 		req2.Header.Set("Content-Type", "application/json")
 		w2 := httptest.NewRecorder()
@@ -1467,7 +1468,7 @@ func TestRelationalTrustQueryHandler(t *testing.T) {
 	})
 
 	t.Run("query that returns no path", func(t *testing.T) {
-		body := bytes.NewBufferString(`{"observer":"isolated_quid_1","target":"isolated_quid_2","domain":"test.domain"}`)
+		body := bytes.NewBufferString(`{"observer":"0000000000000019","target":"000000000000001a","domain":"test.domain"}`)
 		req := httptest.NewRequest("POST", "/api/trust/query", body)
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
