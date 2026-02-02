@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+// signBlock signs a block with the node's private key and sets required fields
+func signBlock(node *QuidnugNode, block *Block) {
+	block.TrustProof.ValidatorPublicKey = node.GetPublicKeyHex()
+	signableData := GetBlockSignableData(*block)
+	sig, _ := node.SignData(signableData)
+	block.TrustProof.ValidatorSigs = []string{hex.EncodeToString(sig)}
+	block.Hash = calculateBlockHash(*block)
+}
+
 func TestValidateTrustProof_SelfAsValidator(t *testing.T) {
 	node := newTestNode()
 
@@ -733,8 +742,12 @@ func TestValidateBlockCryptographic_Valid(t *testing.T) {
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
+		TrustProof: TrustProof{
+			TrustDomain: "default",
+			ValidatorID: node.NodeID,
+		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
 	if !node.ValidateBlockCryptographic(block) {
 		t.Error("Expected true for valid cryptographic block")
@@ -809,12 +822,11 @@ func TestValidateBlockTiered_TrustedBlock(t *testing.T) {
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "default",
-			ValidatorID:   node.NodeID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "default",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
 	if result := node.ValidateBlockTiered(block); result != BlockTrusted {
 		t.Errorf("Expected BlockTrusted for valid block from self, got %v", result)
@@ -824,18 +836,30 @@ func TestValidateBlockTiered_TrustedBlock(t *testing.T) {
 func TestValidateBlockTiered_TentativeBlock(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "3456789012345678"
 	node.DistrustThreshold = 0.1
 
+	// Use this node as the validator so we can sign blocks
 	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.8,
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
 	}
 
-	// Trust level between thresholds
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.5,
+	// Create a second node to be the "receiver" with tentative trust
+	receiverNode := newTestNode()
+	receiverNode.DistrustThreshold = 0.1
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = node.Blockchain
+
+	// Receiver has tentative trust in the validator
+	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
+		node.NodeID: 0.5,
 	}
 
 	block := Block{
@@ -844,14 +868,13 @@ func TestValidateBlockTiered_TentativeBlock(t *testing.T) {
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
-	if result := node.ValidateBlockTiered(block); result != BlockTentative {
+	if result := receiverNode.ValidateBlockTiered(block); result != BlockTentative {
 		t.Errorf("Expected BlockTentative, got %v", result)
 	}
 }
@@ -859,29 +882,39 @@ func TestValidateBlockTiered_TentativeBlock(t *testing.T) {
 func TestValidateBlockTiered_UntrustedBlock(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "3456789012345678"
-
+	// Use this node as the validator so we can sign blocks
 	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.5,
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
 	}
 
-	// No trust relationship
+	// Create a second node to be the "receiver" with no trust
+	receiverNode := newTestNode()
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = node.Blockchain
+
+	// No trust relationship between receiver and validator
+
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
-	if result := node.ValidateBlockTiered(block); result != BlockUntrusted {
+	if result := receiverNode.ValidateBlockTiered(block); result != BlockUntrusted {
 		t.Errorf("Expected BlockUntrusted, got %v", result)
 	}
 }
@@ -889,13 +922,23 @@ func TestValidateBlockTiered_UntrustedBlock(t *testing.T) {
 func TestValidateBlockTiered_SeparatesCryptoFromTrust(t *testing.T) {
 	node := newTestNode()
 
-	validatorID := "3456789012345678"
-
+	// Use this node as the validator so we can sign blocks
 	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.5,
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
 	}
+
+	// Create a second node to be the "receiver" with no trust
+	receiverNode := newTestNode()
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{node.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{node.NodeID: node.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = node.Blockchain
 
 	// Cryptographically valid but untrusted validator
 	block := Block{
@@ -904,20 +947,19 @@ func TestValidateBlockTiered_SeparatesCryptoFromTrust(t *testing.T) {
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
 	// Cryptographic validation should pass
-	if !node.ValidateBlockCryptographic(block) {
+	if !receiverNode.ValidateBlockCryptographic(block) {
 		t.Error("Expected cryptographic validation to pass")
 	}
 
 	// But overall tiered validation returns Untrusted (not Invalid)
-	result := node.ValidateBlockTiered(block)
+	result := receiverNode.ValidateBlockTiered(block)
 	if result == BlockInvalid {
 		t.Error("Expected block to NOT be Invalid - crypto is valid, only trust fails")
 	}
@@ -1032,12 +1074,11 @@ func TestReceiveBlock_Trusted(t *testing.T) {
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "default",
-			ValidatorID:   node.NodeID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "default",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
 	acceptance, err := node.ReceiveBlock(block)
 	if err != nil {
@@ -1065,36 +1106,45 @@ func TestReceiveBlock_Trusted(t *testing.T) {
 }
 
 func TestReceiveBlock_Tentative(t *testing.T) {
-	node := newTestNode()
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
 
-	validatorID := "3456789012345678"
-	node.DistrustThreshold = 0.1
+	receiverNode.DistrustThreshold = 0.1
 
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.8,
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
 
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
+
 	// Trust between thresholds (tentative)
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.5,
+	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
+		validatorNode.NodeID: 0.5,
 	}
 
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(validatorNode, &block)
 
-	acceptance, err := node.ReceiveBlock(block)
+	acceptance, err := receiverNode.ReceiveBlock(block)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1103,14 +1153,14 @@ func TestReceiveBlock_Tentative(t *testing.T) {
 	}
 
 	// Verify block NOT in main chain
-	node.BlockchainMutex.RLock()
-	if len(node.Blockchain) != 1 {
-		t.Errorf("Expected blockchain length 1, got %d", len(node.Blockchain))
+	receiverNode.BlockchainMutex.RLock()
+	if len(receiverNode.Blockchain) != 1 {
+		t.Errorf("Expected blockchain length 1, got %d", len(receiverNode.Blockchain))
 	}
-	node.BlockchainMutex.RUnlock()
+	receiverNode.BlockchainMutex.RUnlock()
 
 	// Verify block IS in tentative storage
-	tentative := node.GetTentativeBlocks("testdomain")
+	tentative := receiverNode.GetTentativeBlocks("testdomain")
 	if len(tentative) != 1 {
 		t.Errorf("Expected 1 tentative block, got %d", len(tentative))
 	}
@@ -1120,31 +1170,39 @@ func TestReceiveBlock_Tentative(t *testing.T) {
 }
 
 func TestReceiveBlock_Untrusted(t *testing.T) {
-	node := newTestNode()
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
 
-	validatorID := "3456789012345678"
-
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.5,
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
+
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
 
 	// No trust relationship (untrusted)
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(validatorNode, &block)
 
-	acceptance, err := node.ReceiveBlock(block)
+	acceptance, err := receiverNode.ReceiveBlock(block)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -1153,21 +1211,22 @@ func TestReceiveBlock_Untrusted(t *testing.T) {
 	}
 
 	// Verify block NOT in main chain
-	node.BlockchainMutex.RLock()
-	if len(node.Blockchain) != 1 {
-		t.Errorf("Expected blockchain length 1, got %d", len(node.Blockchain))
+	receiverNode.BlockchainMutex.RLock()
+	if len(receiverNode.Blockchain) != 1 {
+		t.Errorf("Expected blockchain length 1, got %d", len(receiverNode.Blockchain))
 	}
-	node.BlockchainMutex.RUnlock()
+	receiverNode.BlockchainMutex.RUnlock()
 
 	// Verify block NOT in tentative storage
-	tentative := node.GetTentativeBlocks("testdomain")
+	tentative := receiverNode.GetTentativeBlocks("testdomain")
 	if len(tentative) != 0 {
 		t.Errorf("Expected no tentative blocks, got %d", len(tentative))
 	}
 }
 
 func TestReceiveBlock_EdgeExtraction(t *testing.T) {
-	node := newTestNode()
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
 
 	// Create a trust transaction (edges extracted even from untrusted blocks)
 	tx := TrustTransaction{
@@ -1182,32 +1241,39 @@ func TestReceiveBlock_EdgeExtraction(t *testing.T) {
 		TrustLevel: 0.7,
 	}
 
-	// Create block from untrusted validator
-	validatorID := "3456789012345678"
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.5,
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
+
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.5,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
 
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{tx},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(validatorNode, &block)
 
 	// ReceiveBlock extracts edges even if block is Invalid/Untrusted
-	node.ReceiveBlock(block)
+	receiverNode.ReceiveBlock(block)
 
 	// Check that unverified edge was extracted
-	edges := node.GetTrustEdges("1234567890123456", true)
+	edges := receiverNode.GetTrustEdges("1234567890123456", true)
 	if len(edges) == 0 {
 		t.Error("Expected edge to be extracted to unverified registry")
 	} else {
@@ -1248,116 +1314,134 @@ func TestStoreTentativeBlock_Duplicate(t *testing.T) {
 }
 
 func TestReEvaluateTentativeBlocks_Promotion(t *testing.T) {
-	node := newTestNode()
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
 
-	validatorID := "3456789012345678"
-	node.DistrustThreshold = 0.1
+	receiverNode.DistrustThreshold = 0.1
 
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.8,
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
 
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
+
 	// Start with tentative trust
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.5, // Below 0.8 threshold
+	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
+		validatorNode.NodeID: 0.5, // Below 0.8 threshold
 	}
 
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(validatorNode, &block)
 
 	// Receive as tentative
-	acceptance, _ := node.ReceiveBlock(block)
+	acceptance, _ := receiverNode.ReceiveBlock(block)
 	if acceptance != BlockTentative {
 		t.Fatalf("Expected BlockTentative, got %v", acceptance)
 	}
 
 	// Verify in tentative storage
-	tentative := node.GetTentativeBlocks("testdomain")
+	tentative := receiverNode.GetTentativeBlocks("testdomain")
 	if len(tentative) != 1 {
 		t.Fatalf("Expected 1 tentative block, got %d", len(tentative))
 	}
 
 	// Increase trust to meet threshold
-	node.TrustRegistry[node.NodeID][validatorID] = 0.9
+	receiverNode.TrustRegistry[receiverNode.NodeID][validatorNode.NodeID] = 0.9
 
 	// Re-evaluate
-	err := node.ReEvaluateTentativeBlocks("testdomain")
+	err := receiverNode.ReEvaluateTentativeBlocks("testdomain")
 	if err != nil {
 		t.Fatalf("ReEvaluate failed: %v", err)
 	}
 
 	// Verify block promoted to main chain
-	node.BlockchainMutex.RLock()
-	if len(node.Blockchain) != 2 {
-		t.Errorf("Expected blockchain length 2, got %d", len(node.Blockchain))
+	receiverNode.BlockchainMutex.RLock()
+	if len(receiverNode.Blockchain) != 2 {
+		t.Errorf("Expected blockchain length 2, got %d", len(receiverNode.Blockchain))
 	}
-	node.BlockchainMutex.RUnlock()
+	receiverNode.BlockchainMutex.RUnlock()
 
 	// Verify removed from tentative storage
-	tentative = node.GetTentativeBlocks("testdomain")
+	tentative = receiverNode.GetTentativeBlocks("testdomain")
 	if len(tentative) != 0 {
 		t.Errorf("Expected no tentative blocks after promotion, got %d", len(tentative))
 	}
 }
 
 func TestReEvaluateTentativeBlocks_StillTentative(t *testing.T) {
-	node := newTestNode()
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
 
-	validatorID := "3456789012345678"
-	node.DistrustThreshold = 0.1
+	receiverNode.DistrustThreshold = 0.1
 
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.8,
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
 
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.5,
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
+
+	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
+		validatorNode.NodeID: 0.5,
 	}
 
 	block := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(validatorNode, &block)
 
-	node.ReceiveBlock(block)
+	receiverNode.ReceiveBlock(block)
 
 	// Re-evaluate without changing trust
-	node.ReEvaluateTentativeBlocks("testdomain")
+	receiverNode.ReEvaluateTentativeBlocks("testdomain")
 
 	// Should still be tentative
-	tentative := node.GetTentativeBlocks("testdomain")
+	tentative := receiverNode.GetTentativeBlocks("testdomain")
 	if len(tentative) != 1 {
 		t.Errorf("Expected block to remain tentative, got %d", len(tentative))
 	}
 
 	// Not in main chain
-	node.BlockchainMutex.RLock()
-	if len(node.Blockchain) != 1 {
-		t.Errorf("Expected blockchain length 1, got %d", len(node.Blockchain))
+	receiverNode.BlockchainMutex.RLock()
+	if len(receiverNode.Blockchain) != 1 {
+		t.Errorf("Expected blockchain length 1, got %d", len(receiverNode.Blockchain))
 	}
-	node.BlockchainMutex.RUnlock()
+	receiverNode.BlockchainMutex.RUnlock()
 }
 
 func TestReEvaluateTentativeBlocks_Demotion(t *testing.T) {
@@ -1436,43 +1520,54 @@ func TestValidateBlock_BackwardCompatibility(t *testing.T) {
 		Transactions: []interface{}{},
 		PrevHash:     node.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "default",
-			ValidatorID:   node.NodeID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "default",
+			ValidatorID: node.NodeID,
 		},
 	}
-	block.Hash = calculateBlockHash(block)
+	signBlock(node, &block)
 
 	if !node.ValidateBlock(block) {
 		t.Error("Expected ValidateBlock to return true for trusted block")
 	}
 
 	// Tentative block should return false from ValidateBlock
-	validatorID := "3456789012345678"
-	node.DistrustThreshold = 0.1
-	node.TrustDomains["testdomain"] = TrustDomain{
-		Name:           "testdomain",
-		ValidatorNodes: []string{validatorID},
-		TrustThreshold: 0.8,
+	validatorNode := newTestNode()
+	receiverNode := newTestNode()
+	receiverNode.DistrustThreshold = 0.1
+
+	// Set up testdomain with validator node
+	validatorNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
 	}
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.5,
+
+	receiverNode.TrustDomains["testdomain"] = TrustDomain{
+		Name:                "testdomain",
+		ValidatorNodes:      []string{validatorNode.NodeID},
+		TrustThreshold:      0.8,
+		ValidatorPublicKeys: map[string]string{validatorNode.NodeID: validatorNode.GetPublicKeyHex()},
+	}
+	receiverNode.Blockchain = validatorNode.Blockchain
+
+	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
+		validatorNode.NodeID: 0.5,
 	}
 
 	tentativeBlock := Block{
 		Index:        1,
 		Timestamp:    1234567890,
 		Transactions: []interface{}{},
-		PrevHash:     node.Blockchain[0].Hash,
+		PrevHash:     validatorNode.Blockchain[0].Hash,
 		TrustProof: TrustProof{
-			TrustDomain:   "testdomain",
-			ValidatorID:   validatorID,
-			ValidatorSigs: []string{"sig"},
+			TrustDomain: "testdomain",
+			ValidatorID: validatorNode.NodeID,
 		},
 	}
-	tentativeBlock.Hash = calculateBlockHash(tentativeBlock)
+	signBlock(validatorNode, &tentativeBlock)
 
-	if node.ValidateBlock(tentativeBlock) {
+	if receiverNode.ValidateBlock(tentativeBlock) {
 		t.Error("Expected ValidateBlock to return false for tentative block")
 	}
 }
