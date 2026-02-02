@@ -974,7 +974,7 @@ make build
 ## Additional Resources
 
 - **[Integration Guide](docs/integration-guide.md)**: Detailed guide for building applications
-- **[API Specification](docs/api-spec.yaml)**: OpenAPI 3.0 specification
+- **[OpenAPI Specification](docs/openapi.yaml)**: OpenAPI 3.0 specification for the REST API
 - **[Architecture](docs/architecture.md)**: System design and internals
 - **[JavaScript Client](clients/js/)**: Browser and Node.js client library
 

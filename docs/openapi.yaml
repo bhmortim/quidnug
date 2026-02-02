@@ -1,0 +1,1404 @@
+openapi: 3.0.3
+info:
+  title: Quidnug Protocol API
+  version: 1.0.0
+  description: |
+    REST API for the Quidnug trust protocol - a decentralized system for identity,
+    trust, and ownership management using relational trust computation.
+    
+    ## Trust Model
+    Quidnug uses relational trust where trust is computed from an observer's perspective
+    through the trust graph. Trust is transitive with multiplicative decay - if A trusts
+    B at 0.8 and B trusts C at 0.9, then A's relational trust in C is 0.8 * 0.9 = 0.72.
+    The system finds the best path (highest trust) when multiple paths exist.
+    
+    ## Core Concepts
+    - **Quid**: A unique identity in the network, identified by a 16-character hex string
+      derived from the SHA-256 hash of the public key
+    - **Trust Transaction**: Establishes direct trust from one quid to another (0.0-1.0)
+    - **Identity Transaction**: Declares or updates identity attributes for a quid
+    - **Title Transaction**: Defines ownership relationships for assets
+    - **Trust Domain**: A namespace for trust relationships with its own validators
+    
+    ## Authentication
+    Node-to-node communication uses HMAC-SHA256 signatures when `REQUIRE_NODE_AUTH=true`.
+    Public API endpoints do not require authentication.
+
+  contact:
+    name: Quidnug
+    url: https://github.com/quidnug/quidnug
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: '{protocol}://{host}:{port}'
+    description: Configurable server
+    variables:
+      protocol:
+        default: http
+        enum: [http, https]
+      host:
+        default: localhost
+      port:
+        default: '8080'
+
+tags:
+  - name: Health
+    description: Health check and node information
+  - name: Nodes
+    description: Network node discovery and management
+  - name: Transactions
+    description: Transaction submission and retrieval
+  - name: Blocks
+    description: Blockchain data
+  - name: Domains
+    description: Trust domain management
+  - name: Registry
+    description: Registry queries for trust, identity, and title data
+  - name: Trust
+    description: Trust queries and relational trust computation
+  - name: Identity
+    description: Identity management
+  - name: Title
+    description: Asset ownership management
+  - name: Metrics
+    description: Prometheus metrics endpoint
+
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns the health status of the node
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Node is healthy
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  node_id:
+                    type: string
+                    description: 16-character hex node ID
+                    example: a1b2c3d4e5f67890
+                  uptime:
+                    type: integer
+                    format: int64
+                    description: Uptime in seconds
+                  version:
+                    type: string
+                    example: '1.0.0'
+
+  /api/info:
+    get:
+      tags: [Health]
+      summary: Get node information
+      description: Returns detailed information about the node
+      operationId: getInfo
+      responses:
+        '200':
+          description: Node information
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodeQuid:
+                    type: string
+                    description: Node's quid ID
+                  managedDomains:
+                    type: array
+                    items:
+                      type: string
+                    description: Trust domains managed by this node
+                  blockHeight:
+                    type: integer
+                    format: int64
+                    description: Current blockchain height
+                  version:
+                    type: string
+
+  /api/nodes:
+    get:
+      tags: [Nodes]
+      summary: List known nodes
+      description: Returns a paginated list of known nodes in the network
+      operationId: getNodes
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: List of nodes
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Node'
+
+  /api/blocks:
+    get:
+      tags: [Blocks]
+      summary: List blocks
+      description: Returns a paginated list of blocks in the blockchain
+      operationId: getBlocks
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: List of blocks
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Block'
+
+  /api/blocks/tentative/{domain}:
+    get:
+      tags: [Blocks]
+      summary: Get tentative blocks for a domain
+      description: Returns blocks that are tentatively accepted but not yet fully trusted
+      operationId: getTentativeBlocks
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Trust domain name
+      responses:
+        '200':
+          description: Tentative blocks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain:
+                    type: string
+                  blocks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Block'
+
+  /api/transactions:
+    get:
+      tags: [Transactions]
+      summary: List pending transactions
+      description: Returns a paginated list of pending transactions
+      operationId: getTransactions
+      parameters:
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: List of pending transactions
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/X-Request-ID'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          oneOf:
+                            - $ref: '#/components/schemas/TrustTransaction'
+                            - $ref: '#/components/schemas/IdentityTransaction'
+                            - $ref: '#/components/schemas/TitleTransaction'
+
+  /api/transactions/trust:
+    post:
+      tags: [Transactions]
+      summary: Submit trust transaction
+      description: |
+        Creates a trust relationship from the truster to the trustee.
+        The nonce must be strictly greater than any previous nonce for the same truster-trustee pair.
+      operationId: createTrustTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrustTransactionInput'
+      responses:
+        '200':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Invalid transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '413':
+          description: Payload too large
+        '429':
+          description: Rate limit exceeded
+
+  /api/transactions/identity:
+    post:
+      tags: [Transactions]
+      summary: Submit identity transaction
+      description: |
+        Declares or updates identity attributes for a quid.
+        The updateNonce must be strictly greater than the current registry value.
+      operationId: createIdentityTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityTransactionInput'
+      responses:
+        '200':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Invalid transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '413':
+          description: Payload too large
+        '429':
+          description: Rate limit exceeded
+
+  /api/transactions/title:
+    post:
+      tags: [Transactions]
+      summary: Submit title transaction
+      description: |
+        Defines ownership relationships for an asset.
+        Ownership percentages must sum to exactly 100.0.
+      operationId: createTitleTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TitleTransactionInput'
+      responses:
+        '200':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Invalid transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '413':
+          description: Payload too large
+        '429':
+          description: Rate limit exceeded
+
+  /api/domains:
+    get:
+      tags: [Domains]
+      summary: List trust domains
+      description: Returns all trust domains managed by this node
+      operationId: getDomains
+      responses:
+        '200':
+          description: List of trust domains
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrustDomain'
+    post:
+      tags: [Domains]
+      summary: Register trust domain
+      description: Registers a new trust domain with this node
+      operationId: registerDomain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrustDomainInput'
+      responses:
+        '200':
+          description: Domain registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                  domain:
+                    type: string
+        '400':
+          description: Invalid domain configuration
+
+  /api/domains/{name}/query:
+    get:
+      tags: [Domains]
+      summary: Query a trust domain
+      description: |
+        Query trust, identity, or title data within a specific domain.
+        If the domain is not local, the query is forwarded to nodes managing that domain
+        using hierarchical domain walking.
+      operationId: queryDomain
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Trust domain name (supports dot-notation hierarchy)
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [trust, identity, title]
+          description: Query type
+        - name: param
+          in: query
+          required: true
+          schema:
+            type: string
+          description: |
+            Query parameter. For trust queries, use format "observer:target".
+            For identity/title, use the quid/asset ID.
+      responses:
+        '200':
+          description: Query result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RelationalTrustResult'
+                  - $ref: '#/components/schemas/IdentityTransaction'
+                  - $ref: '#/components/schemas/TitleTransaction'
+        '400':
+          description: Invalid query
+        '404':
+          description: Not found or no nodes manage the domain
+
+  /api/registry/trust:
+    get:
+      tags: [Registry]
+      summary: Query trust registry
+      description: |
+        Query the trust registry. Supports multiple query modes:
+        - With observer+target: Computes relational trust
+        - With truster+trustee: Returns direct trust level
+        - With truster only: Returns all relationships for that truster
+        - No parameters: Returns paginated full registry
+      operationId: queryTrustRegistry
+      parameters:
+        - name: observer
+          in: query
+          schema:
+            type: string
+          description: Observer quid ID (for relational trust)
+        - name: target
+          in: query
+          schema:
+            type: string
+          description: Target quid ID (for relational trust)
+        - name: truster
+          in: query
+          schema:
+            type: string
+          description: Truster quid ID (for direct trust)
+        - name: trustee
+          in: query
+          schema:
+            type: string
+          description: Trustee quid ID (for direct trust)
+        - name: maxDepth
+          in: query
+          schema:
+            type: integer
+            default: 5
+          description: Maximum depth for relational trust computation
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: Trust registry data
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RelationalTrustResult'
+                  - type: object
+                    properties:
+                      truster:
+                        type: string
+                      trustee:
+                        type: string
+                      trust_level:
+                        type: number
+                  - allOf:
+                      - $ref: '#/components/schemas/PaginatedResponse'
+                      - type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/TrustEntry'
+
+  /api/registry/identity:
+    get:
+      tags: [Registry]
+      summary: Query identity registry
+      description: Query the identity registry by quid ID or list all identities
+      operationId: queryIdentityRegistry
+      parameters:
+        - name: quid_id
+          in: query
+          schema:
+            type: string
+          description: Filter by specific quid ID
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: Identity registry data
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/IdentityTransaction'
+                  - allOf:
+                      - $ref: '#/components/schemas/PaginatedResponse'
+                      - type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/IdentityEntry'
+        '404':
+          description: Identity not found
+
+  /api/registry/title:
+    get:
+      tags: [Registry]
+      summary: Query title registry
+      description: Query the title registry by asset ID, owner ID, or list all titles
+      operationId: queryTitleRegistry
+      parameters:
+        - name: asset_id
+          in: query
+          schema:
+            type: string
+          description: Filter by specific asset ID
+        - name: owner_id
+          in: query
+          schema:
+            type: string
+          description: Filter by owner ID to find all owned assets
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: Title registry data
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TitleTransaction'
+                  - allOf:
+                      - $ref: '#/components/schemas/PaginatedResponse'
+                      - type: object
+                        properties:
+                          data:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/TitleEntry'
+        '404':
+          description: Title not found
+
+  /api/quids:
+    post:
+      tags: [Identity]
+      summary: Create a new quid
+      description: Generates a new ECDSA P-256 key pair and derives a quid ID
+      operationId: createQuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                metadata:
+                  type: object
+                  additionalProperties: true
+                  description: Optional metadata to associate with the quid
+      responses:
+        '201':
+          description: Quid created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quidId:
+                    type: string
+                    description: 16-character hex quid ID
+                    pattern: '^[a-f0-9]{16}$'
+                  publicKey:
+                    type: string
+                    description: Hex-encoded public key
+                  created:
+                    type: integer
+                    format: int64
+                    description: Unix timestamp
+        '500':
+          description: Failed to generate key pair
+
+  /api/trust/{observer}/{target}:
+    get:
+      tags: [Trust]
+      summary: Get relational trust
+      description: |
+        Computes relational trust from observer to target through the trust graph.
+        Uses BFS to find the best path with multiplicative decay.
+      operationId: getTrust
+      parameters:
+        - name: observer
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{16}$'
+          description: Observer quid ID
+        - name: target
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{16}$'
+          description: Target quid ID
+        - name: domain
+          in: query
+          schema:
+            type: string
+            default: default
+          description: Trust domain
+        - name: maxDepth
+          in: query
+          schema:
+            type: integer
+            default: 5
+          description: Maximum path depth
+        - name: includeUnverified
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include unverified trust edges in computation
+      responses:
+        '200':
+          description: Relational trust result
+          headers:
+            X-Trust-Computation-Warning:
+              schema:
+                type: string
+              description: Present if resource limits were exceeded
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RelationalTrustResult'
+                  - $ref: '#/components/schemas/EnhancedTrustResult'
+
+  /api/trust/query:
+    post:
+      tags: [Trust]
+      summary: Query relational trust
+      description: POST endpoint for relational trust queries with structured input
+      operationId: queryRelationalTrust
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RelationalTrustQuery'
+      responses:
+        '200':
+          description: Relational trust result
+          headers:
+            X-Trust-Computation-Warning:
+              schema:
+                type: string
+              description: Present if resource limits were exceeded
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RelationalTrustResult'
+                  - $ref: '#/components/schemas/EnhancedTrustResult'
+        '400':
+          description: Missing required fields
+
+  /api/trust/edges/{quidId}:
+    get:
+      tags: [Trust]
+      summary: Get trust edges for a quid
+      description: Returns trust edges with provenance information
+      operationId: getTrustEdges
+      parameters:
+        - name: quidId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{16}$'
+          description: Quid ID
+        - name: includeUnverified
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include unverified edges
+      responses:
+        '200':
+          description: Trust edges
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  quidId:
+                    type: string
+                  includeUnverified:
+                    type: boolean
+                  edges:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrustEdge'
+
+  /api/identity/{quidId}:
+    get:
+      tags: [Identity]
+      summary: Get identity
+      description: Returns identity information for a quid
+      operationId: getIdentity
+      parameters:
+        - name: quidId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{16}$'
+          description: Quid ID
+      responses:
+        '200':
+          description: Identity information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityTransaction'
+        '404':
+          description: Identity not found
+
+  /api/title/{assetId}:
+    get:
+      tags: [Title]
+      summary: Get asset ownership
+      description: Returns ownership information for an asset
+      operationId: getTitle
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset ID
+      responses:
+        '200':
+          description: Ownership information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TitleTransaction'
+        '404':
+          description: Title not found
+
+  /metrics:
+    get:
+      tags: [Metrics]
+      summary: Prometheus metrics
+      description: Returns Prometheus-formatted metrics for monitoring
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  parameters:
+    limitParam:
+      name: limit
+      in: query
+      description: Maximum number of items to return (default 50, max 1000)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 50
+
+    offsetParam:
+      name: offset
+      in: query
+      description: Number of items to skip
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  headers:
+    X-Request-ID:
+      description: Unique request identifier for tracing
+      schema:
+        type: string
+        format: uuid
+
+    X-RateLimit-Remaining:
+      description: Number of requests remaining in the current window
+      schema:
+        type: integer
+
+  schemas:
+    PaginatedResponse:
+      type: object
+      properties:
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginationMeta:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: Number of items returned
+        offset:
+          type: integer
+          description: Number of items skipped
+        total:
+          type: integer
+          description: Total number of items available
+
+    APIError:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        field:
+          type: string
+          description: Field that caused the error (for validation errors)
+
+    TransactionResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        transaction_id:
+          type: string
+          description: Assigned transaction ID
+        message:
+          type: string
+
+    BaseTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Transaction ID
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        trustDomain:
+          type: string
+          description: Trust domain for this transaction
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp
+        signature:
+          type: string
+          description: Base64-encoded ECDSA signature
+        publicKey:
+          type: string
+          description: Hex-encoded public key of signer
+
+    TransactionType:
+      type: string
+      enum: [TRUST, IDENTITY, TITLE, GENERIC]
+
+    TrustTransaction:
+      allOf:
+        - $ref: '#/components/schemas/BaseTransaction'
+        - type: object
+          properties:
+            truster:
+              type: string
+              pattern: '^[a-f0-9]{16}$'
+              description: Quid ID of the entity giving trust
+            trustee:
+              type: string
+              pattern: '^[a-f0-9]{16}$'
+              description: Quid ID of the entity receiving trust
+            trustLevel:
+              type: number
+              format: double
+              minimum: 0
+              maximum: 1
+              description: Trust level (0.0 = distrust, 1.0 = full trust)
+            nonce:
+              type: integer
+              format: int64
+              description: Monotonic nonce for replay protection
+            description:
+              type: string
+              description: Optional description
+            validUntil:
+              type: integer
+              format: int64
+              description: Optional expiration timestamp (Unix seconds)
+
+    TrustTransactionInput:
+      type: object
+      required:
+        - truster
+        - trustee
+        - trustLevel
+        - nonce
+        - trustDomain
+        - signature
+        - publicKey
+      properties:
+        truster:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+        trustee:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+        trustLevel:
+          type: number
+          minimum: 0
+          maximum: 1
+        nonce:
+          type: integer
+          format: int64
+        trustDomain:
+          type: string
+        signature:
+          type: string
+        publicKey:
+          type: string
+        description:
+          type: string
+        validUntil:
+          type: integer
+          format: int64
+
+    IdentityTransaction:
+      allOf:
+        - $ref: '#/components/schemas/BaseTransaction'
+        - type: object
+          properties:
+            quidId:
+              type: string
+              pattern: '^[a-f0-9]{16}$'
+              description: Quid ID being defined
+            name:
+              type: string
+              maxLength: 256
+              description: Human-readable name
+            description:
+              type: string
+              maxLength: 4096
+            attributes:
+              type: object
+              additionalProperties: true
+              description: Custom identity attributes
+            creator:
+              type: string
+              description: Quid ID of the creator
+            updateNonce:
+              type: integer
+              format: int64
+              description: Monotonic nonce for updates
+
+    IdentityTransactionInput:
+      type: object
+      required:
+        - quidId
+        - trustDomain
+        - creator
+        - updateNonce
+        - signature
+        - publicKey
+      properties:
+        quidId:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+        name:
+          type: string
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 4096
+        attributes:
+          type: object
+          additionalProperties: true
+        trustDomain:
+          type: string
+        creator:
+          type: string
+        updateNonce:
+          type: integer
+          format: int64
+        signature:
+          type: string
+        publicKey:
+          type: string
+
+    OwnershipStake:
+      type: object
+      required:
+        - ownerId
+        - percentage
+      properties:
+        ownerId:
+          type: string
+          description: Quid ID of the owner
+        percentage:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 100
+          description: Ownership percentage
+        stakeType:
+          type: string
+          description: Optional stake type descriptor
+
+    TitleTransaction:
+      allOf:
+        - $ref: '#/components/schemas/BaseTransaction'
+        - type: object
+          properties:
+            assetId:
+              type: string
+              description: Asset quid ID
+            owners:
+              type: array
+              items:
+                $ref: '#/components/schemas/OwnershipStake'
+              description: Current ownership stakes (must sum to 100%)
+            previousOwners:
+              type: array
+              items:
+                $ref: '#/components/schemas/OwnershipStake'
+              description: Previous owners (for transfers)
+            signatures:
+              type: object
+              additionalProperties:
+                type: string
+              description: Signatures from transferring parties
+            expiryDate:
+              type: integer
+              format: int64
+              description: Optional expiry timestamp
+            titleType:
+              type: string
+              description: Type of title (e.g., ownership, license)
+
+    TitleTransactionInput:
+      type: object
+      required:
+        - assetId
+        - owners
+        - trustDomain
+        - signature
+        - publicKey
+      properties:
+        assetId:
+          type: string
+        owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnershipStake'
+        previousOwners:
+          type: array
+          items:
+            $ref: '#/components/schemas/OwnershipStake'
+        signatures:
+          type: object
+          additionalProperties:
+            type: string
+        trustDomain:
+          type: string
+        expiryDate:
+          type: integer
+          format: int64
+        titleType:
+          type: string
+        signature:
+          type: string
+        publicKey:
+          type: string
+
+    Block:
+      type: object
+      properties:
+        index:
+          type: integer
+          format: int64
+          description: Block height
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp of block creation
+        transactions:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/TrustTransaction'
+              - $ref: '#/components/schemas/IdentityTransaction'
+              - $ref: '#/components/schemas/TitleTransaction'
+        trustProof:
+          $ref: '#/components/schemas/TrustProof'
+        prevHash:
+          type: string
+          description: Hash of the previous block
+        hash:
+          type: string
+          description: Hash of this block
+
+    TrustProof:
+      type: object
+      properties:
+        trustDomain:
+          type: string
+          description: Trust domain this proof applies to
+        validatorId:
+          type: string
+          description: Quid ID of the validator
+        validatorPublicKey:
+          type: string
+          description: Hex-encoded public key of validator
+        validatorTrustInCreator:
+          type: number
+          format: double
+          description: Validator's trust level in the block creator
+        validatorSigs:
+          type: array
+          items:
+            type: string
+          description: Array of validator signatures
+        consensusData:
+          type: object
+          additionalProperties: true
+          description: Additional consensus metadata
+        validationTime:
+          type: integer
+          format: int64
+          description: Unix timestamp of validation
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Node's quid ID
+        address:
+          type: string
+          description: Network address (URL)
+        trustDomains:
+          type: array
+          items:
+            type: string
+          description: Trust domains this node participates in
+        isValidator:
+          type: boolean
+          description: Whether this node is a validator
+        lastSeen:
+          type: integer
+          format: int64
+          description: Unix timestamp of last contact
+        connectionStatus:
+          type: string
+          description: Current connection status
+
+    TrustDomain:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Domain name (dot-notation, e.g., sub.example.com)
+        validatorNodes:
+          type: array
+          items:
+            type: string
+          description: List of validator node IDs
+        trustThreshold:
+          type: number
+          format: double
+          description: Minimum trust threshold for validation
+        blockchainHead:
+          type: string
+          description: Hash of the latest block
+        validators:
+          type: object
+          additionalProperties:
+            type: number
+          description: Map of validator IDs to their voting weights (0.0-1.0)
+        validatorPublicKeys:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of validator IDs to their hex-encoded public keys
+
+    TrustDomainInput:
+      type: object
+      required:
+        - name
+        - trustThreshold
+      properties:
+        name:
+          type: string
+          maxLength: 253
+        validatorNodes:
+          type: array
+          items:
+            type: string
+        trustThreshold:
+          type: number
+          minimum: 0
+          maximum: 1
+        validators:
+          type: object
+          additionalProperties:
+            type: number
+        validatorPublicKeys:
+          type: object
+          additionalProperties:
+            type: string
+
+    RelationalTrustQuery:
+      type: object
+      required:
+        - observer
+        - target
+      properties:
+        observer:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+          description: Quid ID of the observer
+        target:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+          description: Quid ID of the target
+        domain:
+          type: string
+          default: default
+          description: Trust domain
+        maxDepth:
+          type: integer
+          default: 5
+          description: Maximum path depth
+        includeUnverified:
+          type: boolean
+          default: false
+          description: Include unverified trust edges
+
+    RelationalTrustResult:
+      type: object
+      properties:
+        observer:
+          type: string
+          description: Observer quid ID
+        target:
+          type: string
+          description: Target quid ID
+        trustLevel:
+          type: number
+          format: double
+          description: Computed relational trust (0.0 to 1.0)
+        trustPath:
+          type: array
+          items:
+            type: string
+          description: Quid IDs forming the best trust path
+        pathDepth:
+          type: integer
+          description: Number of hops in the path
+        domain:
+          type: string
+          description: Trust domain queried
+
+    EnhancedTrustResult:
+      allOf:
+        - $ref: '#/components/schemas/RelationalTrustResult'
+        - type: object
+          properties:
+            confidence:
+              type: string
+              enum: [high, medium, low]
+              description: Confidence level based on verification status
+            unverifiedHops:
+              type: integer
+              description: Number of unverified hops in the path
+            verificationGaps:
+              type: array
+              items:
+                $ref: '#/components/schemas/VerificationGap'
+              description: Details of unverified hops
+
+    VerificationGap:
+      type: object
+      properties:
+        from:
+          type: string
+          description: Source quid ID
+        to:
+          type: string
+          description: Target quid ID
+        validatorQuid:
+          type: string
+          description: Validator quid ID
+        validatorTrust:
+          type: number
+          format: double
+          description: Trust level in the validator
+
+    TrustEdge:
+      type: object
+      properties:
+        truster:
+          type: string
+          description: Truster quid ID
+        trustee:
+          type: string
+          description: Trustee quid ID
+        trustLevel:
+          type: number
+          format: double
+          description: Trust level
+        sourceBlock:
+          type: string
+          description: Block hash where this edge was recorded
+        validatorQuid:
+          type: string
+          description: Quid of validator who signed the block
+        verified:
+          type: boolean
+          description: True if from a trusted validator
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp
+
+    TrustEntry:
+      type: object
+      properties:
+        truster:
+          type: string
+        trustee:
+          type: string
+        trust_level:
+          type: number
+          format: double
+
+    IdentityEntry:
+      type: object
+      properties:
+        quid_id:
+          type: string
+        identity:
+          type: object
+          additionalProperties: true
+
+    TitleEntry:
+      type: object
+      properties:
+        asset_id:
+          type: string
+        title:
+          $ref: '#/components/schemas/TitleTransaction'
+
+    ValidationError:
+      type: object
+      properties:
+        field:
+          type: string
+          description: Field that failed validation
+        message:
+          type: string
+          description: Validation error message
+        code:
+          type: string
+          description: Error code
