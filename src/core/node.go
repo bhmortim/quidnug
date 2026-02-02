@@ -538,34 +538,190 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	return &newBlock, nil
 }
 
-// AddBlock adds a block to the blockchain after validation
+// AddBlock adds a block to the blockchain after validation.
+// Only accepts fully trusted blocks. For tiered processing, use ReceiveBlock.
 func (node *QuidnugNode) AddBlock(block Block) error {
-	// Validate the block
-	if !node.ValidateBlock(block) {
-		return fmt.Errorf("invalid block")
+	acceptance, err := node.ReceiveBlock(block)
+	if err != nil {
+		return err
+	}
+	if acceptance != BlockTrusted {
+		return fmt.Errorf("block not trusted (acceptance tier: %d)", acceptance)
+	}
+	return nil
+}
+
+// ReceiveBlock processes an incoming block with tiered acceptance.
+// Extracts trust graph data from all cryptographically valid blocks.
+func (node *QuidnugNode) ReceiveBlock(block Block) (BlockAcceptance, error) {
+	// 1. Cryptographic validation
+	if !node.ValidateBlockCryptographic(block) {
+		return BlockInvalid, fmt.Errorf("block failed cryptographic validation")
 	}
 
-	node.BlockchainMutex.Lock()
-	defer node.BlockchainMutex.Unlock()
-
-	// Add block to blockchain
-	node.Blockchain = append(node.Blockchain, block)
-
-	// Process transactions in the block to update registries
-	node.processBlockTransactions(block)
-
-	// Update the trust domain's blockchain head
-	node.TrustDomainsMutex.Lock()
-	if domain, exists := node.TrustDomains[block.TrustProof.TrustDomain]; exists {
-		domain.BlockchainHead = block.Hash
-		node.TrustDomains[block.TrustProof.TrustDomain] = domain
+	// 2. Extract trust edges from ALL cryptographically valid blocks
+	edges := node.ExtractTrustEdgesFromBlock(block, false)
+	for _, edge := range edges {
+		node.AddUnverifiedTrustEdge(edge)
 	}
-	node.TrustDomainsMutex.Unlock()
 
-	logger.Info("Added block to blockchain",
-		"blockIndex", block.Index,
-		"hash", block.Hash,
-		"domain", block.TrustProof.TrustDomain)
+	// 3. Get tiered acceptance
+	acceptance := node.ValidateBlockTiered(block)
+
+	// 4. Process based on tier
+	switch acceptance {
+	case BlockTrusted:
+		// Add to main chain
+		node.BlockchainMutex.Lock()
+		node.Blockchain = append(node.Blockchain, block)
+		node.BlockchainMutex.Unlock()
+
+		// Process transactions
+		node.processBlockTransactions(block)
+
+		// Update domain head
+		node.TrustDomainsMutex.Lock()
+		if domain, exists := node.TrustDomains[block.TrustProof.TrustDomain]; exists {
+			domain.BlockchainHead = block.Hash
+			node.TrustDomains[block.TrustProof.TrustDomain] = domain
+		}
+		node.TrustDomainsMutex.Unlock()
+
+		// Promote extracted edges to verified
+		for _, edge := range edges {
+			node.PromoteTrustEdge(edge.Truster, edge.Trustee)
+		}
+
+		if logger != nil {
+			logger.Info("Received trusted block",
+				"blockIndex", block.Index,
+				"hash", block.Hash,
+				"domain", block.TrustProof.TrustDomain)
+		}
+
+	case BlockTentative:
+		if err := node.StoreTentativeBlock(block); err != nil {
+			return acceptance, err
+		}
+		if logger != nil {
+			logger.Info("Received tentative block",
+				"blockIndex", block.Index,
+				"hash", block.Hash,
+				"domain", block.TrustProof.TrustDomain)
+		}
+
+	case BlockUntrusted:
+		// Edges already added as unverified, don't store block
+		if logger != nil {
+			logger.Info("Received untrusted block - extracted edges only",
+				"blockIndex", block.Index,
+				"hash", block.Hash,
+				"domain", block.TrustProof.TrustDomain)
+		}
+
+	case BlockInvalid:
+		return BlockInvalid, fmt.Errorf("block validation failed")
+	}
+
+	return acceptance, nil
+}
+
+// StoreTentativeBlock stores a block in the tentative storage.
+func (node *QuidnugNode) StoreTentativeBlock(block Block) error {
+	node.TentativeBlocksMutex.Lock()
+	defer node.TentativeBlocksMutex.Unlock()
+
+	domain := block.TrustProof.TrustDomain
+	if _, exists := node.TentativeBlocks[domain]; !exists {
+		node.TentativeBlocks[domain] = make([]Block, 0)
+	}
+
+	// Check if block already exists (by hash)
+	for _, existing := range node.TentativeBlocks[domain] {
+		if existing.Hash == block.Hash {
+			return fmt.Errorf("block %s already in tentative storage", block.Hash)
+		}
+	}
+
+	node.TentativeBlocks[domain] = append(node.TentativeBlocks[domain], block)
+	return nil
+}
+
+// GetTentativeBlocks returns tentative blocks for a domain.
+func (node *QuidnugNode) GetTentativeBlocks(domain string) []Block {
+	node.TentativeBlocksMutex.RLock()
+	defer node.TentativeBlocksMutex.RUnlock()
+
+	if blocks, exists := node.TentativeBlocks[domain]; exists {
+		result := make([]Block, len(blocks))
+		copy(result, blocks)
+		return result
+	}
+	return nil
+}
+
+// ReEvaluateTentativeBlocks checks if any tentative blocks can now be promoted.
+func (node *QuidnugNode) ReEvaluateTentativeBlocks(domain string) error {
+	node.TentativeBlocksMutex.Lock()
+	blocks, exists := node.TentativeBlocks[domain]
+	if !exists || len(blocks) == 0 {
+		node.TentativeBlocksMutex.Unlock()
+		return nil
+	}
+	// Take ownership and clear
+	node.TentativeBlocks[domain] = nil
+	node.TentativeBlocksMutex.Unlock()
+
+	var remaining []Block
+	for _, block := range blocks {
+		acceptance := node.ValidateBlockTiered(block)
+		switch acceptance {
+		case BlockTrusted:
+			node.BlockchainMutex.Lock()
+			node.Blockchain = append(node.Blockchain, block)
+			node.BlockchainMutex.Unlock()
+
+			node.processBlockTransactions(block)
+
+			node.TrustDomainsMutex.Lock()
+			if d, exists := node.TrustDomains[block.TrustProof.TrustDomain]; exists {
+				d.BlockchainHead = block.Hash
+				node.TrustDomains[block.TrustProof.TrustDomain] = d
+			}
+			node.TrustDomainsMutex.Unlock()
+
+			edges := node.ExtractTrustEdgesFromBlock(block, true)
+			for _, edge := range edges {
+				node.PromoteTrustEdge(edge.Truster, edge.Trustee)
+			}
+
+			if logger != nil {
+				logger.Info("Promoted tentative block to trusted",
+					"blockIndex", block.Index,
+					"hash", block.Hash,
+					"domain", domain)
+			}
+
+		case BlockTentative:
+			remaining = append(remaining, block)
+
+		case BlockUntrusted, BlockInvalid:
+			if logger != nil {
+				logger.Info("Removed tentative block",
+					"blockIndex", block.Index,
+					"hash", block.Hash,
+					"domain", domain,
+					"newStatus", acceptance)
+			}
+		}
+	}
+
+	if len(remaining) > 0 {
+		node.TentativeBlocksMutex.Lock()
+		node.TentativeBlocks[domain] = remaining
+		node.TentativeBlocksMutex.Unlock()
+	}
+
 	return nil
 }
 
