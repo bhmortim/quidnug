@@ -2,7 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 )
+
+// ErrTrustGraphTooLarge is returned when trust computation exceeds resource limits
+var ErrTrustGraphTooLarge = errors.New("trust graph too large: resource limits exceeded")
 
 // processBlockTransactions processes transactions in a block to update registries
 func (node *QuidnugNode) processBlockTransactions(block Block) {
@@ -115,15 +119,15 @@ func (node *QuidnugNode) GetDirectTrustees(quidID string) map[string]float64 {
 // Parameters:
 //   - observer: the quid ID of the observer (source of trust query)
 //   - target: the quid ID of the target (destination of trust query)
-//   - maxDepth: maximum number of hops to explore (defaults to 5 if <= 0)
+//   - maxDepth: maximum number of hops to explore (defaults to DefaultTrustMaxDepth if <= 0)
 //
 // Returns:
 //   - float64: the maximum trust level found (0 if no path exists)
 //   - []string: the path of quid IDs for the best trust path
-//   - error: nil (reserved for future validation errors)
+//   - error: ErrTrustGraphTooLarge if resource limits exceeded, nil otherwise
 func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDepth int) (float64, []string, error) {
 	if maxDepth <= 0 {
-		maxDepth = 5
+		maxDepth = DefaultTrustMaxDepth
 	}
 
 	// Same entity has full trust in itself
@@ -143,10 +147,22 @@ func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDept
 		trust: 1.0,
 	}}
 
+	// Track visited nodes to bound memory usage in dense graphs
+	visited := make(map[string]bool)
+	visited[observer] = true
+
 	bestTrust := 0.0
 	var bestPath []string
 
 	for len(queue) > 0 {
+		// Check resource limits - return best result found so far with error
+		if len(queue) > MaxTrustQueueSize {
+			return bestTrust, bestPath, ErrTrustGraphTooLarge
+		}
+		if len(visited) > MaxTrustVisitedSize {
+			return bestTrust, bestPath, ErrTrustGraphTooLarge
+		}
+
 		current := queue[0]
 		queue = queue[1:]
 
@@ -182,9 +198,10 @@ func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDept
 				continue
 			}
 
-			// Continue BFS if within depth limit
+			// Continue BFS if within depth limit and not already visited
 			// len(current.path) represents hops taken so far
-			if len(current.path) < maxDepth {
+			if len(current.path) < maxDepth && !visited[trustee] {
+				visited[trustee] = true
 				queue = append(queue, searchState{
 					quid:  trustee,
 					path:  newPath,
@@ -357,13 +374,14 @@ func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) ma
 // ComputeRelationalTrustEnhanced computes transitive trust with optional unverified edge inclusion.
 // When includeUnverified=true, unverified edges are discounted by the observer's trust in the recording validator.
 // Returns enhanced result with provenance information.
+// Returns ErrTrustGraphTooLarge if resource limits are exceeded.
 func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 	observer, target string,
 	maxDepth int,
 	includeUnverified bool,
 ) (EnhancedTrustResult, error) {
 	if maxDepth <= 0 {
-		maxDepth = 5
+		maxDepth = DefaultTrustMaxDepth
 	}
 
 	// Same entity has full trust in itself
@@ -397,12 +415,24 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 		gaps:           nil,
 	}}
 
+	// Track visited nodes to bound memory usage in dense graphs
+	visited := make(map[string]bool)
+	visited[observer] = true
+
 	bestTrust := 0.0
 	var bestPath []string
 	bestUnverifiedHops := 0
 	var bestGaps []VerificationGap
 
 	for len(queue) > 0 {
+		// Check resource limits - return best result found so far with error
+		if len(queue) > MaxTrustQueueSize {
+			return buildEnhancedResult(observer, target, bestTrust, bestPath, bestUnverifiedHops, bestGaps), ErrTrustGraphTooLarge
+		}
+		if len(visited) > MaxTrustVisitedSize {
+			return buildEnhancedResult(observer, target, bestTrust, bestPath, bestUnverifiedHops, bestGaps), ErrTrustGraphTooLarge
+		}
+
 		current := queue[0]
 		queue = queue[1:]
 
@@ -430,8 +460,12 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 				newUnverifiedHops = current.unverifiedHops
 				newGaps = current.gaps
 			} else {
-				// Discount by validator trust
-				validatorTrust, _, _ := node.ComputeRelationalTrust(observer, edge.ValidatorQuid, 3)
+				// Discount by validator trust (use reduced depth to limit recursion)
+				validatorTrust, _, err := node.ComputeRelationalTrust(observer, edge.ValidatorQuid, DefaultTrustMaxDepth)
+				if err != nil {
+					// On resource exhaustion in nested call, use zero trust for this edge
+					validatorTrust = 0
+				}
 				effectiveTrust = current.trust * edge.TrustLevel * validatorTrust
 				newUnverifiedHops = current.unverifiedHops + 1
 
@@ -463,8 +497,9 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 				continue
 			}
 
-			// Continue BFS if within depth limit
-			if len(current.path) < maxDepth {
+			// Continue BFS if within depth limit and not already visited
+			if len(current.path) < maxDepth && !visited[trustee] {
+				visited[trustee] = true
 				queue = append(queue, searchState{
 					quid:           trustee,
 					path:           newPath,
@@ -476,6 +511,11 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 		}
 	}
 
+	return buildEnhancedResult(observer, target, bestTrust, bestPath, bestUnverifiedHops, bestGaps), nil
+}
+
+// buildEnhancedResult constructs an EnhancedTrustResult from components
+func buildEnhancedResult(observer, target string, bestTrust float64, bestPath []string, bestUnverifiedHops int, bestGaps []VerificationGap) EnhancedTrustResult {
 	// Determine confidence level based on unverified hop count
 	var confidence string
 	switch {
@@ -503,7 +543,7 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 		Confidence:       confidence,
 		UnverifiedHops:   bestUnverifiedHops,
 		VerificationGaps: bestGaps,
-	}, nil
+	}
 }
 
 // ExtractTrustEdgesFromBlock extracts all trust transaction edges from a block

@@ -10,6 +10,13 @@ const (
 	TxTypeGeneric  TransactionType = "GENERIC"
 )
 
+// Trust computation resource limits
+const (
+	DefaultTrustMaxDepth  = 5
+	MaxTrustQueueSize     = 10000
+	MaxTrustVisitedSize   = 10000
+)
+
 // Base Transaction represents common fields for all transaction types
 type BaseTransaction struct {
 	ID          string          `json:"id"`

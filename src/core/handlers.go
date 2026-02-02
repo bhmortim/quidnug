@@ -357,7 +357,13 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			observer := parts[0]
 			target := parts[1]
 
-			trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, 5)
+			trustLevel, trustPath, err := node.ComputeRelationalTrust(observer, target, DefaultTrustMaxDepth)
+			if err != nil {
+				logger.Warn("Trust computation exceeded resource limits",
+					"observer", observer,
+					"target", target,
+					"error", err)
+			}
 
 			pathDepth := 0
 			if len(trustPath) > 1 {
@@ -412,14 +418,20 @@ func (node *QuidnugNode) QueryTrustRegistryHandler(w http.ResponseWriter, r *htt
 
 	// If observer/target provided, compute relational trust
 	if observer != "" && target != "" {
-		maxDepth := 5
+		maxDepth := DefaultTrustMaxDepth
 		if maxDepthStr != "" {
 			if parsed, err := strconv.Atoi(maxDepthStr); err == nil && parsed > 0 {
 				maxDepth = parsed
 			}
 		}
 
-		trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
+		trustLevel, trustPath, err := node.ComputeRelationalTrust(observer, target, maxDepth)
+		if err != nil {
+			logger.Warn("Trust computation exceeded resource limits",
+				"observer", observer,
+				"target", target,
+				"error", err)
+		}
 
 		pathDepth := 0
 		if len(trustPath) > 1 {
@@ -612,7 +624,7 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 		domain = "default"
 	}
 
-	maxDepth := 5
+	maxDepth := DefaultTrustMaxDepth
 	if maxDepthStr != "" {
 		if parsed, err := strconv.Atoi(maxDepthStr); err == nil && parsed > 0 {
 			maxDepth = parsed
@@ -626,13 +638,25 @@ func (node *QuidnugNode) GetTrustHandler(w http.ResponseWriter, r *http.Request)
 	if includeUnverified {
 		result, err := node.ComputeRelationalTrustEnhanced(observer, target, maxDepth, true)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			logger.Warn("Trust computation exceeded resource limits",
+				"observer", observer,
+				"target", target,
+				"error", err)
+			// Return partial result with warning header
+			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
 		}
 		result.Domain = domain
 		json.NewEncoder(w).Encode(result)
 	} else {
-		trustLevel, trustPath, _ := node.ComputeRelationalTrust(observer, target, maxDepth)
+		trustLevel, trustPath, err := node.ComputeRelationalTrust(observer, target, maxDepth)
+		if err != nil {
+			logger.Warn("Trust computation exceeded resource limits",
+				"observer", observer,
+				"target", target,
+				"error", err)
+			// Return partial result with warning header
+			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
+		}
 
 		pathDepth := 0
 		if len(trustPath) > 1 {
@@ -671,7 +695,7 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 
 	maxDepth := query.MaxDepth
 	if maxDepth <= 0 {
-		maxDepth = 5
+		maxDepth = DefaultTrustMaxDepth
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -679,13 +703,25 @@ func (node *QuidnugNode) RelationalTrustQueryHandler(w http.ResponseWriter, r *h
 	if query.IncludeUnverified {
 		result, err := node.ComputeRelationalTrustEnhanced(query.Observer, query.Target, maxDepth, true)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			logger.Warn("Trust computation exceeded resource limits",
+				"observer", query.Observer,
+				"target", query.Target,
+				"error", err)
+			// Return partial result with warning header
+			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
 		}
 		result.Domain = domain
 		json.NewEncoder(w).Encode(result)
 	} else {
-		trustLevel, trustPath, _ := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
+		trustLevel, trustPath, err := node.ComputeRelationalTrust(query.Observer, query.Target, maxDepth)
+		if err != nil {
+			logger.Warn("Trust computation exceeded resource limits",
+				"observer", query.Observer,
+				"target", query.Target,
+				"error", err)
+			// Return partial result with warning header
+			w.Header().Set("X-Trust-Computation-Warning", "resource limits exceeded, partial result returned")
+		}
 
 		pathDepth := 0
 		if len(trustPath) > 1 {

@@ -509,7 +509,15 @@ func (node *QuidnugNode) FilterTransactionsForBlock(txs []interface{}, domain st
 		}
 
 		// Compute relational trust from this node to the creator
-		trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeQuidID, creatorQuid, 3)
+		trustLevel, _, err := node.ComputeRelationalTrust(node.NodeQuidID, creatorQuid, DefaultTrustMaxDepth)
+		if err != nil {
+			logger.Warn("Trust computation exceeded resource limits",
+				"txId", txID,
+				"creator", creatorQuid,
+				"error", err,
+				"domain", domain)
+			// Use partial result (trustLevel contains best found so far)
+		}
 
 		// Include if trust meets threshold
 		if trustLevel >= node.TransactionTrustThreshold {

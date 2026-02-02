@@ -527,7 +527,14 @@ func (node *QuidnugNode) ValidateTrustProofTiered(block Block) BlockAcceptance {
 	}
 
 	// Node-relative trust validation: compute relational trust from this node to the validator
-	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, 5)
+	trustLevel, _, err := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, DefaultTrustMaxDepth)
+	if err != nil {
+		logger.Warn("Trust computation exceeded resource limits during block validation",
+			"validator", proof.ValidatorID,
+			"domain", proof.TrustDomain,
+			"error", err)
+		// Use partial result - trustLevel contains best found so far
+	}
 
 	// Return tier based on trust level
 	if trustLevel >= domain.TrustThreshold {
@@ -594,8 +601,8 @@ func (node *QuidnugNode) ValidateTrustProof(proof TrustProof) bool {
 		return true
 	}
 
-	// Compute relational trust
-	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, 5)
+	// Compute relational trust (error is ignored, partial result used)
+	trustLevel, _, _ := node.ComputeRelationalTrust(node.NodeID, proof.ValidatorID, DefaultTrustMaxDepth)
 
 	return trustLevel >= domain.TrustThreshold
 }
