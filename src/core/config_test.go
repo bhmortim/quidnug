@@ -20,6 +20,9 @@ func clearConfigEnvVars() {
 	os.Unsetenv("HTTP_CLIENT_TIMEOUT")
 	os.Unsetenv("NODE_AUTH_SECRET")
 	os.Unsetenv("REQUIRE_NODE_AUTH")
+	os.Unsetenv("QUIDNUG_IPFS_ENABLED")
+	os.Unsetenv("QUIDNUG_IPFS_GATEWAY_URL")
+	os.Unsetenv("QUIDNUG_IPFS_TIMEOUT")
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -69,6 +72,18 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 	if cfg.ShutdownTimeout != DefaultShutdownTimeout {
 		t.Errorf("Expected default shutdown timeout %v, got %v", DefaultShutdownTimeout, cfg.ShutdownTimeout)
+	}
+
+	if cfg.IPFSEnabled != false {
+		t.Errorf("Expected default IPFSEnabled false, got %v", cfg.IPFSEnabled)
+	}
+
+	if cfg.IPFSGatewayURL != "http://localhost:5001" {
+		t.Errorf("Expected default IPFSGatewayURL 'http://localhost:5001', got '%s'", cfg.IPFSGatewayURL)
+	}
+
+	if cfg.IPFSTimeout != 30*time.Second {
+		t.Errorf("Expected default IPFSTimeout 30s, got %v", cfg.IPFSTimeout)
 	}
 }
 
@@ -562,6 +577,121 @@ log_level: "warn"
 
 	if cfg.RateLimitPerMinute != DefaultRateLimitPerMinute {
 		t.Errorf("Expected default rate limit %d, got %d", DefaultRateLimitPerMinute, cfg.RateLimitPerMinute)
+	}
+}
+
+func TestLoadConfigIPFSFromEnv(t *testing.T) {
+	clearConfigEnvVars()
+
+	os.Setenv("QUIDNUG_IPFS_ENABLED", "true")
+	os.Setenv("QUIDNUG_IPFS_GATEWAY_URL", "http://custom-ipfs:5001")
+	os.Setenv("QUIDNUG_IPFS_TIMEOUT", "60s")
+
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	if !cfg.IPFSEnabled {
+		t.Error("Expected IPFSEnabled to be true from env")
+	}
+
+	if cfg.IPFSGatewayURL != "http://custom-ipfs:5001" {
+		t.Errorf("Expected IPFSGatewayURL 'http://custom-ipfs:5001', got '%s'", cfg.IPFSGatewayURL)
+	}
+
+	if cfg.IPFSTimeout != 60*time.Second {
+		t.Errorf("Expected IPFSTimeout 60s, got %v", cfg.IPFSTimeout)
+	}
+}
+
+func TestLoadConfigIPFSFromFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "8080"
+ipfs_enabled: true
+ipfs_gateway_url: "http://ipfs-node:5001"
+ipfs_timeout: "45s"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	cfg, err := LoadConfigFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfigFromFile failed: %v", err)
+	}
+
+	if !cfg.IPFSEnabled {
+		t.Error("Expected IPFSEnabled to be true from file")
+	}
+
+	if cfg.IPFSGatewayURL != "http://ipfs-node:5001" {
+		t.Errorf("Expected IPFSGatewayURL 'http://ipfs-node:5001', got '%s'", cfg.IPFSGatewayURL)
+	}
+
+	if cfg.IPFSTimeout != 45*time.Second {
+		t.Errorf("Expected IPFSTimeout 45s, got %v", cfg.IPFSTimeout)
+	}
+}
+
+func TestLoadConfigIPFSEnvOverridesFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+ipfs_enabled: true
+ipfs_gateway_url: "http://file-ipfs:5001"
+ipfs_timeout: "30s"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	os.Setenv("CONFIG_FILE", configPath)
+	os.Setenv("QUIDNUG_IPFS_ENABLED", "false")
+	os.Setenv("QUIDNUG_IPFS_GATEWAY_URL", "http://env-ipfs:5001")
+	os.Setenv("QUIDNUG_IPFS_TIMEOUT", "120s")
+
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	if cfg.IPFSEnabled {
+		t.Error("Expected IPFSEnabled to be false from env override")
+	}
+
+	if cfg.IPFSGatewayURL != "http://env-ipfs:5001" {
+		t.Errorf("Expected IPFSGatewayURL 'http://env-ipfs:5001' from env, got '%s'", cfg.IPFSGatewayURL)
+	}
+
+	if cfg.IPFSTimeout != 120*time.Second {
+		t.Errorf("Expected IPFSTimeout 120s from env, got %v", cfg.IPFSTimeout)
+	}
+}
+
+func TestLoadConfigInvalidIPFSTimeoutInFile(t *testing.T) {
+	clearConfigEnvVars()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+ipfs_enabled: true
+ipfs_timeout: "not-a-duration"
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	_, err := LoadConfigFromFile(configPath)
+	if err == nil {
+		t.Error("Expected error for invalid ipfs_timeout, got nil")
 	}
 }
 

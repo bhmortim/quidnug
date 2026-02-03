@@ -25,6 +25,9 @@ type Config struct {
 	HTTPClientTimeout  time.Duration `json:"httpClientTimeout" yaml:"-"`
 	NodeAuthSecret     string        `json:"nodeAuthSecret" yaml:"node_auth_secret"`
 	RequireNodeAuth    bool          `json:"requireNodeAuth" yaml:"require_node_auth"`
+	IPFSEnabled        bool          `json:"ipfsEnabled" yaml:"ipfs_enabled"`
+	IPFSGatewayURL     string        `json:"ipfsGatewayUrl" yaml:"ipfs_gateway_url"`
+	IPFSTimeout        time.Duration `json:"ipfsTimeout" yaml:"-"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -40,6 +43,9 @@ type fileConfig struct {
 	HTTPClientTimeout  string   `json:"httpClientTimeout" yaml:"http_client_timeout"`
 	NodeAuthSecret     string   `json:"nodeAuthSecret" yaml:"node_auth_secret"`
 	RequireNodeAuth    bool     `json:"requireNodeAuth" yaml:"require_node_auth"`
+	IPFSEnabled        bool     `json:"ipfsEnabled" yaml:"ipfs_enabled"`
+	IPFSGatewayURL     string   `json:"ipfsGatewayUrl" yaml:"ipfs_gateway_url"`
+	IPFSTimeout        string   `json:"ipfsTimeout" yaml:"ipfs_timeout"`
 }
 
 // Default values
@@ -49,6 +55,9 @@ const (
 	DefaultDataDir            = "./data"
 	DefaultShutdownTimeout    = 30 * time.Second
 	DefaultHTTPClientTimeout  = 5 * time.Second
+	DefaultIPFSEnabled        = false
+	DefaultIPFSGatewayURL     = "http://localhost:5001"
+	DefaultIPFSTimeout        = 30 * time.Second
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -126,6 +135,17 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		cfg.HTTPClientTimeout = duration
 	}
 
+	cfg.IPFSEnabled = fc.IPFSEnabled
+	cfg.IPFSGatewayURL = fc.IPFSGatewayURL
+
+	if fc.IPFSTimeout != "" {
+		duration, err := time.ParseDuration(fc.IPFSTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ipfs_timeout: %w", err)
+		}
+		cfg.IPFSTimeout = duration
+	}
+
 	return cfg, nil
 }
 
@@ -155,6 +175,9 @@ func LoadConfig() *Config {
 		DataDir:            DefaultDataDir,
 		ShutdownTimeout:    DefaultShutdownTimeout,
 		HTTPClientTimeout:  DefaultHTTPClientTimeout,
+		IPFSEnabled:        DefaultIPFSEnabled,
+		IPFSGatewayURL:     DefaultIPFSGatewayURL,
+		IPFSTimeout:        DefaultIPFSTimeout,
 	}
 
 	// Try to load from config file
@@ -198,6 +221,15 @@ func LoadConfig() *Config {
 			}
 			if fileCfg.RequireNodeAuth {
 				cfg.RequireNodeAuth = fileCfg.RequireNodeAuth
+			}
+			if fileCfg.IPFSEnabled {
+				cfg.IPFSEnabled = fileCfg.IPFSEnabled
+			}
+			if fileCfg.IPFSGatewayURL != "" {
+				cfg.IPFSGatewayURL = fileCfg.IPFSGatewayURL
+			}
+			if fileCfg.IPFSTimeout > 0 {
+				cfg.IPFSTimeout = fileCfg.IPFSTimeout
 			}
 		}
 	}
@@ -258,6 +290,22 @@ func LoadConfig() *Config {
 
 	if requireNodeAuth := os.Getenv("REQUIRE_NODE_AUTH"); requireNodeAuth == "true" {
 		cfg.RequireNodeAuth = true
+	}
+
+	if ipfsEnabled := os.Getenv("QUIDNUG_IPFS_ENABLED"); ipfsEnabled == "true" {
+		cfg.IPFSEnabled = true
+	} else if ipfsEnabled == "false" {
+		cfg.IPFSEnabled = false
+	}
+
+	if ipfsGatewayURL := os.Getenv("QUIDNUG_IPFS_GATEWAY_URL"); ipfsGatewayURL != "" {
+		cfg.IPFSGatewayURL = ipfsGatewayURL
+	}
+
+	if ipfsTimeout := os.Getenv("QUIDNUG_IPFS_TIMEOUT"); ipfsTimeout != "" {
+		if duration, err := time.ParseDuration(ipfsTimeout); err == nil {
+			cfg.IPFSTimeout = duration
+		}
 	}
 
 	return cfg
