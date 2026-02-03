@@ -211,3 +211,13 @@ type VerificationGap struct {
 	ValidatorQuid  string  `json:"validatorQuid"`
 	ValidatorTrust float64 `json:"validatorTrust"`
 }
+
+// DomainGossip represents a gossip message about domain availability
+type DomainGossip struct {
+	NodeID    string   `json:"nodeId"`
+	Domains   []string `json:"domains"`
+	Timestamp int64    `json:"timestamp"`
+	TTL       int      `json:"ttl"`      // Remaining hops before this gossip is dropped
+	HopCount  int      `json:"hopCount"` // Number of hops this message has traveled
+	MessageID string   `json:"messageId"` // Unique ID to prevent duplicate processing
+}

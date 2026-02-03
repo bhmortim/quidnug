@@ -33,7 +33,8 @@ import (
 //   9. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
 //  10. KnownNodesMutex       - Protects KnownNodes map
 //  11. DomainRegistryMutex   - Protects DomainRegistry map (reverse index of domain->nodes)
-//  12. TrustCache (internal) - Has its own mutex, can be accessed independently
+//  12. GossipSeenMutex       - Protects GossipSeen map (deduplication of gossip messages)
+//  13. TrustCache (internal) - Has its own mutex, can be accessed independently
 //
 // Guidelines:
 //   - Prefer acquiring a single lock when possible
@@ -133,6 +134,11 @@ type QuidnugNode struct {
 
 	// Trust computation cache
 	TrustCache *TrustCache
+
+	// Gossip protocol state
+	GossipSeen      map[string]int64 // messageId -> timestamp of when seen
+	GossipSeenMutex sync.RWMutex
+	GossipTTL       int // Default TTL for outgoing gossip messages
 }
 =======
 
@@ -187,6 +193,13 @@ func main() {
 	go func() {
 		defer wg.Done()
 		quidnugNode.runBlockGeneration(ctx, cfg.BlockInterval)
+	}()
+
+	// Start domain gossip loop (with context)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runDomainGossip(ctx, cfg.DomainGossipInterval)
 	}()
 
 	// Start HTTP server (non-blocking)
@@ -301,6 +314,10 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 	if cfg.TrustCacheTTL <= 0 {
 		cfg.TrustCacheTTL = DefaultTrustCacheTTL
 	}
+	// Ensure DomainGossipTTL has a valid value
+	if cfg.DomainGossipTTL <= 0 {
+		cfg.DomainGossipTTL = DefaultDomainGossipTTL
+	}
 	// Generate a new ECDSA key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -364,6 +381,8 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		AllowDomainRegistration:   cfg.AllowDomainRegistration,
 		RequireParentDomainAuth:   cfg.RequireParentDomainAuth,
 		TrustCache:                NewTrustCache(cfg.TrustCacheTTL),
+		GossipSeen:                make(map[string]int64),
+		GossipTTL:                 cfg.DomainGossipTTL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},

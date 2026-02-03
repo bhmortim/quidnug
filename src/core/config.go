@@ -32,7 +32,9 @@ type Config struct {
 	AllowDomainRegistration bool          `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
 	RequireParentDomainAuth bool          `json:"requireParentDomainAuth" yaml:"require_parent_domain_auth"`
 	TrustCacheTTL           time.Duration `json:"trustCacheTTL" yaml:"-"`
-	}
+	DomainGossipInterval    time.Duration `json:"domainGossipInterval" yaml:"-"`
+	DomainGossipTTL         int           `json:"domainGossipTTL" yaml:"domain_gossip_ttl"`
+}
 
 // fileConfig is used for parsing config files with string durations
 type fileConfig struct {
@@ -54,6 +56,8 @@ type fileConfig struct {
 	AllowDomainRegistration *bool    `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
 	RequireParentDomainAuth *bool    `json:"requireParentDomainAuth" yaml:"require_parent_domain_auth"`
 	TrustCacheTTL           string   `json:"trustCacheTTL" yaml:"trust_cache_ttl"`
+	DomainGossipInterval    string   `json:"domainGossipInterval" yaml:"domain_gossip_interval"`
+	DomainGossipTTL         int      `json:"domainGossipTTL" yaml:"domain_gossip_ttl"`
 }
 
 // Default values
@@ -66,9 +70,11 @@ const (
 	DefaultIPFSEnabled             = false
 	DefaultIPFSGatewayURL          = "http://localhost:5001"
 	DefaultIPFSTimeout             = 30 * time.Second
-	DefaultAllowDomainRegistration  = true
-	DefaultRequireParentDomainAuth  = true
-	DefaultTrustCacheTTL            = 60 * time.Second
+	DefaultAllowDomainRegistration = true
+	DefaultRequireParentDomainAuth = true
+	DefaultTrustCacheTTL           = 60 * time.Second
+	DefaultDomainGossipInterval    = 2 * time.Minute
+	DefaultDomainGossipTTL         = 3 // Default hop count before gossip is dropped
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -174,6 +180,18 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		cfg.TrustCacheTTL = duration
 	}
 
+	if fc.DomainGossipInterval != "" {
+		duration, err := time.ParseDuration(fc.DomainGossipInterval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid domain_gossip_interval: %w", err)
+		}
+		cfg.DomainGossipInterval = duration
+	}
+
+	if fc.DomainGossipTTL > 0 {
+		cfg.DomainGossipTTL = fc.DomainGossipTTL
+	}
+
 	return cfg, nil
 }
 
@@ -210,6 +228,8 @@ func LoadConfig() *Config {
 		AllowDomainRegistration: DefaultAllowDomainRegistration,
 		RequireParentDomainAuth: DefaultRequireParentDomainAuth,
 		TrustCacheTTL:           DefaultTrustCacheTTL,
+		DomainGossipInterval:    DefaultDomainGossipInterval,
+		DomainGossipTTL:         DefaultDomainGossipTTL,
 	}
 
 	// Try to load from config file
@@ -274,6 +294,12 @@ func LoadConfig() *Config {
 			}
 			if fileCfg.TrustCacheTTL > 0 {
 				cfg.TrustCacheTTL = fileCfg.TrustCacheTTL
+			}
+			if fileCfg.DomainGossipInterval > 0 {
+				cfg.DomainGossipInterval = fileCfg.DomainGossipInterval
+			}
+			if fileCfg.DomainGossipTTL > 0 {
+				cfg.DomainGossipTTL = fileCfg.DomainGossipTTL
 			}
 		}
 	}
@@ -370,6 +396,18 @@ func LoadConfig() *Config {
 	if trustCacheTTL := os.Getenv("TRUST_CACHE_TTL"); trustCacheTTL != "" {
 		if duration, err := time.ParseDuration(trustCacheTTL); err == nil {
 			cfg.TrustCacheTTL = duration
+		}
+	}
+
+	if domainGossipInterval := os.Getenv("DOMAIN_GOSSIP_INTERVAL"); domainGossipInterval != "" {
+		if duration, err := time.ParseDuration(domainGossipInterval); err == nil {
+			cfg.DomainGossipInterval = duration
+		}
+	}
+
+	if domainGossipTTL := os.Getenv("DOMAIN_GOSSIP_TTL"); domainGossipTTL != "" {
+		if ttl, err := strconv.Atoi(domainGossipTTL); err == nil && ttl > 0 {
+			cfg.DomainGossipTTL = ttl
 		}
 	}
 

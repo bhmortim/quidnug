@@ -430,6 +430,273 @@ func (node *QuidnugNode) updateDomainRegistry(nodeID string, domains []string) {
 	}
 }
 
+// runDomainGossip periodically broadcasts domain information to known nodes
+func (node *QuidnugNode) runDomainGossip(ctx context.Context, interval time.Duration) {
+	logger.Info("Starting domain gossip loop", "interval", interval)
+
+	// Initial broadcast after a short delay
+	select {
+	case <-ctx.Done():
+		logger.Info("Domain gossip loop stopped before initial broadcast")
+		return
+	case <-time.After(5 * time.Second):
+		node.BroadcastDomainInfo()
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	// Periodically clean up old gossip seen entries
+	cleanupTicker := time.NewTicker(10 * time.Minute)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("Domain gossip loop stopped")
+			return
+		case <-ticker.C:
+			node.BroadcastDomainInfo()
+		case <-cleanupTicker.C:
+			node.cleanupGossipSeen()
+		}
+	}
+}
+
+// BroadcastDomainInfo creates and sends a domain gossip message to all known nodes
+func (node *QuidnugNode) BroadcastDomainInfo() {
+	gossip := node.createDomainGossip()
+	if gossip == nil {
+		return
+	}
+
+	node.KnownNodesMutex.RLock()
+	nodes := make([]Node, 0, len(node.KnownNodes))
+	for _, n := range node.KnownNodes {
+		if n.ID != node.NodeID {
+			nodes = append(nodes, n)
+		}
+	}
+	node.KnownNodesMutex.RUnlock()
+
+	if len(nodes) == 0 {
+		logger.Debug("No known nodes to broadcast domain gossip to")
+		return
+	}
+
+	// Mark as seen before broadcasting
+	node.markGossipSeen(gossip.MessageID)
+
+	gossipJSON, err := json.Marshal(gossip)
+	if err != nil {
+		logger.Error("Failed to marshal domain gossip", "error", err)
+		return
+	}
+
+	logger.Debug("Broadcasting domain info", "domains", gossip.Domains, "ttl", gossip.TTL, "targetNodes", len(nodes))
+
+	for _, targetNode := range nodes {
+		go node.sendDomainGossip(targetNode, gossipJSON)
+	}
+}
+
+// createDomainGossip creates a new domain gossip message for this node
+func (node *QuidnugNode) createDomainGossip() *DomainGossip {
+	domains := node.SupportedDomains
+	if len(domains) == 0 {
+		// If no explicit supported domains, include managed trust domains
+		node.TrustDomainsMutex.RLock()
+		for domain := range node.TrustDomains {
+			domains = append(domains, domain)
+		}
+		node.TrustDomainsMutex.RUnlock()
+	}
+
+	if len(domains) == 0 {
+		logger.Debug("No domains to gossip about")
+		return nil
+	}
+
+	timestamp := time.Now().Unix()
+	messageID := fmt.Sprintf("%s:%d:%x", node.NodeID, timestamp, time.Now().UnixNano())
+
+	return &DomainGossip{
+		NodeID:    node.NodeID,
+		Domains:   domains,
+		Timestamp: timestamp,
+		TTL:       node.GossipTTL,
+		HopCount:  0,
+		MessageID: messageID,
+	}
+}
+
+// sendDomainGossip sends a gossip message to a single node
+func (node *QuidnugNode) sendDomainGossip(targetNode Node, gossipJSON []byte) {
+	path := "/api/v1/gossip/domains"
+	endpoint := fmt.Sprintf("http://%s%s", targetNode.Address, path)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(gossipJSON))
+	if err != nil {
+		logger.Debug("Failed to create gossip request", "targetNodeId", targetNode.ID, "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Add authentication headers if secret is configured
+	if secret := GetNodeAuthSecret(); secret != "" {
+		timestamp := time.Now().Unix()
+		signature := SignRequest("POST", path, gossipJSON, secret, timestamp)
+		req.Header.Set(NodeSignatureHeader, signature)
+		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
+	}
+
+	resp, err := node.httpClient.Do(req)
+	if err != nil {
+		logger.Debug("Failed to send domain gossip", "targetNodeId", targetNode.ID, "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		logger.Debug("Successfully sent domain gossip", "targetNodeId", targetNode.ID)
+	} else {
+		logger.Debug("Node rejected domain gossip", "targetNodeId", targetNode.ID, "status", resp.StatusCode)
+	}
+}
+
+// ReceiveDomainGossip processes an incoming domain gossip message
+func (node *QuidnugNode) ReceiveDomainGossip(gossip DomainGossip) error {
+	// Check if we've already seen this message
+	if node.hasSeenGossip(gossip.MessageID) {
+		logger.Debug("Ignoring duplicate gossip", "messageId", gossip.MessageID, "fromNode", gossip.NodeID)
+		return nil
+	}
+
+	// Mark as seen
+	node.markGossipSeen(gossip.MessageID)
+
+	// Validate gossip
+	if gossip.NodeID == "" || gossip.NodeID == node.NodeID {
+		return fmt.Errorf("invalid gossip: empty or self nodeId")
+	}
+
+	if gossip.TTL < 0 {
+		return fmt.Errorf("invalid gossip: negative TTL")
+	}
+
+	// Process the domain information
+	node.processDomainGossip(gossip)
+
+	// Forward if TTL allows
+	if gossip.TTL > 0 {
+		node.forwardDomainGossip(gossip)
+	}
+
+	return nil
+}
+
+// processDomainGossip updates the domain registry with gossip information
+func (node *QuidnugNode) processDomainGossip(gossip DomainGossip) {
+	// Update known node with domain information
+	node.KnownNodesMutex.Lock()
+	if existingNode, exists := node.KnownNodes[gossip.NodeID]; exists {
+		existingNode.TrustDomains = gossip.Domains
+		existingNode.LastSeen = time.Now().Unix()
+		node.KnownNodes[gossip.NodeID] = existingNode
+	} else {
+		// Add new node entry (we don't know the address yet)
+		node.KnownNodes[gossip.NodeID] = Node{
+			ID:               gossip.NodeID,
+			TrustDomains:     gossip.Domains,
+			LastSeen:         time.Now().Unix(),
+			ConnectionStatus: "discovered-via-gossip",
+		}
+	}
+	node.KnownNodesMutex.Unlock()
+
+	// Update domain registry for efficient subdomain lookups
+	node.updateDomainRegistry(gossip.NodeID, gossip.Domains)
+
+	logger.Debug("Processed domain gossip",
+		"fromNode", gossip.NodeID,
+		"domains", gossip.Domains,
+		"hopCount", gossip.HopCount)
+}
+
+// forwardDomainGossip forwards a gossip message to other known nodes
+func (node *QuidnugNode) forwardDomainGossip(gossip DomainGossip) {
+	// Decrement TTL and increment hop count
+	forwardGossip := DomainGossip{
+		NodeID:    gossip.NodeID,
+		Domains:   gossip.Domains,
+		Timestamp: gossip.Timestamp,
+		TTL:       gossip.TTL - 1,
+		HopCount:  gossip.HopCount + 1,
+		MessageID: gossip.MessageID,
+	}
+
+	node.KnownNodesMutex.RLock()
+	nodes := make([]Node, 0, len(node.KnownNodes))
+	for _, n := range node.KnownNodes {
+		// Don't forward back to the originating node or to self
+		if n.ID != node.NodeID && n.ID != gossip.NodeID && n.Address != "" {
+			nodes = append(nodes, n)
+		}
+	}
+	node.KnownNodesMutex.RUnlock()
+
+	if len(nodes) == 0 {
+		return
+	}
+
+	gossipJSON, err := json.Marshal(forwardGossip)
+	if err != nil {
+		logger.Error("Failed to marshal forwarded gossip", "error", err)
+		return
+	}
+
+	logger.Debug("Forwarding domain gossip",
+		"originalNode", gossip.NodeID,
+		"ttl", forwardGossip.TTL,
+		"hopCount", forwardGossip.HopCount,
+		"targetNodes", len(nodes))
+
+	for _, targetNode := range nodes {
+		go node.sendDomainGossip(targetNode, gossipJSON)
+	}
+}
+
+// hasSeenGossip checks if a gossip message has already been processed
+func (node *QuidnugNode) hasSeenGossip(messageID string) bool {
+	node.GossipSeenMutex.RLock()
+	defer node.GossipSeenMutex.RUnlock()
+	_, seen := node.GossipSeen[messageID]
+	return seen
+}
+
+// markGossipSeen marks a gossip message as seen
+func (node *QuidnugNode) markGossipSeen(messageID string) {
+	node.GossipSeenMutex.Lock()
+	defer node.GossipSeenMutex.Unlock()
+	node.GossipSeen[messageID] = time.Now().Unix()
+}
+
+// cleanupGossipSeen removes old entries from the gossip seen map
+func (node *QuidnugNode) cleanupGossipSeen() {
+	node.GossipSeenMutex.Lock()
+	defer node.GossipSeenMutex.Unlock()
+
+	// Remove entries older than 30 minutes
+	cutoff := time.Now().Add(-30 * time.Minute).Unix()
+	for messageID, timestamp := range node.GossipSeen {
+		if timestamp < cutoff {
+			delete(node.GossipSeen, messageID)
+		}
+	}
+
+	logger.Debug("Cleaned up gossip seen map", "remainingEntries", len(node.GossipSeen))
+}
+
 // queryNode performs an HTTP GET query to a specific node
 func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, queryParam string) (interface{}, error) {
 	path := fmt.Sprintf("/api/domains/%s/query", url.PathEscape(domainName))

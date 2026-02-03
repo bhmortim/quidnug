@@ -177,6 +177,9 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/node/domains", node.GetNodeDomainsHandler).Methods("GET")
 	router.HandleFunc("/node/domains", node.UpdateNodeDomainsHandler).Methods("POST")
 
+	// Gossip endpoints
+	router.HandleFunc("/gossip/domains", node.ReceiveDomainGossipHandler).Methods("POST")
+
 	// API spec endpoints
 	router.HandleFunc("/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/quids", node.CreateQuidHandler).Methods("POST")
@@ -1062,9 +1065,30 @@ func (node *QuidnugNode) UpdateNodeDomainsHandler(w http.ResponseWriter, r *http
 
 	node.SupportedDomains = req.Domains
 
+	// Trigger gossip broadcast when domains change
+	go node.BroadcastDomainInfo()
+
 	WriteSuccess(w, map[string]interface{}{
 		"nodeId":  node.NodeID,
 		"domains": node.SupportedDomains,
+	})
+}
+
+// ReceiveDomainGossipHandler handles incoming domain gossip messages
+func (node *QuidnugNode) ReceiveDomainGossipHandler(w http.ResponseWriter, r *http.Request) {
+	var gossip DomainGossip
+	if err := DecodeJSONBody(w, r, &gossip); err != nil {
+		return
+	}
+
+	if err := node.ReceiveDomainGossip(gossip); err != nil {
+		WriteError(w, http.StatusBadRequest, "INVALID_GOSSIP", err.Error())
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"status":  "accepted",
+		"nodeId":  node.NodeID,
 	})
 }
 
