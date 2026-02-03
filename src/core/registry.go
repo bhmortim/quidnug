@@ -49,6 +49,14 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateTitleRegistry(tx)
+
+		case TxTypeEvent:
+			var tx EventTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal event transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updateEventStreamRegistry(tx)
 		}
 	}
 }
@@ -243,6 +251,99 @@ func (node *QuidnugNode) GetQuidIdentity(quidID string) (IdentityTransaction, bo
 
 	identity, exists := node.IdentityRegistry[quidID]
 	return identity, exists
+}
+
+// updateEventStreamRegistry updates the event stream registry with an event transaction
+func (node *QuidnugNode) updateEventStreamRegistry(tx EventTransaction) {
+	node.EventStreamMutex.Lock()
+	defer node.EventStreamMutex.Unlock()
+
+	subjectID := tx.SubjectID
+
+	// Initialize EventRegistry for subject if it doesn't exist
+	if _, exists := node.EventRegistry[subjectID]; !exists {
+		node.EventRegistry[subjectID] = make([]EventTransaction, 0)
+	}
+
+	// Append event to registry
+	node.EventRegistry[subjectID] = append(node.EventRegistry[subjectID], tx)
+
+	// Initialize EventStreamRegistry for subject if it doesn't exist
+	if _, exists := node.EventStreamRegistry[subjectID]; !exists {
+		node.EventStreamRegistry[subjectID] = &EventStream{
+			SubjectID:   subjectID,
+			SubjectType: tx.SubjectType,
+			CreatedAt:   tx.Timestamp,
+		}
+	}
+
+	// Update stream metadata
+	stream := node.EventStreamRegistry[subjectID]
+	stream.LatestSequence = tx.Sequence
+	stream.EventCount = int64(len(node.EventRegistry[subjectID]))
+	stream.UpdatedAt = tx.Timestamp
+	stream.LatestEventID = tx.ID
+
+	logger.Debug("Updated event stream registry",
+		"subjectId", subjectID,
+		"sequence", tx.Sequence,
+		"eventCount", stream.EventCount)
+}
+
+// GetEventStream returns event stream metadata for a subject
+func (node *QuidnugNode) GetEventStream(subjectID string) (*EventStream, bool) {
+	node.EventStreamMutex.RLock()
+	defer node.EventStreamMutex.RUnlock()
+
+	stream, exists := node.EventStreamRegistry[subjectID]
+	if !exists {
+		return nil, false
+	}
+	return stream, true
+}
+
+// GetStreamEvents returns paginated events for a stream, ordered by sequence (ascending)
+func (node *QuidnugNode) GetStreamEvents(subjectID string, limit, offset int) ([]EventTransaction, int) {
+	node.EventStreamMutex.RLock()
+	defer node.EventStreamMutex.RUnlock()
+
+	events, exists := node.EventRegistry[subjectID]
+	if !exists {
+		return []EventTransaction{}, 0
+	}
+
+	total := len(events)
+
+	// Handle offset beyond range
+	if offset >= total {
+		return []EventTransaction{}, total
+	}
+
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	// Return copy of slice (events are ordered by sequence as they're appended in order)
+	result := make([]EventTransaction, end-offset)
+	copy(result, events[offset:end])
+
+	return result, total
+}
+
+// GetEventByID searches for an event by its ID across all streams
+func (node *QuidnugNode) GetEventByID(eventID string) (*EventTransaction, bool) {
+	node.EventStreamMutex.RLock()
+	defer node.EventStreamMutex.RUnlock()
+
+	for _, events := range node.EventRegistry {
+		for i := range events {
+			if events[i].ID == eventID {
+				return &events[i], true
+			}
+		}
+	}
+	return nil, false
 }
 
 // GetAssetOwnership returns asset ownership information
