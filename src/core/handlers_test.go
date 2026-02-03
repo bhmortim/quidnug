@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -11,6 +13,33 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+// mockIPFSClient is a test helper that implements IPFSClient
+type mockIPFSClient struct {
+	available   bool
+	pinResponse string
+	pinError    error
+	getResponse []byte
+	getError    error
+}
+
+func (m *mockIPFSClient) Pin(ctx context.Context, data []byte) (string, error) {
+	if m.pinError != nil {
+		return "", m.pinError
+	}
+	return m.pinResponse, nil
+}
+
+func (m *mockIPFSClient) Get(ctx context.Context, cid string) ([]byte, error) {
+	if m.getError != nil {
+		return nil, m.getError
+	}
+	return m.getResponse, nil
+}
+
+func (m *mockIPFSClient) IsAvailable() bool {
+	return m.available
+}
 
 func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router := mux.NewRouter()
@@ -26,6 +55,11 @@ func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router.HandleFunc("/api/blocks", node.GetBlocksHandler).Methods("GET")
 	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
 	router.HandleFunc("/api/domains", node.GetDomainsHandler).Methods("GET")
+	router.HandleFunc("/api/events", node.CreateEventTransactionHandler).Methods("POST")
+	router.HandleFunc("/api/streams/{subjectId}", node.GetEventStreamHandler).Methods("GET")
+	router.HandleFunc("/api/streams/{subjectId}/events", node.GetStreamEventsHandler).Methods("GET")
+	router.HandleFunc("/api/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
+	router.HandleFunc("/api/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
 	return router
 }
 
@@ -1310,6 +1344,549 @@ func TestVersionedRoutes(t *testing.T) {
 
 		if response["success"] != true {
 			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+	})
+}
+
+func TestCreateEventTransactionHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	t.Run("valid event transaction", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "status_update",
+			Payload:     map[string]interface{}{"status": "active"},
+		})
+
+		body, _ := json.Marshal(tx)
+		req := httptest.NewRequest("POST", "/api/events", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data := response["data"].(map[string]interface{})
+		if _, ok := data["id"].(string); !ok {
+			t.Error("Expected 'id' to be a string")
+		}
+		if _, ok := data["sequence"].(float64); !ok {
+			t.Error("Expected 'sequence' to be a number")
+		}
+	})
+
+	t.Run("invalid JSON body", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/events", bytes.NewBufferString("invalid json"))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("validation error - missing trust domain", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Payload:     map[string]interface{}{"test": true},
+		})
+
+		body, _ := json.Marshal(tx)
+		req := httptest.NewRequest("POST", "/api/events", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
+		}
+	})
+
+	t.Run("auto-assigns sequence starting at 1", func(t *testing.T) {
+		freshNode := newTestNode()
+		freshRouter := setupTestRouter(freshNode)
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000002",
+			SubjectType: "QUID",
+			EventType:   "created",
+			Payload:     map[string]interface{}{"action": "create"},
+		})
+
+		body, _ := json.Marshal(tx)
+		req := httptest.NewRequest("POST", "/api/events", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		freshRouter.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		data := response["data"].(map[string]interface{})
+
+		if data["sequence"].(float64) != 1 {
+			t.Errorf("Expected sequence 1, got %v", data["sequence"])
+		}
+	})
+}
+
+func TestGetEventStreamHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+
+	t.Run("existing stream", func(t *testing.T) {
+		subjectID := "stream_test_001"
+		node.EventStreamMutex.Lock()
+		node.EventStreamRegistry[subjectID] = &EventStream{
+			SubjectID:      subjectID,
+			SubjectType:    "QUID",
+			LatestSequence: 5,
+			EventCount:     5,
+			CreatedAt:      1000000,
+			UpdatedAt:      1000005,
+			LatestEventID:  "event_005",
+		}
+		node.EventStreamMutex.Unlock()
+
+		req := httptest.NewRequest("GET", "/api/streams/"+subjectID, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data := response["data"].(map[string]interface{})
+		if data["subjectId"] != subjectID {
+			t.Errorf("Expected subjectId '%s', got '%v'", subjectID, data["subjectId"])
+		}
+		if data["latestSequence"].(float64) != 5 {
+			t.Errorf("Expected latestSequence 5, got '%v'", data["latestSequence"])
+		}
+	})
+
+	t.Run("non-existent stream returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/streams/nonexistent123", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("Expected status 404, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		if response["success"] != false {
+			t.Errorf("Expected success false, got '%v'", response["success"])
+		}
+
+		errData := response["error"].(map[string]interface{})
+		if errData["code"] != "NOT_FOUND" {
+			t.Errorf("Expected error code 'NOT_FOUND', got '%v'", errData["code"])
+		}
+	})
+}
+
+func TestGetStreamEventsHandler(t *testing.T) {
+	node := newTestNode()
+	router := setupTestRouter(node)
+	subjectID := "events_test_001"
+
+	// Pre-populate events
+	node.EventStreamMutex.Lock()
+	node.EventRegistry[subjectID] = []EventTransaction{
+		{BaseTransaction: BaseTransaction{ID: "evt_001"}, Sequence: 1, EventType: "created"},
+		{BaseTransaction: BaseTransaction{ID: "evt_002"}, Sequence: 2, EventType: "updated"},
+		{BaseTransaction: BaseTransaction{ID: "evt_003"}, Sequence: 3, EventType: "updated"},
+		{BaseTransaction: BaseTransaction{ID: "evt_004"}, Sequence: 4, EventType: "updated"},
+		{BaseTransaction: BaseTransaction{ID: "evt_005"}, Sequence: 5, EventType: "finalized"},
+	}
+	node.EventStreamMutex.Unlock()
+
+	t.Run("returns paginated events", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/streams/"+subjectID+"/events?limit=3&offset=0", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data := response["data"].(map[string]interface{})
+		events := data["data"].([]interface{})
+		if len(events) != 3 {
+			t.Errorf("Expected 3 events, got %d", len(events))
+		}
+
+		pagination := data["pagination"].(map[string]interface{})
+		if pagination["total"].(float64) != 5 {
+			t.Errorf("Expected total 5, got %v", pagination["total"])
+		}
+		if pagination["limit"].(float64) != 3 {
+			t.Errorf("Expected limit 3, got %v", pagination["limit"])
+		}
+	})
+
+	t.Run("pagination offset works", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/streams/"+subjectID+"/events?limit=2&offset=3", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		data := response["data"].(map[string]interface{})
+		events := data["data"].([]interface{})
+
+		if len(events) != 2 {
+			t.Errorf("Expected 2 events, got %d", len(events))
+		}
+	})
+
+	t.Run("empty stream returns empty array", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/streams/nonexistent_stream/events", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		data := response["data"].(map[string]interface{})
+		events := data["data"].([]interface{})
+
+		if len(events) != 0 {
+			t.Errorf("Expected 0 events, got %d", len(events))
+		}
+
+		pagination := data["pagination"].(map[string]interface{})
+		if pagination["total"].(float64) != 0 {
+			t.Errorf("Expected total 0, got %v", pagination["total"])
+		}
+	})
+}
+
+func TestPinToIPFSHandler(t *testing.T) {
+	t.Run("IPFS not available returns 503", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{available: false}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString("test content"))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected status 503, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		errData := response["error"].(map[string]interface{})
+		if errData["code"] != "IPFS_UNAVAILABLE" {
+			t.Errorf("Expected error code 'IPFS_UNAVAILABLE', got '%v'", errData["code"])
+		}
+	})
+
+	t.Run("empty body returns 400", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{available: true}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBuffer([]byte{}))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("successful raw content pin", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available:   true,
+			pinResponse: "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString("test content"))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to parse response: %v", err)
+		}
+
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+
+		data := response["data"].(map[string]interface{})
+		if data["cid"] != "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG" {
+			t.Errorf("Expected CID 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', got '%v'", data["cid"])
+		}
+	})
+
+	t.Run("successful base64 encoded content pin", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available:   true,
+			pinResponse: "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+		}
+		router := setupTestRouter(node)
+
+		content := base64.StdEncoding.EncodeToString([]byte("test content"))
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString(content))
+		req.Header.Set("Content-Transfer-Encoding", "base64")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		if response["success"] != true {
+			t.Errorf("Expected success true, got '%v'", response["success"])
+		}
+	})
+
+	t.Run("invalid base64 returns 400", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{available: true}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString("not valid base64!!!"))
+		req.Header.Set("Content-Transfer-Encoding", "base64")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+	})
+
+	t.Run("pin error returns 500", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available: true,
+			pinError:  ErrIPFSNotConfigured,
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString("test content"))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("Expected status 500, got %d", w.Code)
+		}
+	})
+
+	t.Run("IPFS unavailable error during pin returns 503", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available: true,
+			pinError:  ErrIPFSUnavailable,
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("POST", "/api/ipfs/pin", bytes.NewBufferString("test content"))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected status 503, got %d", w.Code)
+		}
+	})
+}
+
+func TestGetFromIPFSHandler(t *testing.T) {
+	t.Run("invalid CID format returns 400", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{available: true}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("GET", "/api/ipfs/invalid-cid", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
+		}
+
+		var response map[string]interface{}
+		json.Unmarshal(w.Body.Bytes(), &response)
+		errData := response["error"].(map[string]interface{})
+		if errData["code"] != "INVALID_CID" {
+			t.Errorf("Expected error code 'INVALID_CID', got '%v'", errData["code"])
+		}
+	})
+
+	t.Run("IPFS not available returns 503", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{available: false}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("GET", "/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected status 503, got %d", w.Code)
+		}
+	})
+
+	t.Run("successful content retrieval", func(t *testing.T) {
+		node := newTestNode()
+		testContent := []byte("Hello, IPFS!")
+		node.IPFSClient = &mockIPFSClient{
+			available:   true,
+			getResponse: testContent,
+		}
+		router := setupTestRouter(node)
+
+		cid := "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+		req := httptest.NewRequest("GET", "/api/ipfs/"+cid, nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected status 200, got %d", w.Code)
+		}
+
+		if string(w.Body.Bytes()) != string(testContent) {
+			t.Errorf("Expected body '%s', got '%s'", string(testContent), w.Body.String())
+		}
+
+		if w.Header().Get("X-IPFS-CID") != cid {
+			t.Errorf("Expected X-IPFS-CID header '%s', got '%s'", cid, w.Header().Get("X-IPFS-CID"))
+		}
+
+		contentType := w.Header().Get("Content-Type")
+		if contentType == "" {
+			t.Error("Expected Content-Type header to be set")
+		}
+	})
+
+	t.Run("get error returns 500", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available: true,
+			getError:  ErrIPFSNotConfigured,
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("GET", "/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("Expected status 500, got %d", w.Code)
+		}
+	})
+
+	t.Run("IPFS unavailable error during get returns 503", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available: true,
+			getError:  ErrIPFSUnavailable,
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("GET", "/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("Expected status 503, got %d", w.Code)
+		}
+	})
+
+	t.Run("invalid CID error from IPFS returns 400", func(t *testing.T) {
+		node := newTestNode()
+		node.IPFSClient = &mockIPFSClient{
+			available: true,
+			getError:  ErrInvalidCID,
+		}
+		router := setupTestRouter(node)
+
+		req := httptest.NewRequest("GET", "/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("Expected status 400, got %d", w.Code)
 		}
 	})
 }

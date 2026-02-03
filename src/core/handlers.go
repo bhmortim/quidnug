@@ -5,8 +5,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -160,6 +163,15 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/registry/trust", node.QueryTrustRegistryHandler).Methods("GET")
 	router.HandleFunc("/registry/identity", node.QueryIdentityRegistryHandler).Methods("GET")
 	router.HandleFunc("/registry/title", node.QueryTitleRegistryHandler).Methods("GET")
+
+	// Event streaming endpoints
+	router.HandleFunc("/events", node.CreateEventTransactionHandler).Methods("POST")
+	router.HandleFunc("/streams/{subjectId}", node.GetEventStreamHandler).Methods("GET")
+	router.HandleFunc("/streams/{subjectId}/events", node.GetStreamEventsHandler).Methods("GET")
+
+	// IPFS endpoints
+	router.HandleFunc("/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
+	router.HandleFunc("/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
 
 	// API spec endpoints
 	router.HandleFunc("/info", node.GetInfoHandler).Methods("GET")
@@ -857,6 +869,157 @@ func (node *QuidnugNode) GetTrustEdgesHandler(w http.ResponseWriter, r *http.Req
 		"includeUnverified": includeUnverified,
 		"edges":             edges,
 	})
+}
+
+// CreateEventTransactionHandler handles event transaction creation
+func (node *QuidnugNode) CreateEventTransactionHandler(w http.ResponseWriter, r *http.Request) {
+	var tx EventTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+
+	// Set timestamp if not provided
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+
+	// Pre-calculate sequence if not provided (replicate AddEventTransaction logic)
+	// to return accurate sequence in response
+	if tx.Sequence == 0 {
+		node.EventStreamMutex.RLock()
+		events, exists := node.EventRegistry[tx.SubjectID]
+		if exists && len(events) > 0 {
+			tx.Sequence = events[len(events)-1].Sequence + 1
+		} else {
+			tx.Sequence = 1
+		}
+		node.EventStreamMutex.RUnlock()
+	}
+
+	txID, err := node.AddEventTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"id":       txID,
+		"sequence": tx.Sequence,
+	})
+}
+
+// GetEventStreamHandler returns event stream metadata for a subject
+func (node *QuidnugNode) GetEventStreamHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	subjectID := vars["subjectId"]
+
+	stream, exists := node.GetEventStream(subjectID)
+	if !exists {
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "Event stream not found")
+		return
+	}
+
+	WriteSuccess(w, stream)
+}
+
+// GetStreamEventsHandler returns paginated events for a stream
+func (node *QuidnugNode) GetStreamEventsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	subjectID := vars["subjectId"]
+
+	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+
+	events, total := node.GetStreamEvents(subjectID, params.Limit, params.Offset)
+
+	WriteSuccess(w, map[string]interface{}{
+		"data": events,
+		"pagination": PaginationMeta{
+			Limit:  params.Limit,
+			Offset: params.Offset,
+			Total:  total,
+		},
+	})
+}
+
+// PinToIPFSHandler pins content to IPFS and returns the CID
+func (node *QuidnugNode) PinToIPFSHandler(w http.ResponseWriter, r *http.Request) {
+	if !node.IPFSClient.IsAvailable() {
+		WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", "IPFS service is not available")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to read request body")
+		return
+	}
+	defer r.Body.Close()
+
+	if len(body) == 0 {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Request body is empty")
+		return
+	}
+
+	// Check if content is base64 encoded via Content-Transfer-Encoding header
+	var content []byte
+	if r.Header.Get("Content-Transfer-Encoding") == "base64" {
+		content, err = base64.StdEncoding.DecodeString(string(body))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid base64 encoding")
+			return
+		}
+	} else {
+		content = body
+	}
+
+	cid, err := node.IPFSClient.Pin(r.Context(), content)
+	if err != nil {
+		if errors.Is(err, ErrIPFSUnavailable) {
+			WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", err.Error())
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to pin content to IPFS")
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"cid": cid,
+	})
+}
+
+// GetFromIPFSHandler retrieves content from IPFS by CID
+func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cid := vars["cid"]
+
+	if !IsValidCID(cid) {
+		WriteError(w, http.StatusBadRequest, "INVALID_CID", "Invalid CID format")
+		return
+	}
+
+	if !node.IPFSClient.IsAvailable() {
+		WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", "IPFS service is not available")
+		return
+	}
+
+	content, err := node.IPFSClient.Get(r.Context(), cid)
+	if err != nil {
+		if errors.Is(err, ErrIPFSUnavailable) {
+			WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", err.Error())
+			return
+		}
+		if errors.Is(err, ErrInvalidCID) {
+			WriteError(w, http.StatusBadRequest, "INVALID_CID", err.Error())
+			return
+		}
+		WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve content from IPFS")
+		return
+	}
+
+	contentType := http.DetectContentType(content)
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-IPFS-CID", cid)
+	w.Write(content)
 }
 
 // QueryTitleRegistryHandler handles title registry queries
