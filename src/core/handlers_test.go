@@ -1355,6 +1355,7 @@ func TestCreateEventTransactionHandler(t *testing.T) {
 	t.Run("valid event transaction", func(t *testing.T) {
 		tx := signEventTx(node, EventTransaction{
 			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_valid",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
@@ -1362,6 +1363,7 @@ func TestCreateEventTransactionHandler(t *testing.T) {
 			SubjectID:   "0000000000000001",
 			SubjectType: "QUID",
 			EventType:   "status_update",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"status": "active"},
 		})
 
@@ -1440,6 +1442,7 @@ func TestCreateEventTransactionHandler(t *testing.T) {
 
 		tx := signEventTx(freshNode, EventTransaction{
 			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_auto_seq",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
@@ -1447,6 +1450,7 @@ func TestCreateEventTransactionHandler(t *testing.T) {
 			SubjectID:   "0000000000000002",
 			SubjectType: "QUID",
 			EventType:   "created",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"action": "create"},
 		})
 
