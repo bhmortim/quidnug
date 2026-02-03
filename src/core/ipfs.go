@@ -195,7 +195,8 @@ var (
 	cidV0Regex = regexp.MustCompile(`^Qm[1-9A-HJ-NP-Za-km-z]{44}$`)
 	// CIDv1: starts with "b" (base32 lowercase multibase prefix)
 	// Uses RFC 4648 base32 alphabet: a-z2-7
-	cidV1Regex = regexp.MustCompile(`^b[a-z2-7]{50,}$`)
+	// Standard CIDv1 with SHA-256 is 59 characters total (b + 58 chars)
+	cidV1Regex = regexp.MustCompile(`^b[a-z2-7]{58,}$`)
 )
 
 // IsValidCID validates a CID string for both CIDv0 and CIDv1 formats

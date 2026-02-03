@@ -1162,6 +1162,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 	t.Run("adds valid event transaction to pending pool", func(t *testing.T) {
 		tx := signEventTx(node, EventTransaction{
 			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_add_001",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
@@ -1169,6 +1170,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			SubjectID:   "0000000000000001",
 			SubjectType: "QUID",
 			EventType:   "status_update",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"status": "active"},
 		})
 
@@ -1203,6 +1205,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 
 		tx := signEventTx(freshNode, EventTransaction{
 			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_seq_001",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
@@ -1210,6 +1213,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			SubjectID:   "0000000000000002",
 			SubjectType: "QUID",
 			EventType:   "created",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"action": "create"},
 		})
 
@@ -1254,6 +1258,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 
 		tx := signEventTx(freshNode, EventTransaction{
 			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_seq_002",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000002,
@@ -1287,12 +1292,13 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 		}
 	})
 
-	t.Run("generates transaction ID if not provided", func(t *testing.T) {
+	t.Run("uses explicit transaction ID when provided", func(t *testing.T) {
 		freshNode := newTestNode()
+		explicitID := "tx_event_explicit_id"
 
 		tx := signEventTx(freshNode, EventTransaction{
 			BaseTransaction: BaseTransaction{
-				ID:          "",
+				ID:          explicitID,
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000003,
@@ -1300,6 +1306,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			SubjectID:   "0000000000000001",
 			SubjectType: "QUID",
 			EventType:   "test",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"test": true},
 		})
 
@@ -1308,12 +1315,8 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			t.Fatalf("Expected no error, got %v", err)
 		}
 
-		if txID == "" {
-			t.Error("Expected generated transaction ID")
-		}
-
-		if len(txID) != 64 {
-			t.Errorf("Expected 64-character hex ID, got %d characters", len(txID))
+		if txID != explicitID {
+			t.Errorf("Expected ID %s, got %s", explicitID, txID)
 		}
 	})
 
@@ -1331,6 +1334,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			SubjectID:   "0000000000000001",
 			SubjectType: "QUID",
 			EventType:   "test",
+			Sequence:    1,
 			Payload:     map[string]interface{}{"test": true},
 		})
 
