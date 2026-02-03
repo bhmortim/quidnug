@@ -65,6 +65,9 @@ func TestConcurrentTrustTransactionSubmission(t *testing.T) {
 				Nonce:      int64(idx + 1),
 			}
 
+			// Set ID before signing to ensure signed data matches validated data
+			tx.ID = fmt.Sprintf("tx_%d_%d", time.Now().UnixNano(), idx)
+
 			// Sign the transaction
 			tx = signTrustTx(node, tx)
 
@@ -343,6 +346,9 @@ func TestConcurrentBlockGenerationAndReception(t *testing.T) {
 					TrustLevel: 0.7,
 					Nonce:      int64(genID*100 + j + 1),
 				}
+
+				// Set ID before signing to ensure signed data matches validated data
+				tx.ID = fmt.Sprintf("tx_%d_%d_%d", time.Now().UnixNano(), genID, j)
 				tx = signTrustTx(node, tx)
 
 				node.AddTrustTransaction(tx)
@@ -481,6 +487,9 @@ func TestConcurrentNonceUpdates(t *testing.T) {
 				TrustLevel: 0.5 + float64(idx%5)*0.1,
 				Nonce:      0, // Auto-assign nonce
 			}
+
+			// Set ID before signing to ensure signed data matches validated data
+			tx.ID = fmt.Sprintf("tx_%d_%d", time.Now().UnixNano(), idx)
 			tx = signTrustTx(node, tx)
 
 			txID, err := node.AddTrustTransaction(tx)
