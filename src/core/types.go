@@ -157,7 +157,7 @@ type EnhancedTrustResult struct {
 	RelationalTrustResult
 	Confidence       string            `json:"confidence"` // "high", "medium", "low"
 	UnverifiedHops   int               `json:"unverifiedHops"`
-	VerificationGaps []VerificationGap `json:"verificationGaps,omitempty"`
+	VerificationGaps []VerificationGap `json:"verificationGaps"`
 }
 
 // VerificationGap describes an unverified hop in the trust path
