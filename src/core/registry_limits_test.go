@@ -10,30 +10,24 @@ import (
 func TestComputeRelationalTrust_ResourceLimits(t *testing.T) {
 	node := newTestNode()
 
-	// Create a graph with more than MaxTrustVisitedSize (10000) nodes
-	// to reliably exceed resource limits. The BFS visited set is bounded
-	// by the number of unique nodes, so we need > 10000 nodes.
-	numNodes := 10500
-	nodesPerConnection := 50
+	// Create a graph where the observer has more than MaxTrustQueueSize direct connections.
+	// After processing the observer at depth 0, the queue will contain all direct trustees,
+	// exceeding the limit when checked at the start of the next iteration.
+	numDirectConnections := MaxTrustQueueSize + 500 // 10500
+
+	observer := "de05e00de0000000"
 
 	node.TrustRegistryMutex.Lock()
-	for i := 0; i < numNodes; i++ {
-		truster := fmt.Sprintf("de05e00de000%04x", i)
-		if node.TrustRegistry[truster] == nil {
-			node.TrustRegistry[truster] = make(map[string]float64)
-		}
-		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := fmt.Sprintf("de05e00de000%04x", (i+j)%numNodes)
-			node.TrustRegistry[truster][trustee] = 0.9
-		}
+	node.TrustRegistry[observer] = make(map[string]float64)
+	for i := 1; i <= numDirectConnections; i++ {
+		trustee := fmt.Sprintf("de05e00de000%04x", i)
+		node.TrustRegistry[observer][trustee] = 0.9
 	}
 	node.TrustRegistryMutex.Unlock()
 
-	// Search for a non-existent node to force exhaustive exploration
-	// until resource limits are hit
-	_, _, err := node.ComputeRelationalTrust("de05e00de0000000", "ffff000000000000", 10)
+	// Search for a non-existent node to force exploration of all direct connections
+	_, _, err := node.ComputeRelationalTrust(observer, "ffff000000000000", 10)
 
-	// Should return ErrTrustGraphTooLarge
 	if err == nil {
 		t.Error("Expected ErrTrustGraphTooLarge error for large graph, got nil")
 	} else if !errors.Is(err, ErrTrustGraphTooLarge) {
@@ -81,32 +75,28 @@ func TestComputeRelationalTrust_NormalGraphSucceeds(t *testing.T) {
 func TestComputeRelationalTrustEnhanced_ResourceLimits(t *testing.T) {
 	node := newTestNode()
 
-	// Create a graph with more than MaxTrustVisitedSize (10000) nodes
-	// to reliably exceed resource limits
-	numNodes := 10500
-	nodesPerConnection := 50
+	// Create a graph where the observer has more than MaxTrustQueueSize direct connections.
+	// After processing the observer at depth 0, the queue will contain all direct trustees,
+	// exceeding the limit when checked at the start of the next iteration.
+	numDirectConnections := MaxTrustQueueSize + 500 // 10500
+
+	observer := "e00a00ced0000000"
 
 	node.TrustRegistryMutex.Lock()
-	for i := 0; i < numNodes; i++ {
-		truster := fmt.Sprintf("e00a00ced000%04x", i)
-		if node.VerifiedTrustEdges[truster] == nil {
-			node.VerifiedTrustEdges[truster] = make(map[string]TrustEdge)
-		}
-		for j := 1; j <= nodesPerConnection; j++ {
-			trustee := fmt.Sprintf("e00a00ced000%04x", (i+j)%numNodes)
-			node.VerifiedTrustEdges[truster][trustee] = TrustEdge{
-				Truster:    truster,
-				Trustee:    trustee,
-				TrustLevel: 0.9,
-				Verified:   true,
-			}
+	node.VerifiedTrustEdges[observer] = make(map[string]TrustEdge)
+	for i := 1; i <= numDirectConnections; i++ {
+		trustee := fmt.Sprintf("e00a00ced000%04x", i)
+		node.VerifiedTrustEdges[observer][trustee] = TrustEdge{
+			Truster:    observer,
+			Trustee:    trustee,
+			TrustLevel: 0.9,
+			Verified:   true,
 		}
 	}
 	node.TrustRegistryMutex.Unlock()
 
-	// Search for a non-existent node to force exhaustive exploration
-	// until resource limits are hit
-	_, err := node.ComputeRelationalTrustEnhanced("e00a00ced0000000", "ffff000000000000", 10, false)
+	// Search for a non-existent node to force exploration of all direct connections
+	_, err := node.ComputeRelationalTrustEnhanced(observer, "ffff000000000000", 10, false)
 
 	if err == nil {
 		t.Error("Expected ErrTrustGraphTooLarge error for large graph, got nil")
