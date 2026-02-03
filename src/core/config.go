@@ -30,8 +30,9 @@ type Config struct {
 	IPFSTimeout             time.Duration `json:"ipfsTimeout" yaml:"-"`
 	SupportedDomains        []string      `json:"supportedDomains" yaml:"supported_domains"`
 	AllowDomainRegistration bool          `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
+	RequireParentDomainAuth bool          `json:"requireParentDomainAuth" yaml:"require_parent_domain_auth"`
 	TrustCacheTTL           time.Duration `json:"trustCacheTTL" yaml:"-"`
-}
+	}
 
 // fileConfig is used for parsing config files with string durations
 type fileConfig struct {
@@ -51,6 +52,7 @@ type fileConfig struct {
 	IPFSTimeout             string   `json:"ipfsTimeout" yaml:"ipfs_timeout"`
 	SupportedDomains        []string `json:"supportedDomains" yaml:"supported_domains"`
 	AllowDomainRegistration *bool    `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
+	RequireParentDomainAuth *bool    `json:"requireParentDomainAuth" yaml:"require_parent_domain_auth"`
 	TrustCacheTTL           string   `json:"trustCacheTTL" yaml:"trust_cache_ttl"`
 }
 
@@ -64,8 +66,9 @@ const (
 	DefaultIPFSEnabled             = false
 	DefaultIPFSGatewayURL          = "http://localhost:5001"
 	DefaultIPFSTimeout             = 30 * time.Second
-	DefaultAllowDomainRegistration = true
-	DefaultTrustCacheTTL           = 60 * time.Second
+	DefaultAllowDomainRegistration  = true
+	DefaultRequireParentDomainAuth  = true
+	DefaultTrustCacheTTL            = 60 * time.Second
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -122,6 +125,10 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 
 	if fc.AllowDomainRegistration != nil {
 		cfg.AllowDomainRegistration = *fc.AllowDomainRegistration
+	}
+
+	if fc.RequireParentDomainAuth != nil {
+		cfg.RequireParentDomainAuth = *fc.RequireParentDomainAuth
 	}
 
 	if fc.BlockInterval != "" {
@@ -201,6 +208,7 @@ func LoadConfig() *Config {
 		IPFSTimeout:             DefaultIPFSTimeout,
 		SupportedDomains:        []string{},
 		AllowDomainRegistration: DefaultAllowDomainRegistration,
+		RequireParentDomainAuth: DefaultRequireParentDomainAuth,
 		TrustCacheTTL:           DefaultTrustCacheTTL,
 	}
 
@@ -260,6 +268,9 @@ func LoadConfig() *Config {
 			}
 			if !fileCfg.AllowDomainRegistration {
 				cfg.AllowDomainRegistration = fileCfg.AllowDomainRegistration
+			}
+			if !fileCfg.RequireParentDomainAuth {
+				cfg.RequireParentDomainAuth = fileCfg.RequireParentDomainAuth
 			}
 			if fileCfg.TrustCacheTTL > 0 {
 				cfg.TrustCacheTTL = fileCfg.TrustCacheTTL
@@ -350,6 +361,10 @@ func LoadConfig() *Config {
 
 	if allowDomainReg := os.Getenv("ALLOW_DOMAIN_REGISTRATION"); allowDomainReg != "" {
 		cfg.AllowDomainRegistration = allowDomainReg == "true"
+	}
+
+	if requireParentAuth := os.Getenv("REQUIRE_PARENT_DOMAIN_AUTH"); requireParentAuth != "" {
+		cfg.RequireParentDomainAuth = requireParentAuth == "true"
 	}
 
 	if trustCacheTTL := os.Getenv("TRUST_CACHE_TTL"); trustCacheTTL != "" {

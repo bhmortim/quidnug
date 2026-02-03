@@ -129,6 +129,7 @@ type QuidnugNode struct {
 	// Domain restriction configuration
 	SupportedDomains        []string // Empty = all domains allowed
 	AllowDomainRegistration bool     // Whether dynamic domain registration is permitted
+	RequireParentDomainAuth bool     // Whether subdomains require parent validator authorization
 
 	// Trust computation cache
 	TrustCache *TrustCache
@@ -361,6 +362,7 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		TransactionTrustThreshold: 0.0,
 		SupportedDomains:          cfg.SupportedDomains,
 		AllowDomainRegistration:   cfg.AllowDomainRegistration,
+		RequireParentDomainAuth:   cfg.RequireParentDomainAuth,
 		TrustCache:                NewTrustCache(cfg.TrustCacheTTL),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
@@ -991,6 +993,76 @@ func (node *QuidnugNode) ReEvaluateTentativeBlocks(domain string) error {
 }
 
 
+// GetParentDomain returns the parent domain of a given domain.
+// For "sub.example.com", returns "example.com".
+// For root domains (no dots), returns empty string.
+func GetParentDomain(domain string) string {
+	idx := strings.Index(domain, ".")
+	if idx == -1 {
+		return ""
+	}
+	return domain[idx+1:]
+}
+
+// IsRootDomain checks if a domain is a root domain (has no dots).
+func IsRootDomain(domain string) bool {
+	return !strings.Contains(domain, ".")
+}
+
+// ValidateSubdomainAuthority checks if validators of a child domain are authorized by parent domain validators.
+// Returns true if:
+// - The parent domain is not registered (no authority to check against), OR
+// - At least one parent validator trusts at least one child validator
+// Returns false if parent exists but no trust relationship is found.
+// For domains not yet registered, use validateProposedSubdomainAuthority during registration.
+func (node *QuidnugNode) ValidateSubdomainAuthority(childDomain, parentDomain string) bool {
+	node.TrustDomainsMutex.RLock()
+	parent, parentExists := node.TrustDomains[parentDomain]
+	child, childExists := node.TrustDomains[childDomain]
+	node.TrustDomainsMutex.RUnlock()
+
+	if !parentExists {
+		// Parent not registered, no authority to check against
+		return true
+	}
+
+	if !childExists {
+		// Child not registered, can't validate with this function
+		return false
+	}
+
+	return node.checkValidatorTrust(parent.ValidatorNodes, child.ValidatorNodes)
+}
+
+// checkValidatorTrust checks if any validator from parentValidators trusts any validator from childValidators.
+// Returns true if at least one parent validator has non-zero trust in at least one child validator.
+func (node *QuidnugNode) checkValidatorTrust(parentValidators, childValidators []string) bool {
+	for _, parentValidator := range parentValidators {
+		for _, childValidator := range childValidators {
+			trustLevel, _, _ := node.ComputeRelationalTrust(parentValidator, childValidator, DefaultTrustMaxDepth)
+			if trustLevel > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// validateProposedSubdomainAuthority checks if proposed validators for a new domain
+// are authorized by an existing parent domain's validators.
+func (node *QuidnugNode) validateProposedSubdomainAuthority(parentDomain string, childValidators []string) bool {
+	node.TrustDomainsMutex.RLock()
+	parent, parentExists := node.TrustDomains[parentDomain]
+	node.TrustDomainsMutex.RUnlock()
+
+	if !parentExists {
+		// Parent not registered, no authority to check against - allow
+		return true
+	}
+
+	return node.checkValidatorTrust(parent.ValidatorNodes, childValidators)
+}
+
 // IsDomainSupported checks if a domain is supported by this node.
 // If SupportedDomains is empty, all domains are allowed.
 // Supports wildcard patterns like "*.example.com" for subdomain matching.
@@ -1011,7 +1083,9 @@ func (node *QuidnugNode) IsDomainSupported(domain string) bool {
 	return false
 }
 
-// Register a new trust domain
+// RegisterTrustDomain registers a new trust domain with this node.
+// For subdomains (domains containing dots), validates that at least one parent
+// domain validator trusts the new domain's validators (if RequireParentDomainAuth is enabled).
 func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	// Check if dynamic domain registration is allowed
 	if !node.AllowDomainRegistration {
@@ -1041,6 +1115,26 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 
 	if !validatorFound {
 		domain.ValidatorNodes = append(domain.ValidatorNodes, node.NodeID)
+	}
+
+	// Validate subdomain authority if required and this is not a root domain
+	if node.RequireParentDomainAuth && !IsRootDomain(domain.Name) {
+		parentDomain := GetParentDomain(domain.Name)
+		// Need to release lock before calling validateProposedSubdomainAuthority
+		// which may acquire TrustRegistryMutex via ComputeRelationalTrust
+		node.TrustDomainsMutex.Unlock()
+
+		if !node.validateProposedSubdomainAuthority(parentDomain, domain.ValidatorNodes) {
+			// Re-acquire lock is not needed as we're returning an error
+			return fmt.Errorf("subdomain %s requires authorization from parent domain %s validators", domain.Name, parentDomain)
+		}
+
+		// Re-acquire lock to continue registration
+		node.TrustDomainsMutex.Lock()
+		// Re-check domain doesn't exist (could have been added while lock was released)
+		if _, exists := node.TrustDomains[domain.Name]; exists {
+			return fmt.Errorf("trust domain %s already exists", domain.Name)
+		}
 	}
 
 	// Initialize validators map if empty

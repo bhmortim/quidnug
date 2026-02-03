@@ -1027,6 +1027,349 @@ func TestDiscoverFromSeeds_UpdatesDomainRegistry(t *testing.T) {
 	}
 }
 
+func TestGetParentDomain(t *testing.T) {
+	tests := []struct {
+		domain   string
+		expected string
+	}{
+		{"sub.example.com", "example.com"},
+		{"deep.sub.example.com", "sub.example.com"},
+		{"example.com", "com"},
+		{"default", ""},
+		{"mynetwork", ""},
+		{"", ""},
+		{"a.b.c.d.e", "b.c.d.e"},
+	}
+
+	for _, tt := range tests {
+		result := GetParentDomain(tt.domain)
+		if result != tt.expected {
+			t.Errorf("GetParentDomain(%q) = %q, want %q", tt.domain, result, tt.expected)
+		}
+	}
+}
+
+func TestIsRootDomain(t *testing.T) {
+	tests := []struct {
+		domain   string
+		expected bool
+	}{
+		{"default", true},
+		{"mynetwork", true},
+		{"example.com", false},
+		{"sub.example.com", false},
+		{"", true},
+	}
+
+	for _, tt := range tests {
+		result := IsRootDomain(tt.domain)
+		if result != tt.expected {
+			t.Errorf("IsRootDomain(%q) = %v, want %v", tt.domain, result, tt.expected)
+		}
+	}
+}
+
+func TestRegisterTrustDomain_RootDomain_NoParentAuthRequired(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = true
+	node.SupportedDomains = []string{} // allow all
+
+	// Root domain (no dots) should succeed without parent auth
+	err := node.RegisterTrustDomain(TrustDomain{Name: "mynetwork"})
+	if err != nil {
+		t.Errorf("Root domain registration should succeed, got error: %v", err)
+	}
+
+	// Verify domain was registered
+	node.TrustDomainsMutex.RLock()
+	_, exists := node.TrustDomains["mynetwork"]
+	node.TrustDomainsMutex.RUnlock()
+
+	if !exists {
+		t.Error("Root domain should have been registered")
+	}
+}
+
+func TestRegisterTrustDomain_Subdomain_ParentNotRegistered_Succeeds(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = true
+	node.SupportedDomains = []string{} // allow all
+
+	// Subdomain with unregistered parent should succeed (no authority to check against)
+	err := node.RegisterTrustDomain(TrustDomain{Name: "sub.example.com"})
+	if err != nil {
+		t.Errorf("Subdomain with unregistered parent should succeed, got error: %v", err)
+	}
+}
+
+func TestRegisterTrustDomain_Subdomain_ParentRegistered_NoTrust_Fails(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = true
+	node.SupportedDomains = []string{} // allow all
+
+	// Create a different node to be the parent validator
+	parentNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create parent node: %v", err)
+	}
+
+	// Register parent domain with the other node as validator
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["example.com"] = TrustDomain{
+		Name:           "example.com",
+		ValidatorNodes: []string{parentNode.NodeID},
+		Validators:     map[string]float64{parentNode.NodeID: 1.0},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Create a third node as the proposed subdomain validator (not trusted by parent)
+	childNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create child node: %v", err)
+	}
+
+	// Try to register subdomain with untrusted validator - should fail
+	err = node.RegisterTrustDomain(TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{childNode.NodeID},
+	})
+
+	if err == nil {
+		t.Error("Subdomain registration with untrusted validator should fail")
+	}
+}
+
+func TestRegisterTrustDomain_Subdomain_ParentRegistered_WithTrust_Succeeds(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = true
+	node.SupportedDomains = []string{} // allow all
+
+	// Create a different node to be the parent validator
+	parentNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create parent node: %v", err)
+	}
+
+	// Register parent domain with the other node as validator
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["example.com"] = TrustDomain{
+		Name:           "example.com",
+		ValidatorNodes: []string{parentNode.NodeID},
+		Validators:     map[string]float64{parentNode.NodeID: 1.0},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Create a third node as the proposed subdomain validator
+	childNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create child node: %v", err)
+	}
+
+	// Establish trust from parent validator to child validator
+	node.TrustRegistryMutex.Lock()
+	if _, exists := node.TrustRegistry[parentNode.NodeID]; !exists {
+		node.TrustRegistry[parentNode.NodeID] = make(map[string]float64)
+	}
+	node.TrustRegistry[parentNode.NodeID][childNode.NodeID] = 0.8
+	node.TrustRegistryMutex.Unlock()
+
+	// Now register subdomain - should succeed
+	err = node.RegisterTrustDomain(TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{childNode.NodeID},
+	})
+
+	if err != nil {
+		t.Errorf("Subdomain registration with trusted validator should succeed, got error: %v", err)
+	}
+}
+
+func TestRegisterTrustDomain_Subdomain_RequireParentAuthDisabled_Succeeds(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = false // Disabled
+	node.SupportedDomains = []string{}   // allow all
+
+	// Create a different node to be the parent validator
+	parentNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create parent node: %v", err)
+	}
+
+	// Register parent domain with the other node as validator
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["example.com"] = TrustDomain{
+		Name:           "example.com",
+		ValidatorNodes: []string{parentNode.NodeID},
+		Validators:     map[string]float64{parentNode.NodeID: 1.0},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Create a third node as the proposed subdomain validator (not trusted by parent)
+	childNode, err := NewQuidnugNode(nil)
+	if err != nil {
+		t.Fatalf("Failed to create child node: %v", err)
+	}
+
+	// Register subdomain with untrusted validator - should succeed because check is disabled
+	err = node.RegisterTrustDomain(TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{childNode.NodeID},
+	})
+
+	if err != nil {
+		t.Errorf("Subdomain registration should succeed when RequireParentDomainAuth is false, got error: %v", err)
+	}
+}
+
+func TestValidateSubdomainAuthority_BothDomainsRegistered(t *testing.T) {
+	node := newTestNode()
+
+	// Create validators
+	parentValidatorNode, _ := NewQuidnugNode(nil)
+	childValidatorNode, _ := NewQuidnugNode(nil)
+
+	// Register parent domain
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["example.com"] = TrustDomain{
+		Name:           "example.com",
+		ValidatorNodes: []string{parentValidatorNode.NodeID},
+	}
+	node.TrustDomains["sub.example.com"] = TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{childValidatorNode.NodeID},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// No trust established - should return false
+	result := node.ValidateSubdomainAuthority("sub.example.com", "example.com")
+	if result {
+		t.Error("Expected false when no trust exists between validators")
+	}
+
+	// Establish trust
+	node.TrustRegistryMutex.Lock()
+	node.TrustRegistry[parentValidatorNode.NodeID] = map[string]float64{
+		childValidatorNode.NodeID: 0.9,
+	}
+	node.TrustRegistryMutex.Unlock()
+
+	// Now should return true
+	result = node.ValidateSubdomainAuthority("sub.example.com", "example.com")
+	if !result {
+		t.Error("Expected true when trust exists between validators")
+	}
+}
+
+func TestValidateSubdomainAuthority_ParentNotRegistered(t *testing.T) {
+	node := newTestNode()
+
+	childValidatorNode, _ := NewQuidnugNode(nil)
+
+	// Register only child domain
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["sub.example.com"] = TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{childValidatorNode.NodeID},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Should return true (no parent to check against)
+	result := node.ValidateSubdomainAuthority("sub.example.com", "example.com")
+	if !result {
+		t.Error("Expected true when parent domain is not registered")
+	}
+}
+
+func TestValidateSubdomainAuthority_ChildNotRegistered(t *testing.T) {
+	node := newTestNode()
+
+	parentValidatorNode, _ := NewQuidnugNode(nil)
+
+	// Register only parent domain
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["example.com"] = TrustDomain{
+		Name:           "example.com",
+		ValidatorNodes: []string{parentValidatorNode.NodeID},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Should return false (child not registered)
+	result := node.ValidateSubdomainAuthority("sub.example.com", "example.com")
+	if result {
+		t.Error("Expected false when child domain is not registered")
+	}
+}
+
+func TestLoadConfigRequireParentDomainAuthDefault(t *testing.T) {
+	clearConfigEnvVars()
+	defer clearConfigEnvVars()
+
+	cfg := LoadConfig()
+
+	if !cfg.RequireParentDomainAuth {
+		t.Error("Default RequireParentDomainAuth should be true")
+	}
+}
+
+func TestLoadConfigRequireParentDomainAuthFromEnv(t *testing.T) {
+	clearConfigEnvVars()
+	defer clearConfigEnvVars()
+
+	os.Setenv("REQUIRE_PARENT_DOMAIN_AUTH", "false")
+	cfg := LoadConfig()
+	if cfg.RequireParentDomainAuth {
+		t.Error("RequireParentDomainAuth should be false when env var is 'false'")
+	}
+
+	os.Setenv("REQUIRE_PARENT_DOMAIN_AUTH", "true")
+	cfg = LoadConfig()
+	if !cfg.RequireParentDomainAuth {
+		t.Error("RequireParentDomainAuth should be true when env var is 'true'")
+	}
+}
+
+func TestRegisterTrustDomain_DeepSubdomain_ChecksImmediateParent(t *testing.T) {
+	node := newTestNode()
+	node.AllowDomainRegistration = true
+	node.RequireParentDomainAuth = true
+	node.SupportedDomains = []string{} // allow all
+
+	// Create validators
+	midValidatorNode, _ := NewQuidnugNode(nil)
+	childValidatorNode, _ := NewQuidnugNode(nil)
+
+	// Register mid-level domain (example.com is NOT registered)
+	node.TrustDomainsMutex.Lock()
+	node.TrustDomains["sub.example.com"] = TrustDomain{
+		Name:           "sub.example.com",
+		ValidatorNodes: []string{midValidatorNode.NodeID},
+		Validators:     map[string]float64{midValidatorNode.NodeID: 1.0},
+	}
+	node.TrustDomainsMutex.Unlock()
+
+	// Establish trust from mid validator to child validator
+	node.TrustRegistryMutex.Lock()
+	node.TrustRegistry[midValidatorNode.NodeID] = map[string]float64{
+		childValidatorNode.NodeID: 0.7,
+	}
+	node.TrustRegistryMutex.Unlock()
+
+	// Register deep subdomain - should succeed because immediate parent (sub.example.com) trusts child
+	err := node.RegisterTrustDomain(TrustDomain{
+		Name:           "deep.sub.example.com",
+		ValidatorNodes: []string{childValidatorNode.NodeID},
+	})
+
+	if err != nil {
+		t.Errorf("Deep subdomain registration should succeed when immediate parent trusts validator, got error: %v", err)
+	}
+}
+
 func TestCrossDomainQueryDelegation_ViaSubdomain(t *testing.T) {
 	// This integration test verifies that queries can be delegated to subdomain nodes
 	// when no exact or parent domain node exists
