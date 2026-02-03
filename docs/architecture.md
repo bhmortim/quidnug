@@ -91,6 +91,7 @@ type RelationalTrustResult struct {
 | `TRUST` | Establish trust between quids | `truster`, `trustee`, `trustLevel` (0.0-1.0) |
 | `IDENTITY` | Define quid attributes | `quidId`, `name`, `attributes`, `updateNonce` |
 | `TITLE` | Declare asset ownership | `assetId`, `owners` (must sum to 100%) |
+| `EVENT` | Record events for subjects | `subjectId`, `subjectType`, `sequence`, `eventType`, `payload`/`payloadCid` |
 
 All transactions require cryptographic signatures (ECDSA P-256).
 
@@ -105,6 +106,23 @@ Transactions are validated before entering the pending pool:
    - Trust levels: 0.0 <= level <= 1.0, no NaN/Inf
    - Identity updates: `updateNonce` must increase
    - Titles: ownership percentages must sum to exactly 100.0
+   - Events: see Event Transaction validation below
+
+#### Event Transaction Validation
+
+Event transactions have additional validation rules:
+
+| Rule | Description |
+|------|-------------|
+| **TrustDomain** | Must exist (no empty/default domain for events) |
+| **SubjectID** | Must be valid 16-character hex quid format |
+| **SubjectType** | Must be `"QUID"` or `"TITLE"` |
+| **EventType** | Required, maximum 64 characters |
+| **Payload/PayloadCID** | Either `payload` or `payloadCid` must be provided (not both empty) |
+| **PayloadCID Format** | If provided, must be a valid IPFS CID (CIDv0 or CIDv1) |
+| **Payload Size** | Inline payload maximum 64KB (`MaxPayloadSize`) |
+| **Sequence** | Must be monotonically increasing (> `LatestSequence`, or 0/1 for new streams) |
+| **Signature** | Required, signer must be the subject owner |
 
 #### Block Validation with Relational Trust
 
@@ -155,6 +173,53 @@ Blocks are generated periodically (configurable via `BLOCK_INTERVAL`):
 **Key Format**: Public keys are uncompressed P-256 (65 bytes: 0x04 || X || Y), hex-encoded.
 
 **Signature Format**: 64 bytes (r || s, each 32 bytes), hex-encoded.
+
+## IPFS Integration
+
+Quidnug integrates with IPFS for storing large event payloads that exceed the inline size limit.
+
+### IPFSClient Interface
+
+```go
+type IPFSClient interface {
+    Pin(ctx context.Context, data []byte) (cid string, err error)
+    Get(ctx context.Context, cid string) (data []byte, err error)
+    IsAvailable() bool
+}
+```
+
+| Method | Purpose |
+|--------|---------|
+| `Pin(ctx, data)` | Store data in IPFS and return the content identifier (CID) |
+| `Get(ctx, cid)` | Retrieve data from IPFS by CID |
+| `IsAvailable()` | Check if IPFS integration is enabled and reachable |
+
+### Implementations
+
+| Implementation | Description |
+|----------------|-------------|
+| `HTTPIPFSClient` | Production client that communicates with an IPFS gateway via HTTP API |
+| `NoOpIPFSClient` | Stub implementation when IPFS is disabled; `IsAvailable()` returns `false` |
+
+The implementation is selected at startup based on the `IPFS_ENABLED` configuration:
+- When `IPFS_ENABLED=true`: `HTTPIPFSClient` connects to `IPFS_GATEWAY_URL`
+- When `IPFS_ENABLED=false` (default): `NoOpIPFSClient` is used
+
+### Payload Storage Strategy
+
+Event payloads can be stored in two ways:
+
+| Strategy | Condition | Storage |
+|----------|-----------|---------|
+| **Inline** | Payload ≤ 64KB (`MaxPayloadSize`) | Stored directly in the `payload` field |
+| **IPFS** | Payload > 64KB or explicitly pinned | Content stored in IPFS, CID in `payloadCid` field |
+
+When processing an event with `payloadCid`:
+1. The node retrieves the content from IPFS using `IPFSClient.Get()`
+2. Content is validated and processed
+3. Applications can cache retrieved payloads locally
+
+**Note**: If IPFS is unavailable and only `payloadCid` is provided, the event data cannot be fully retrieved until IPFS becomes available.
 
 ## State Persistence (`persistence.go`)
 
@@ -213,6 +278,56 @@ Result:
 | Observer equals target | TrustLevel: 1.0, Path: [observer] |
 | No path exists | TrustLevel: 0.0, Path: empty |
 | Direct trust only | TrustLevel: direct edge value, Path: [observer, target] |
+
+## Event Stream Registry
+
+The node maintains registries for tracking event streams associated with quids and titles.
+
+### Data Structures
+
+```go
+// Metadata about each subject's event stream
+EventStreamRegistry map[string]*EventStream  // keyed by subjectId
+
+// Actual event transactions for each subject
+EventRegistry map[string][]EventTransaction  // keyed by subjectId
+```
+
+#### EventStream Metadata
+
+```go
+type EventStream struct {
+    SubjectID      string `json:"subjectId"`      // Quid or asset ID
+    SubjectType    string `json:"subjectType"`    // "QUID" or "TITLE"
+    LatestSequence int64  `json:"latestSequence"` // Highest sequence number
+    EventCount     int64  `json:"eventCount"`     // Total events in stream
+    CreatedAt      int64  `json:"createdAt"`      // Unix timestamp of first event
+    UpdatedAt      int64  `json:"updatedAt"`      // Unix timestamp of last event
+    LatestEventID  string `json:"latestEventId"`  // Transaction ID of most recent event
+}
+```
+
+### Registry Update Process
+
+When processing a block containing event transactions, `updateEventStreamRegistry` performs:
+
+1. **Lock acquisition**: Acquires write lock on `EventStreamMutex`
+2. **Stream initialization**: Creates new `EventStream` if subject has no prior events
+3. **Event append**: Adds the `EventTransaction` to `EventRegistry[subjectId]`
+4. **Metadata update**: Updates `EventStreamRegistry` with:
+   - Incremented `EventCount`
+   - Updated `LatestSequence` to the event's sequence
+   - Updated `UpdatedAt` timestamp
+   - Updated `LatestEventID`
+
+### Querying Events
+
+| Function | Purpose |
+|----------|---------|
+| `GetEventStream(subjectId)` | Returns stream metadata, or `false` if no stream exists |
+| `GetStreamEvents(subjectId, limit, offset)` | Returns paginated events ordered by sequence (ascending) |
+
+Events are returned in sequence order to support chronological replay of a subject's history.
 
 ## Proof of Trust Consensus
 
@@ -435,6 +550,7 @@ The codebase uses granular mutexes following Go best practices:
 | `TitleRegistryMutex` | `TitleRegistry` map |
 | `TentativeBlocksMutex` | `TentativeBlocks` map |
 | `UnverifiedRegistryMutex` | `UnverifiedTrustRegistry` map |
+| `EventStreamMutex` | `EventStreamRegistry` and `EventRegistry` maps |
 
 Always acquire read locks for queries and write locks for mutations.
 
