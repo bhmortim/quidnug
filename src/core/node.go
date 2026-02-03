@@ -33,6 +33,7 @@ import (
 //   9. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
 //  10. KnownNodesMutex       - Protects KnownNodes map
 //  11. DomainRegistryMutex   - Protects DomainRegistry map (reverse index of domain->nodes)
+//  12. TrustCache (internal) - Has its own mutex, can be accessed independently
 //
 // Guidelines:
 //   - Prefer acquiring a single lock when possible
@@ -128,7 +129,11 @@ type QuidnugNode struct {
 	// Domain restriction configuration
 	SupportedDomains        []string // Empty = all domains allowed
 	AllowDomainRegistration bool     // Whether dynamic domain registration is permitted
+
+	// Trust computation cache
+	TrustCache *TrustCache
 }
+=======
 
 func main() {
 	// Load configuration
@@ -288,7 +293,12 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 			IPFSEnabled:    DefaultIPFSEnabled,
 			IPFSGatewayURL: DefaultIPFSGatewayURL,
 			IPFSTimeout:    DefaultIPFSTimeout,
+			TrustCacheTTL:  DefaultTrustCacheTTL,
 		}
+	}
+	// Ensure TrustCacheTTL has a valid value
+	if cfg.TrustCacheTTL <= 0 {
+		cfg.TrustCacheTTL = DefaultTrustCacheTTL
 	}
 	// Generate a new ECDSA key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -351,6 +361,7 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		TransactionTrustThreshold: 0.0,
 		SupportedDomains:          cfg.SupportedDomains,
 		AllowDomainRegistration:   cfg.AllowDomainRegistration,
+		TrustCache:                NewTrustCache(cfg.TrustCacheTTL),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},

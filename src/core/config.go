@@ -30,6 +30,7 @@ type Config struct {
 	IPFSTimeout             time.Duration `json:"ipfsTimeout" yaml:"-"`
 	SupportedDomains        []string      `json:"supportedDomains" yaml:"supported_domains"`
 	AllowDomainRegistration bool          `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
+	TrustCacheTTL           time.Duration `json:"trustCacheTTL" yaml:"-"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -50,6 +51,7 @@ type fileConfig struct {
 	IPFSTimeout             string   `json:"ipfsTimeout" yaml:"ipfs_timeout"`
 	SupportedDomains        []string `json:"supportedDomains" yaml:"supported_domains"`
 	AllowDomainRegistration *bool    `json:"allowDomainRegistration" yaml:"allow_domain_registration"`
+	TrustCacheTTL           string   `json:"trustCacheTTL" yaml:"trust_cache_ttl"`
 }
 
 // Default values
@@ -63,6 +65,7 @@ const (
 	DefaultIPFSGatewayURL          = "http://localhost:5001"
 	DefaultIPFSTimeout             = 30 * time.Second
 	DefaultAllowDomainRegistration = true
+	DefaultTrustCacheTTL           = 60 * time.Second
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -156,6 +159,14 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		cfg.IPFSTimeout = duration
 	}
 
+	if fc.TrustCacheTTL != "" {
+		duration, err := time.ParseDuration(fc.TrustCacheTTL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trust_cache_ttl: %w", err)
+		}
+		cfg.TrustCacheTTL = duration
+	}
+
 	return cfg, nil
 }
 
@@ -190,6 +201,7 @@ func LoadConfig() *Config {
 		IPFSTimeout:             DefaultIPFSTimeout,
 		SupportedDomains:        []string{},
 		AllowDomainRegistration: DefaultAllowDomainRegistration,
+		TrustCacheTTL:           DefaultTrustCacheTTL,
 	}
 
 	// Try to load from config file
@@ -248,6 +260,9 @@ func LoadConfig() *Config {
 			}
 			if !fileCfg.AllowDomainRegistration {
 				cfg.AllowDomainRegistration = fileCfg.AllowDomainRegistration
+			}
+			if fileCfg.TrustCacheTTL > 0 {
+				cfg.TrustCacheTTL = fileCfg.TrustCacheTTL
 			}
 		}
 	}
@@ -335,6 +350,12 @@ func LoadConfig() *Config {
 
 	if allowDomainReg := os.Getenv("ALLOW_DOMAIN_REGISTRATION"); allowDomainReg != "" {
 		cfg.AllowDomainRegistration = allowDomainReg == "true"
+	}
+
+	if trustCacheTTL := os.Getenv("TRUST_CACHE_TTL"); trustCacheTTL != "" {
+		if duration, err := time.ParseDuration(trustCacheTTL); err == nil {
+			cfg.TrustCacheTTL = duration
+		}
 	}
 
 	return cfg

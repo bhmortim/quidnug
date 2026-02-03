@@ -18,6 +18,19 @@ const (
 	MaxTrustVisitedSize   = 10000
 )
 
+// TrustCacheEntry holds a cached trust computation result
+type TrustCacheEntry struct {
+	TrustLevel float64
+	TrustPath  []string
+	ExpiresAt  int64 // Unix timestamp for expiration
+}
+
+// EnhancedTrustCacheEntry holds a cached enhanced trust computation result
+type EnhancedTrustCacheEntry struct {
+	Result    EnhancedTrustResult
+	ExpiresAt int64 // Unix timestamp for expiration
+}
+
 // Base Transaction represents common fields for all transaction types
 type BaseTransaction struct {
 	ID          string          `json:"id"`

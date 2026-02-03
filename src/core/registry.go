@@ -3,11 +3,123 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync"
 	"time"
 )
 
 // ErrTrustGraphTooLarge is returned when trust computation exceeds resource limits
 var ErrTrustGraphTooLarge = errors.New("trust graph too large: resource limits exceeded")
+
+// TrustCache provides thread-safe caching for trust computations
+type TrustCache struct {
+	entries         map[string]TrustCacheEntry
+	enhancedEntries map[string]EnhancedTrustCacheEntry
+	mu              sync.RWMutex
+	ttl             time.Duration
+}
+
+// NewTrustCache creates a new TrustCache with the specified TTL
+func NewTrustCache(ttl time.Duration) *TrustCache {
+	return &TrustCache{
+		entries:         make(map[string]TrustCacheEntry),
+		enhancedEntries: make(map[string]EnhancedTrustCacheEntry),
+		ttl:             ttl,
+	}
+}
+
+// Get retrieves a cached trust computation result
+func (c *TrustCache) Get(key string) (float64, []string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, exists := c.entries[key]
+	if !exists || time.Now().Unix() > entry.ExpiresAt {
+		return 0, nil, false
+	}
+	// Return a copy of the path to prevent mutation
+	pathCopy := make([]string, len(entry.TrustPath))
+	copy(pathCopy, entry.TrustPath)
+	return entry.TrustLevel, pathCopy, true
+}
+
+// Set stores a trust computation result in the cache
+func (c *TrustCache) Set(key string, trustLevel float64, trustPath []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Store a copy of the path
+	pathCopy := make([]string, len(trustPath))
+	copy(pathCopy, trustPath)
+
+	c.entries[key] = TrustCacheEntry{
+		TrustLevel: trustLevel,
+		TrustPath:  pathCopy,
+		ExpiresAt:  time.Now().Add(c.ttl).Unix(),
+	}
+}
+
+// GetEnhanced retrieves a cached enhanced trust computation result
+func (c *TrustCache) GetEnhanced(key string) (EnhancedTrustResult, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, exists := c.enhancedEntries[key]
+	if !exists || time.Now().Unix() > entry.ExpiresAt {
+		return EnhancedTrustResult{}, false
+	}
+	// Return a copy to prevent mutation
+	result := entry.Result
+	result.TrustPath = make([]string, len(entry.Result.TrustPath))
+	copy(result.TrustPath, entry.Result.TrustPath)
+	result.VerificationGaps = make([]VerificationGap, len(entry.Result.VerificationGaps))
+	copy(result.VerificationGaps, entry.Result.VerificationGaps)
+	return result, true
+}
+
+// SetEnhanced stores an enhanced trust computation result in the cache
+func (c *TrustCache) SetEnhanced(key string, result EnhancedTrustResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Store copies of slices
+	resultCopy := result
+	resultCopy.TrustPath = make([]string, len(result.TrustPath))
+	copy(resultCopy.TrustPath, result.TrustPath)
+	resultCopy.VerificationGaps = make([]VerificationGap, len(result.VerificationGaps))
+	copy(resultCopy.VerificationGaps, result.VerificationGaps)
+
+	c.enhancedEntries[key] = EnhancedTrustCacheEntry{
+		Result:    resultCopy,
+		ExpiresAt: time.Now().Add(c.ttl).Unix(),
+	}
+}
+
+// Invalidate clears all cached entries
+func (c *TrustCache) Invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.entries = make(map[string]TrustCacheEntry)
+	c.enhancedEntries = make(map[string]EnhancedTrustCacheEntry)
+}
+
+// Size returns the number of entries in both caches
+func (c *TrustCache) Size() (basic int, enhanced int) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.entries), len(c.enhancedEntries)
+}
+
+// makeTrustCacheKey creates a cache key for basic trust computation
+func makeTrustCacheKey(observer, target string, maxDepth int) string {
+	return fmt.Sprintf("%s:%s:%d", observer, target, maxDepth)
+}
+
+// makeEnhancedTrustCacheKey creates a cache key for enhanced trust computation
+func makeEnhancedTrustCacheKey(observer, target string, maxDepth int, includeUnverified bool) string {
+	return fmt.Sprintf("%s:%s:%d:%t", observer, target, maxDepth, includeUnverified)
+}
 
 // processBlockTransactions processes transactions in a block to update registries
 func (node *QuidnugNode) processBlockTransactions(block Block) {
@@ -80,6 +192,11 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 	}
 	node.TrustNonceRegistry[tx.Truster][tx.Trustee] = tx.Nonce
 
+	// Invalidate trust cache since trust graph has changed
+	if node.TrustCache != nil {
+		node.TrustCache.Invalidate()
+	}
+
 	logger.Debug("Updated trust registry",
 		"truster", tx.Truster,
 		"trustee", tx.Trustee,
@@ -141,6 +258,7 @@ func (node *QuidnugNode) GetDirectTrustees(quidID string) map[string]float64 {
 
 // ComputeRelationalTrust computes transitive trust from observer to target through the trust graph.
 // It uses BFS with multiplicative decay, returning the maximum trust found across all paths.
+// Results are cached with TTL-based expiration for performance.
 // Parameters:
 //   - observer: the quid ID of the observer (source of trust query)
 //   - target: the quid ID of the target (destination of trust query)
@@ -163,6 +281,14 @@ func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDept
 	// Same entity has full trust in itself
 	if observer == target {
 		return 1.0, []string{observer}, nil
+	}
+
+	// Check cache first
+	if node.TrustCache != nil {
+		cacheKey := makeTrustCacheKey(observer, target, maxDepth)
+		if trustLevel, trustPath, found := node.TrustCache.Get(cacheKey); found {
+			return trustLevel, trustPath, nil
+		}
 	}
 
 	type searchState struct {
@@ -239,6 +365,12 @@ func (node *QuidnugNode) ComputeRelationalTrust(observer, target string, maxDept
 				})
 			}
 		}
+	}
+
+	// Cache successful result (no error)
+	if node.TrustCache != nil {
+		cacheKey := makeTrustCacheKey(observer, target, maxDepth)
+		node.TrustCache.Set(cacheKey, bestTrust, bestPath)
 	}
 
 	return bestTrust, bestPath, nil
@@ -497,6 +629,7 @@ func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) ma
 // ComputeRelationalTrustEnhanced computes transitive trust with optional unverified edge inclusion.
 // When includeUnverified=true, unverified edges are discounted by the observer's trust in the recording validator.
 // Returns enhanced result with provenance information.
+// Results are cached with TTL-based expiration for performance.
 // Returns ErrTrustGraphTooLarge if resource limits are exceeded.
 func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 	observer, target string,
@@ -520,6 +653,14 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 			Confidence:     "high",
 			UnverifiedHops: 0,
 		}, nil
+	}
+
+	// Check cache first
+	if node.TrustCache != nil {
+		cacheKey := makeEnhancedTrustCacheKey(observer, target, maxDepth, includeUnverified)
+		if result, found := node.TrustCache.GetEnhanced(cacheKey); found {
+			return result, nil
+		}
 	}
 
 	type searchState struct {
@@ -634,7 +775,15 @@ func (node *QuidnugNode) ComputeRelationalTrustEnhanced(
 		}
 	}
 
-	return buildEnhancedResult(observer, target, bestTrust, bestPath, bestUnverifiedHops, bestGaps), nil
+	result := buildEnhancedResult(observer, target, bestTrust, bestPath, bestUnverifiedHops, bestGaps)
+
+	// Cache successful result (no error)
+	if node.TrustCache != nil {
+		cacheKey := makeEnhancedTrustCacheKey(observer, target, maxDepth, includeUnverified)
+		node.TrustCache.SetEnhanced(cacheKey, result)
+	}
+
+	return result, nil
 }
 
 // buildEnhancedResult constructs an EnhancedTrustResult from components
