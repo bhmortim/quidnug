@@ -69,13 +69,107 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		}
 		resp.Body.Close()
 
-		// Add discovered nodes to our known nodes list
-		node.KnownNodesMutex.Lock()
+		// Add discovered nodes to our known nodes list and fetch their domain info
 		for _, discoveredNode := range nodesResponse.Nodes {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			// Fetch domain info for this node
+			domains, err := node.fetchNodeDomains(ctx, discoveredNode.Address)
+			if err != nil {
+				logger.Debug("Failed to fetch domains from node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address, "error", err)
+			} else {
+				discoveredNode.TrustDomains = domains
+			}
+
+			node.KnownNodesMutex.Lock()
 			node.KnownNodes[discoveredNode.ID] = discoveredNode
-			logger.Info("Discovered node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address)
+			node.KnownNodesMutex.Unlock()
+
+			logger.Info("Discovered node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address, "domains", discoveredNode.TrustDomains)
+		}
+	}
+
+	// Refresh domain info for all known nodes
+	node.refreshKnownNodeDomains(ctx)
+}
+
+// fetchNodeDomains fetches the supported domains from a remote node
+func (node *QuidnugNode) fetchNodeDomains(ctx context.Context, nodeAddress string) ([]string, error) {
+	reqURL := fmt.Sprintf("http://%s/api/v1/node/domains", nodeAddress)
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := node.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("received status %d", resp.StatusCode)
+	}
+
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			NodeID  string   `json:"nodeId"`
+			Domains []string `json:"domains"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !response.Success {
+		return nil, fmt.Errorf("unsuccessful response from node")
+	}
+
+	return response.Data.Domains, nil
+}
+
+// refreshKnownNodeDomains refreshes domain info for all known nodes
+func (node *QuidnugNode) refreshKnownNodeDomains(ctx context.Context) {
+	node.KnownNodesMutex.RLock()
+	nodesCopy := make([]Node, 0, len(node.KnownNodes))
+	for _, n := range node.KnownNodes {
+		nodesCopy = append(nodesCopy, n)
+	}
+	node.KnownNodesMutex.RUnlock()
+
+	for _, knownNode := range nodesCopy {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// Skip self
+		if knownNode.ID == node.NodeID {
+			continue
+		}
+
+		domains, err := node.fetchNodeDomains(ctx, knownNode.Address)
+		if err != nil {
+			logger.Debug("Failed to refresh domains for node", "nodeId", knownNode.ID, "error", err)
+			continue
+		}
+
+		node.KnownNodesMutex.Lock()
+		if existingNode, exists := node.KnownNodes[knownNode.ID]; exists {
+			existingNode.TrustDomains = domains
+			existingNode.LastSeen = time.Now().Unix()
+			node.KnownNodes[knownNode.ID] = existingNode
 		}
 		node.KnownNodesMutex.Unlock()
+
+		logger.Debug("Refreshed domains for node", "nodeId", knownNode.ID, "domains", domains)
 	}
 }
 

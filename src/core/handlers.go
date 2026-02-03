@@ -173,6 +173,10 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
 	router.HandleFunc("/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
 
+	// Node domain advertisement endpoints
+	router.HandleFunc("/node/domains", node.GetNodeDomainsHandler).Methods("GET")
+	router.HandleFunc("/node/domains", node.UpdateNodeDomainsHandler).Methods("POST")
+
 	// API spec endpoints
 	router.HandleFunc("/info", node.GetInfoHandler).Methods("GET")
 	router.HandleFunc("/quids", node.CreateQuidHandler).Methods("POST")
@@ -1020,6 +1024,48 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-IPFS-CID", cid)
 	w.Write(content)
+}
+
+// GetNodeDomainsHandler returns this node's supported domains for discovery
+func (node *QuidnugNode) GetNodeDomainsHandler(w http.ResponseWriter, r *http.Request) {
+	WriteSuccess(w, map[string]interface{}{
+		"nodeId":  node.NodeID,
+		"domains": node.SupportedDomains,
+	})
+}
+
+// UpdateNodeDomainsHandler updates this node's supported domains
+func (node *QuidnugNode) UpdateNodeDomainsHandler(w http.ResponseWriter, r *http.Request) {
+	if !node.AllowDomainRegistration {
+		WriteError(w, http.StatusForbidden, "FORBIDDEN", "Domain registration is not allowed on this node")
+		return
+	}
+
+	var req struct {
+		Domains []string `json:"domains"`
+	}
+	if err := DecodeJSONBody(w, r, &req); err != nil {
+		return
+	}
+
+	// Validate domain patterns
+	for _, domain := range req.Domains {
+		if domain == "" {
+			WriteFieldError(w, "INVALID_DOMAIN", "Domain cannot be empty", []string{"domains"})
+			return
+		}
+		if !ValidateStringField(domain, MaxDomainLength) {
+			WriteFieldError(w, "INVALID_DOMAIN", "Domain too long or contains control characters", []string{"domains"})
+			return
+		}
+	}
+
+	node.SupportedDomains = req.Domains
+
+	WriteSuccess(w, map[string]interface{}{
+		"nodeId":  node.NodeID,
+		"domains": node.SupportedDomains,
+	})
 }
 
 // QueryTitleRegistryHandler handles title registry queries
