@@ -119,6 +119,10 @@ type QuidnugNode struct {
 	// Threshold configuration
 	DistrustThreshold         float64 // Below this, block is 'untrusted' (default 0.0)
 	TransactionTrustThreshold float64 // Minimum trust to include tx in block (default 0.0)
+
+	// Domain restriction configuration
+	SupportedDomains        []string // Empty = all domains allowed
+	AllowDomainRegistration bool     // Whether dynamic domain registration is permitted
 }
 
 func main() {
@@ -337,8 +341,10 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		TentativeBlocks:          make(map[string][]Block),
 		VerifiedTrustEdges:       make(map[string]map[string]TrustEdge),
 		UnverifiedTrustRegistry:  make(map[string]map[string]TrustEdge),
-		DistrustThreshold:        0.0,
+		DistrustThreshold:         0.0,
 		TransactionTrustThreshold: 0.0,
+		SupportedDomains:          cfg.SupportedDomains,
+		AllowDomainRegistration:   cfg.AllowDomainRegistration,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -959,8 +965,38 @@ func (node *QuidnugNode) ReEvaluateTentativeBlocks(domain string) error {
 }
 
 
+// IsDomainSupported checks if a domain is supported by this node.
+// If SupportedDomains is empty, all domains are allowed.
+// Supports wildcard patterns like "*.example.com" for subdomain matching.
+func (node *QuidnugNode) IsDomainSupported(domain string) bool {
+	// Empty list means all domains are supported
+	if len(node.SupportedDomains) == 0 {
+		return true
+	}
+
+	// Special case: "default" domain is always supported if no restrictions
+	// or if explicitly listed
+	for _, pattern := range node.SupportedDomains {
+		if MatchDomainPattern(domain, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Register a new trust domain
 func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
+	// Check if dynamic domain registration is allowed
+	if !node.AllowDomainRegistration {
+		return fmt.Errorf("dynamic domain registration is not allowed on this node")
+	}
+
+	// Check if the domain is supported
+	if !node.IsDomainSupported(domain.Name) {
+		return fmt.Errorf("trust domain %s is not supported by this node", domain.Name)
+	}
+
 	node.TrustDomainsMutex.Lock()
 	defer node.TrustDomainsMutex.Unlock()
 
