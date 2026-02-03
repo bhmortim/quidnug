@@ -66,6 +66,10 @@ tags:
     description: Asset ownership management
   - name: Metrics
     description: Prometheus metrics endpoint
+  - name: Events
+    description: Event streaming for subjects
+  - name: IPFS
+    description: IPFS content storage
 
 paths:
   /api/health:
@@ -341,6 +345,203 @@ paths:
           description: Payload too large
         '429':
           description: Rate limit exceeded
+
+  /api/transactions/event:
+    post:
+      tags: [Transactions, Events]
+      summary: Submit event transaction
+      description: |
+        Creates an event in a subject's event stream.
+        Sequence is auto-assigned if not provided (latest + 1, or 1 for new streams).
+        Either payload or payloadCid must be provided.
+      operationId: createEventTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventTransactionInput'
+      responses:
+        '200':
+          description: Transaction accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  transaction_id:
+                    type: string
+                    description: Assigned transaction ID
+                  sequence:
+                    type: integer
+                    format: int64
+                    description: Assigned sequence number
+        '400':
+          description: Invalid transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '413':
+          description: Payload too large (max 64KB)
+        '429':
+          description: Rate limit exceeded
+
+  /api/events/streams/{subjectId}:
+    get:
+      tags: [Events]
+      summary: Get event stream metadata
+      description: Returns metadata about an event stream for a subject
+      operationId: getEventStream
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Subject ID (quid or asset ID)
+        - name: domain
+          in: query
+          schema:
+            type: string
+          description: Trust domain filter
+      responses:
+        '200':
+          description: Event stream metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventStream'
+        '404':
+          description: Event stream not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/events/streams/{subjectId}/events:
+    get:
+      tags: [Events]
+      summary: Get paginated events
+      description: Returns paginated events for a subject's event stream, ordered by sequence ascending
+      operationId: getStreamEvents
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Subject ID (quid or asset ID)
+        - $ref: '#/components/parameters/limitParam'
+        - $ref: '#/components/parameters/offsetParam'
+      responses:
+        '200':
+          description: Paginated events
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/EventTransaction'
+        '404':
+          description: Event stream not found
+
+  /api/ipfs/pin:
+    post:
+      tags: [IPFS]
+      summary: Pin content to IPFS
+      description: |
+        Pins content to IPFS and returns the CID.
+        Accepts raw binary body or base64-encoded content with `Content-Transfer-Encoding: base64` header.
+      operationId: pinToIPFS
+      parameters:
+        - name: Content-Transfer-Encoding
+          in: header
+          schema:
+            type: string
+            enum: [base64]
+          description: Set to 'base64' if body is base64-encoded
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          text/plain:
+            schema:
+              type: string
+              description: Base64-encoded content when using Content-Transfer-Encoding header
+      responses:
+        '200':
+          description: Content pinned successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cid:
+                    type: string
+                    description: IPFS Content Identifier
+                    example: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
+        '503':
+          description: IPFS service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/ipfs/{cid}:
+    get:
+      tags: [IPFS]
+      summary: Get content from IPFS
+      description: Retrieves content from IPFS by CID
+      operationId: getFromIPFS
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[A-Za-z2-7]{58})$'
+          description: IPFS Content Identifier (CIDv0 or CIDv1)
+      responses:
+        '200':
+          description: Content retrieved successfully
+          headers:
+            Content-Type:
+              schema:
+                type: string
+              description: Detected content type
+            X-IPFS-CID:
+              schema:
+                type: string
+              description: The CID of the retrieved content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid CID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '503':
+          description: IPFS service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
 
   /api/domains:
     get:
@@ -1402,3 +1603,108 @@ components:
         code:
           type: string
           description: Error code
+
+    SubjectType:
+      type: string
+      enum: [QUID, TITLE]
+      description: Type of subject for event streams
+
+    EventTransaction:
+      allOf:
+        - $ref: '#/components/schemas/BaseTransaction'
+        - type: object
+          properties:
+            subjectId:
+              type: string
+              description: ID of the subject (quid or asset ID)
+            subjectType:
+              $ref: '#/components/schemas/SubjectType'
+            sequence:
+              type: integer
+              format: int64
+              description: Monotonically increasing sequence number within the stream
+            eventType:
+              type: string
+              maxLength: 64
+              description: Type of event (max 64 characters)
+            payload:
+              type: object
+              additionalProperties: true
+              description: Event payload data (max 64KB)
+            payloadCid:
+              type: string
+              description: IPFS CID for payload stored externally
+            previousEventId:
+              type: string
+              description: ID of the previous event in the stream
+
+    EventTransactionInput:
+      type: object
+      required:
+        - subjectId
+        - subjectType
+        - eventType
+        - trustDomain
+        - signature
+        - publicKey
+      properties:
+        subjectId:
+          type: string
+          description: ID of the subject (quid or asset ID)
+        subjectType:
+          $ref: '#/components/schemas/SubjectType'
+        sequence:
+          type: integer
+          format: int64
+          description: Sequence number (auto-assigned if not provided)
+        eventType:
+          type: string
+          maxLength: 64
+          description: Type of event (max 64 characters)
+        payload:
+          type: object
+          additionalProperties: true
+          description: Event payload data (max 64KB, required if payloadCid not provided)
+        payloadCid:
+          type: string
+          description: IPFS CID for payload (required if payload not provided)
+        previousEventId:
+          type: string
+          description: ID of the previous event in the stream
+        trustDomain:
+          type: string
+          description: Trust domain for this event
+        signature:
+          type: string
+          description: Base64-encoded ECDSA signature
+        publicKey:
+          type: string
+          description: Hex-encoded public key of signer
+
+    EventStream:
+      type: object
+      properties:
+        subjectId:
+          type: string
+          description: ID of the subject
+        subjectType:
+          $ref: '#/components/schemas/SubjectType'
+        latestSequence:
+          type: integer
+          format: int64
+          description: Sequence number of the latest event
+        eventCount:
+          type: integer
+          format: int64
+          description: Total number of events in the stream
+        createdAt:
+          type: integer
+          format: int64
+          description: Unix timestamp when stream was created
+        updatedAt:
+          type: integer
+          format: int64
+          description: Unix timestamp of last update
+        latestEventId:
+          type: string
+          description: ID of the most recent event
