@@ -187,6 +187,9 @@ func TestTransactionPropagationAcrossNodes(t *testing.T) {
 		Nonce:      1,
 	}
 
+	// Set ID before signing to ensure signed data matches validated data
+	tx.ID = fmt.Sprintf("tx_%d", time.Now().UnixNano())
+
 	tx = signTrustTx(node0, tx)
 
 	txID, err := node0.AddTrustTransaction(tx)
