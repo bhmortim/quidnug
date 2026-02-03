@@ -419,4 +419,405 @@ describe('QuidnugClient', () => {
   });
 });
 
+describe('createEventTransaction', () => {
+  it('should throw error without quid', async () => {
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'QUID',
+        eventType: 'e',
+        domain: 'd',
+        payload: {}
+      }, null),
+      { message: 'Valid quid with private key is required for signing' }
+    );
+  });
+
+  it('should throw error for missing required parameters', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({ domain: 'd' }, quid),
+      { message: 'Missing required parameters: subjectId, subjectType, eventType, domain' }
+    );
+  });
+
+  it('should throw error when neither payload nor payloadCID provided', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'QUID',
+        eventType: 'e',
+        domain: 'd'
+      }, quid),
+      { message: 'Either payload or payloadCID must be provided' }
+    );
+  });
+
+  it('should throw error for invalid subjectType', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'INVALID',
+        eventType: 'e',
+        domain: 'd',
+        payload: {}
+      }, quid),
+      { message: 'subjectType must be "QUID" or "TITLE"' }
+    );
+  });
+
+  it('should accept QUID as subjectType', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'QUID',
+        eventType: 'e',
+        domain: 'd',
+        payload: {}
+      }, quid),
+      /No healthy nodes available/
+    );
+  });
+
+  it('should accept TITLE as subjectType', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'TITLE',
+        eventType: 'e',
+        domain: 'd',
+        payload: {}
+      }, quid),
+      /No healthy nodes available/
+    );
+  });
+
+  it('should accept payloadCID instead of payload', async () => {
+    const quid = { id: 'test', privateKey: 'key' };
+    await assert.rejects(
+      () => client.createEventTransaction({
+        subjectId: 's',
+        subjectType: 'QUID',
+        eventType: 'e',
+        domain: 'd',
+        payloadCID: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'
+      }, quid),
+      /No healthy nodes available/
+    );
+  });
+});
+
+describe('getEventStream', () => {
+  it('should throw error for missing subjectId', async () => {
+    await assert.rejects(
+      () => client.getEventStream(null),
+      { message: 'Missing required parameter: subjectId' }
+    );
+  });
+
+  it('should throw error for undefined subjectId', async () => {
+    await assert.rejects(
+      () => client.getEventStream(undefined),
+      { message: 'Missing required parameter: subjectId' }
+    );
+  });
+
+  it('should throw error for empty string subjectId', async () => {
+    await assert.rejects(
+      () => client.getEventStream(''),
+      { message: 'Missing required parameter: subjectId' }
+    );
+  });
+
+  it('should require healthy node', async () => {
+    await assert.rejects(
+      () => client.getEventStream('subject123'),
+      { message: 'No healthy nodes available' }
+    );
+  });
+
+  it('should return null for NOT_FOUND error', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Event stream not found' }
+      })
+    }));
+
+    const result = await client.getEventStream('nonexistent');
+    assert.strictEqual(result, null);
+  });
+
+  it('should return stream metadata on success', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    const streamData = {
+      subjectId: 'subject123',
+      subjectType: 'QUID',
+      latestSequence: 5,
+      eventCount: 5
+    };
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({ success: true, data: streamData })
+    }));
+
+    const result = await client.getEventStream('subject123');
+    assert.deepStrictEqual(result, streamData);
+  });
+});
+
+describe('getStreamEvents', () => {
+  it('should throw error for missing subjectId', async () => {
+    await assert.rejects(
+      () => client.getStreamEvents(null),
+      { message: 'Missing required parameter: subjectId' }
+    );
+  });
+
+  it('should throw error for undefined subjectId', async () => {
+    await assert.rejects(
+      () => client.getStreamEvents(undefined),
+      { message: 'Missing required parameter: subjectId' }
+    );
+  });
+
+  it('should require healthy node', async () => {
+    await assert.rejects(
+      () => client.getStreamEvents('subject123'),
+      { message: 'No healthy nodes available' }
+    );
+  });
+
+  it('should return events and pagination on success', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    const eventsData = {
+      data: [{ id: 'evt1', sequence: 1 }, { id: 'evt2', sequence: 2 }],
+      pagination: { limit: 50, offset: 0, total: 2 }
+    };
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({ success: true, data: eventsData })
+    }));
+
+    const result = await client.getStreamEvents('subject123');
+    assert.deepStrictEqual(result.events, eventsData.data);
+    assert.deepStrictEqual(result.pagination, eventsData.pagination);
+  });
+
+  it('should pass limit and offset options', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    mockFetch.mock.mockImplementation(async (url) => {
+      assert.ok(url.includes('limit=10'));
+      assert.ok(url.includes('offset=5'));
+      return {
+        ok: true,
+        json: async () => ({ success: true, data: { data: [], pagination: {} } })
+      };
+    });
+
+    await client.getStreamEvents('subject123', { limit: 10, offset: 5 });
+  });
+});
+
+describe('pinToIPFS', () => {
+  it('should throw error for empty content', async () => {
+    await assert.rejects(
+      () => client.pinToIPFS(null),
+      { message: 'Content is required' }
+    );
+  });
+
+  it('should throw error for undefined content', async () => {
+    await assert.rejects(
+      () => client.pinToIPFS(undefined),
+      { message: 'Content is required' }
+    );
+  });
+
+  it('should throw error for empty string', async () => {
+    await assert.rejects(
+      () => client.pinToIPFS(''),
+      { message: 'Content is required' }
+    );
+  });
+
+  it('should require healthy node', async () => {
+    await assert.rejects(
+      () => client.pinToIPFS('test content'),
+      { message: 'No healthy nodes available' }
+    );
+  });
+
+  it('should return CID on success with string content', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { cid: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' }
+      })
+    }));
+
+    const cid = await client.pinToIPFS('test content');
+    assert.strictEqual(cid, 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG');
+  });
+
+  it('should handle ArrayBuffer content', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    mockFetch.mock.mockImplementation(async (url, options) => {
+      assert.strictEqual(options.headers['Content-Transfer-Encoding'], 'base64');
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { cid: 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' }
+        })
+      };
+    });
+
+    const buffer = new ArrayBuffer(8);
+    const cid = await client.pinToIPFS(buffer);
+    assert.strictEqual(cid, 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG');
+  });
+});
+
+describe('getFromIPFS', () => {
+  it('should throw error for missing CID', async () => {
+    await assert.rejects(
+      () => client.getFromIPFS(null),
+      { message: 'CID is required' }
+    );
+  });
+
+  it('should throw error for undefined CID', async () => {
+    await assert.rejects(
+      () => client.getFromIPFS(undefined),
+      { message: 'CID is required' }
+    );
+  });
+
+  it('should throw error for empty string CID', async () => {
+    await assert.rejects(
+      () => client.getFromIPFS(''),
+      { message: 'CID is required' }
+    );
+  });
+
+  it('should require healthy node', async () => {
+    await assert.rejects(
+      () => client.getFromIPFS('QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'),
+      { message: 'No healthy nodes available' }
+    );
+  });
+
+  it('should return ArrayBuffer on success', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    const testContent = new ArrayBuffer(8);
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: true,
+      arrayBuffer: async () => testContent
+    }));
+
+    const result = await client.getFromIPFS('QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG');
+    assert.ok(result instanceof ArrayBuffer);
+  });
+
+  it('should throw error on failed retrieval', async () => {
+    client.nodes = [{ url: 'http://node1.example.com', status: 'healthy' }];
+    mockFetch.mock.mockImplementation(async () => ({
+      ok: false,
+      json: async () => ({
+        success: false,
+        error: { code: 'IPFS_UNAVAILABLE', message: 'IPFS service unavailable' }
+      })
+    }));
+
+    await assert.rejects(
+      () => client.getFromIPFS('QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'),
+      /IPFS service unavailable/
+    );
+  });
+});
+
+describe('_buildEventSignatureData', () => {
+  it('should exclude signature and txId from data', () => {
+    const tx = {
+      type: 'EVENT',
+      timestamp: 1000000,
+      subjectId: 'subject123',
+      signature: 'should-be-removed',
+      txId: 'should-also-be-removed'
+    };
+    
+    const data = client._buildEventSignatureData(tx);
+    const parsed = JSON.parse(new TextDecoder().decode(data));
+    
+    assert.strictEqual(parsed.type, 'EVENT');
+    assert.strictEqual(parsed.timestamp, 1000000);
+    assert.strictEqual(parsed.subjectId, 'subject123');
+    assert.strictEqual(parsed.signature, undefined);
+    assert.strictEqual(parsed.txId, undefined);
+  });
+
+  it('should not modify original transaction', () => {
+    const tx = {
+      type: 'EVENT',
+      signature: 'original-sig',
+      txId: 'original-id'
+    };
+    
+    client._buildEventSignatureData(tx);
+    
+    assert.strictEqual(tx.signature, 'original-sig');
+    assert.strictEqual(tx.txId, 'original-id');
+  });
+});
+
+describe('_parseResponse', () => {
+  it('should return data on success', async () => {
+    const mockResponse = {
+      json: async () => ({ success: true, data: { test: 'value' } })
+    };
+    
+    const result = await client._parseResponse(mockResponse);
+    assert.deepStrictEqual(result, { test: 'value' });
+  });
+
+  it('should throw error with code on failure', async () => {
+    const mockResponse = {
+      json: async () => ({
+        success: false,
+        error: { code: 'TEST_ERROR', message: 'Test error message' }
+      })
+    };
+    
+    try {
+      await client._parseResponse(mockResponse);
+      assert.fail('Expected error to be thrown');
+    } catch (error) {
+      assert.strictEqual(error.code, 'TEST_ERROR');
+      assert.strictEqual(error.message, 'Test error message');
+    }
+  });
+
+  it('should use default error code when not provided', async () => {
+    const mockResponse = {
+      json: async () => ({ success: false, error: {} })
+    };
+    
+    try {
+      await client._parseResponse(mockResponse);
+      assert.fail('Expected error to be thrown');
+    } catch (error) {
+      assert.strictEqual(error.code, 'UNKNOWN_ERROR');
+    }
+  });
+});
+
 console.log('QuidnugClient test suite loaded successfully');

@@ -1159,6 +1159,296 @@ class QuidnugClient {
       throw new Error(`Node discovery failed: ${error.message}`);
     }
   }
+  
+  /**
+   * Parse API response and extract data or throw error
+   * @private
+   * @param {Response} response - Fetch response object
+   * @returns {Promise<Object>} Parsed data from response
+   * @throws {Error} With code property on API error
+   */
+  async _parseResponse(response) {
+    const json = await response.json();
+    
+    if (json.success) {
+      return json.data;
+    }
+    
+    const error = new Error(json.error?.message || 'API request failed');
+    error.code = json.error?.code || 'UNKNOWN_ERROR';
+    throw error;
+  }
+  
+  /**
+   * Build canonical data for event transaction signing
+   * @private
+   * @param {Object} tx - Transaction object (without signature)
+   * @returns {Uint8Array} Encoded transaction data for signing
+   */
+  _buildEventSignatureData(tx) {
+    const txCopy = { ...tx };
+    delete txCopy.signature;
+    delete txCopy.txId;
+    return new TextEncoder().encode(JSON.stringify(txCopy));
+  }
+  
+  /**
+   * Create an event transaction for event streaming.
+   * 
+   * Events are append-only records associated with a subject (QUID or TITLE).
+   * The signing quid must be the owner of the subject.
+   * 
+   * @param {Object} params - Transaction parameters
+   * @param {string} params.subjectId - Quid ID of the subject (entity the event is about)
+   * @param {string} params.subjectType - Type of subject ('QUID' or 'TITLE')
+   * @param {string} params.eventType - Type of event (max 64 chars)
+   * @param {Object} [params.payload] - Event payload data (required if no payloadCID)
+   * @param {string} [params.payloadCID] - IPFS CID of payload (required if no payload)
+   * @param {string} params.domain - Trust domain
+   * @param {number} [params.sequence] - Sequence number (auto-generated if not provided)
+   * @param {Object} quid - Quid object with private key for signing (must be subject owner)
+   * @returns {Promise<Object>} Result with txId and sequence
+   */
+  async createEventTransaction(params, quid) {
+    if (!quid || !quid.privateKey) {
+      throw new Error('Valid quid with private key is required for signing');
+    }
+    
+    if (!params.subjectId || !params.subjectType || !params.eventType || !params.domain) {
+      throw new Error('Missing required parameters: subjectId, subjectType, eventType, domain');
+    }
+    
+    if (!params.payload && !params.payloadCID) {
+      throw new Error('Either payload or payloadCID must be provided');
+    }
+    
+    if (params.subjectType !== 'QUID' && params.subjectType !== 'TITLE') {
+      throw new Error('subjectType must be "QUID" or "TITLE"');
+    }
+    
+    // Auto-generate sequence if not provided
+    let sequence = params.sequence;
+    if (sequence === undefined || sequence === null) {
+      try {
+        const stream = await this.getEventStream(params.subjectId, params.domain);
+        if (stream) {
+          sequence = stream.latestSequence + 1;
+        } else {
+          sequence = 1;
+        }
+      } catch (error) {
+        sequence = 1;
+      }
+    }
+    
+    const transaction = {
+      type: 'EVENT',
+      timestamp: Math.floor(Date.now() / 1000),
+      trustDomain: params.domain,
+      subjectId: params.subjectId,
+      subjectType: params.subjectType,
+      eventType: params.eventType,
+      sequence: sequence
+    };
+    
+    if (params.payload) {
+      transaction.payload = params.payload;
+    }
+    
+    if (params.payloadCID) {
+      transaction.payloadCid = params.payloadCID;
+    }
+    
+    // Sign transaction
+    const txData = this._buildEventSignatureData(transaction);
+    
+    const privateKeyBuffer = this._base64ToArrayBuffer(quid.privateKey);
+    const privateKey = await window.crypto.subtle.importKey(
+      'pkcs8',
+      privateKeyBuffer,
+      {
+        name: 'ECDSA',
+        namedCurve: 'P-256'
+      },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await window.crypto.subtle.sign(
+      {
+        name: 'ECDSA',
+        hash: { name: 'SHA-256' }
+      },
+      privateKey,
+      txData
+    );
+    
+    transaction.signature = this._arrayBufferToBase64(signatureBuffer);
+    
+    if (quid.publicKey) {
+      transaction.publicKey = quid.publicKey;
+    }
+    
+    // Submit via POST /api/v1/events
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(transaction)
+      });
+      
+      const result = await this._parseResponse(response);
+      return {
+        txId: result.id,
+        sequence: result.sequence
+      };
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Event transaction submission failed: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Get event stream metadata for a subject
+   * @param {string} subjectId - Subject quid ID
+   * @param {string} [domain] - Trust domain (optional)
+   * @returns {Promise<Object|null>} Stream metadata or null if not found
+   */
+  async getEventStream(subjectId, domain) {
+    if (!subjectId) {
+      throw new Error('Missing required parameter: subjectId');
+    }
+    
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/v1/streams/${subjectId}`;
+      
+      if (domain) {
+        url += `?domain=${encodeURIComponent(domain)}`;
+      }
+      
+      const response = await this._fetchWithRetry(url);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return null;
+      }
+      if (error.code) throw error;
+      throw new Error(`Event stream query failed: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Get paginated events for a stream
+   * @param {string} subjectId - Subject quid ID
+   * @param {Object} [options] - Query options
+   * @param {number} [options.limit] - Maximum events to return
+   * @param {number} [options.offset] - Number of events to skip
+   * @param {string} [options.domain] - Trust domain
+   * @returns {Promise<Object>} Object with events array and pagination metadata
+   */
+  async getStreamEvents(subjectId, options = {}) {
+    if (!subjectId) {
+      throw new Error('Missing required parameter: subjectId');
+    }
+    
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/v1/streams/${subjectId}/events`;
+      
+      const params = new URLSearchParams();
+      if (options.limit !== undefined) params.append('limit', options.limit);
+      if (options.offset !== undefined) params.append('offset', options.offset);
+      if (options.domain) params.append('domain', options.domain);
+      
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+      
+      const response = await this._fetchWithRetry(url);
+      const result = await this._parseResponse(response);
+      
+      return {
+        events: result.data || [],
+        pagination: result.pagination || {}
+      };
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Stream events query failed: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Pin content to IPFS
+   * @param {string|ArrayBuffer} content - Content to pin
+   * @returns {Promise<string>} CID of pinned content
+   */
+  async pinToIPFS(content) {
+    if (!content) {
+      throw new Error('Content is required');
+    }
+    
+    try {
+      const nodeUrl = this._getHealthyNode();
+      
+      let body;
+      const headers = {
+        'Content-Type': 'application/octet-stream'
+      };
+      
+      if (content instanceof ArrayBuffer) {
+        body = this._arrayBufferToBase64(content);
+        headers['Content-Transfer-Encoding'] = 'base64';
+      } else if (typeof content === 'string') {
+        body = content;
+      } else {
+        throw new Error('Content must be a string or ArrayBuffer');
+      }
+      
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/ipfs/pin`, {
+        method: 'POST',
+        headers: headers,
+        body: body
+      });
+      
+      const result = await this._parseResponse(response);
+      return result.cid;
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`IPFS pin failed: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Get content from IPFS by CID
+   * @param {string} cid - Content identifier
+   * @returns {Promise<ArrayBuffer>} Content as ArrayBuffer
+   */
+  async getFromIPFS(cid) {
+    if (!cid) {
+      throw new Error('CID is required');
+    }
+    
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/ipfs/${cid}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        const error = new Error(errorData.error?.message || 'IPFS retrieval failed');
+        error.code = errorData.error?.code || 'IPFS_ERROR';
+        throw error;
+      }
+      
+      return await response.arrayBuffer();
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`IPFS retrieval failed: ${error.message}`);
+    }
+  }
 }
 
 // Example usage in a browser environment
