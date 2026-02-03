@@ -15,7 +15,7 @@ func floatEquals(a, b, tolerance float64) bool {
 // newTestNode creates a QuidnugNode with pre-populated test data for testing
 func newTestNode() *QuidnugNode {
 	initLogger("info")
-	node, _ := NewQuidnugNode()
+	node, _ := NewQuidnugNode(nil)
 
 	// Get the node's public key for test identities
 	nodePublicKey := node.GetPublicKeyHex()
@@ -142,6 +142,16 @@ func signIdentityTx(node *QuidnugNode, tx IdentityTransaction) IdentityTransacti
 
 // signTitleTx signs a title transaction using the node's private key
 func signTitleTx(node *QuidnugNode, tx TitleTransaction) TitleTransaction {
+	tx.PublicKey = node.GetPublicKeyHex()
+	tx.Signature = ""
+	signableData, _ := json.Marshal(tx)
+	signature, _ := node.SignData(signableData)
+	tx.Signature = hex.EncodeToString(signature)
+	return tx
+}
+
+// signEventTx signs an event transaction using the node's private key
+func signEventTx(node *QuidnugNode, tx EventTransaction) EventTransaction {
 	tx.PublicKey = node.GetPublicKeyHex()
 	tx.Signature = ""
 	signableData, _ := json.Marshal(tx)
@@ -1142,6 +1152,185 @@ func TestNewTestNodeInitialization(t *testing.T) {
 		}
 		if node.Blockchain[0].Index != 0 {
 			t.Error("Genesis block should have index 0")
+		}
+	})
+}
+
+func TestAddEventTransaction_BasicFlow(t *testing.T) {
+	node := newTestNode()
+
+	t.Run("adds valid event transaction to pending pool", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID: "0000000000000001",
+			EventType: "status_update",
+			Data:      `{"status": "active"}`,
+		})
+
+		txID, err := node.AddEventTransaction(tx)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if txID == "" {
+			t.Error("Expected non-empty transaction ID")
+		}
+
+		node.PendingTxsMutex.RLock()
+		found := false
+		for _, pendingTx := range node.PendingTxs {
+			if eventTx, ok := pendingTx.(EventTransaction); ok {
+				if eventTx.ID == txID {
+					found = true
+					break
+				}
+			}
+		}
+		node.PendingTxsMutex.RUnlock()
+
+		if !found {
+			t.Error("Expected transaction to be in pending pool")
+		}
+	})
+
+	t.Run("auto-assigns sequence number starting at 1", func(t *testing.T) {
+		freshNode := newTestNode()
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000001,
+			},
+			SubjectID: "0000000000000002",
+			EventType: "created",
+			Data:      `{}`,
+		})
+
+		txID, err := freshNode.AddEventTransaction(tx)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		freshNode.PendingTxsMutex.RLock()
+		var addedTx EventTransaction
+		for _, pendingTx := range freshNode.PendingTxs {
+			if eventTx, ok := pendingTx.(EventTransaction); ok {
+				if eventTx.ID == txID {
+					addedTx = eventTx
+					break
+				}
+			}
+		}
+		freshNode.PendingTxsMutex.RUnlock()
+
+		if addedTx.Sequence != 1 {
+			t.Errorf("Expected sequence 1 for first event, got %d", addedTx.Sequence)
+		}
+	})
+
+	t.Run("auto-assigns incremented sequence from existing events", func(t *testing.T) {
+		freshNode := newTestNode()
+		subjectID := "0000000000000003"
+
+		// Pre-populate EventRegistry with existing events
+		freshNode.EventStreamMutex.Lock()
+		freshNode.EventRegistry[subjectID] = []EventTransaction{
+			{Sequence: 1},
+			{Sequence: 2},
+			{Sequence: 5}, // Gap in sequence, should still use latest + 1
+		}
+		freshNode.EventStreamMutex.Unlock()
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000002,
+			},
+			SubjectID: subjectID,
+			EventType: "updated",
+			Data:      `{}`,
+		})
+
+		txID, err := freshNode.AddEventTransaction(tx)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		freshNode.PendingTxsMutex.RLock()
+		var addedTx EventTransaction
+		for _, pendingTx := range freshNode.PendingTxs {
+			if eventTx, ok := pendingTx.(EventTransaction); ok {
+				if eventTx.ID == txID {
+					addedTx = eventTx
+					break
+				}
+			}
+		}
+		freshNode.PendingTxsMutex.RUnlock()
+
+		if addedTx.Sequence != 6 {
+			t.Errorf("Expected sequence 6 (5+1), got %d", addedTx.Sequence)
+		}
+	})
+
+	t.Run("generates transaction ID if not provided", func(t *testing.T) {
+		freshNode := newTestNode()
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "", // Empty ID
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000003,
+			},
+			SubjectID: "0000000000000001",
+			EventType: "test",
+			Data:      `{}`,
+		})
+
+		txID, err := freshNode.AddEventTransaction(tx)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if txID == "" {
+			t.Error("Expected generated transaction ID")
+		}
+
+		if len(txID) != 64 { // SHA-256 hex string
+			t.Errorf("Expected 64-character hex ID, got %d characters", len(txID))
+		}
+	})
+
+	t.Run("uses provided transaction ID", func(t *testing.T) {
+		freshNode := newTestNode()
+		providedID := "custom_tx_id_12345"
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          providedID,
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000004,
+			},
+			SubjectID: "0000000000000001",
+			EventType: "test",
+			Data:      `{}`,
+		})
+
+		txID, err := freshNode.AddEventTransaction(tx)
+		if err != nil {
+			t.Fatalf("Expected no error, got %v", err)
+		}
+
+		if txID != providedID {
+			t.Errorf("Expected ID %s, got %s", providedID, txID)
 		}
 	})
 }

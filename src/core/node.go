@@ -27,10 +27,11 @@ import (
 //   3. TrustRegistryMutex    - Protects TrustRegistry, TrustNonceRegistry, VerifiedTrustEdges
 //   4. IdentityRegistryMutex - Protects IdentityRegistry map
 //   5. TitleRegistryMutex    - Protects TitleRegistry map
-//   6. PendingTxsMutex       - Protects PendingTxs slice
-//   7. TentativeBlocksMutex  - Protects TentativeBlocks map
-//   8. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
-//   9. KnownNodesMutex       - Protects KnownNodes map
+//   6. EventStreamMutex      - Protects EventStreamRegistry, EventRegistry maps
+//   7. PendingTxsMutex       - Protects PendingTxs slice
+//   8. TentativeBlocksMutex  - Protects TentativeBlocks map
+//   9. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
+//  10. KnownNodesMutex       - Protects KnownNodes map
 //
 // Guidelines:
 //   - Prefer acquiring a single lock when possible
@@ -80,6 +81,13 @@ type QuidnugNode struct {
 	IdentityRegistry   map[string]IdentityTransaction
 	TitleRegistry      map[string]TitleTransaction
 
+	// Event registries
+	EventStreamRegistry map[string]*EventStream
+	EventRegistry       map[string][]EventTransaction
+
+	// IPFS client
+	IPFSClient IPFSClient
+
 	// HTTP server for graceful shutdown
 	Server *http.Server
 
@@ -94,6 +102,7 @@ type QuidnugNode struct {
 	TrustRegistryMutex    sync.RWMutex
 	IdentityRegistryMutex sync.RWMutex
 	TitleRegistryMutex    sync.RWMutex
+	EventStreamMutex      sync.RWMutex
 
 	// Node identity for signing blocks
 	NodeQuidID string
@@ -124,7 +133,7 @@ func main() {
 	defer cancel()
 
 	// Initialize node
-	quidnugNode, err := NewQuidnugNode()
+	quidnugNode, err := NewQuidnugNode(cfg)
 	if err != nil {
 		logger.Error("Failed to initialize quidnug node", "error", err)
 		os.Exit(1)
@@ -263,7 +272,15 @@ func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *Config) {
 }
 
 // NewQuidnugNode initializes a new quidnug node
-func NewQuidnugNode() (*QuidnugNode, error) {
+func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
+	// Handle nil config with defaults for testing
+	if cfg == nil {
+		cfg = &Config{
+			IPFSEnabled:    DefaultIPFSEnabled,
+			IPFSGatewayURL: DefaultIPFSGatewayURL,
+			IPFSTimeout:    DefaultIPFSTimeout,
+		}
+	}
 	// Generate a new ECDSA key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -294,6 +311,14 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 	}
 	genesisBlock.Hash = calculateBlockHash(genesisBlock)
 
+	// Initialize IPFS client based on config
+	var ipfsClient IPFSClient
+	if cfg.IPFSEnabled {
+		ipfsClient = NewHTTPIPFSClient(cfg.IPFSGatewayURL, &http.Client{Timeout: cfg.IPFSTimeout})
+	} else {
+		ipfsClient = &NoOpIPFSClient{}
+	}
+
 	node := &QuidnugNode{
 		NodeID:                    nodeID,
 		PrivateKey:               privateKey,
@@ -306,6 +331,9 @@ func NewQuidnugNode() (*QuidnugNode, error) {
 		TrustNonceRegistry:       make(map[string]map[string]int64),
 		IdentityRegistry:         make(map[string]IdentityTransaction),
 		TitleRegistry:            make(map[string]TitleTransaction),
+		EventStreamRegistry:      make(map[string]*EventStream),
+		EventRegistry:            make(map[string][]EventTransaction),
+		IPFSClient:               ipfsClient,
 		TentativeBlocks:          make(map[string][]Block),
 		VerifiedTrustEdges:       make(map[string]map[string]TrustEdge),
 		UnverifiedTrustRegistry:  make(map[string]map[string]TrustEdge),
@@ -459,6 +487,141 @@ func (node *QuidnugNode) AddIdentityTransaction(tx IdentityTransaction) (string,
 
 	logger.Info("Added identity transaction to pending pool", "txId", tx.ID, "quidId", tx.QuidID, "domain", tx.TrustDomain)
 	return tx.ID, nil
+}
+
+// AddEventTransaction adds an event transaction to the pending pool
+func (node *QuidnugNode) AddEventTransaction(tx EventTransaction) (string, error) {
+	// Set timestamp if not set
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+
+	// Set type
+	tx.Type = TxTypeEvent
+
+	// Auto-assign sequence if not provided (latest + 1)
+	if tx.Sequence == 0 {
+		node.EventStreamMutex.RLock()
+		events, exists := node.EventRegistry[tx.SubjectID]
+		if exists && len(events) > 0 {
+			tx.Sequence = events[len(events)-1].Sequence + 1
+		} else {
+			tx.Sequence = 1
+		}
+		node.EventStreamMutex.RUnlock()
+	}
+
+	// Generate transaction ID if not present
+	if tx.ID == "" {
+		txData, _ := json.Marshal(struct {
+			SubjectID   string
+			EventType   string
+			Sequence    int64
+			TrustDomain string
+			Timestamp   int64
+		}{
+			SubjectID:   tx.SubjectID,
+			EventType:   tx.EventType,
+			Sequence:    tx.Sequence,
+			TrustDomain: tx.TrustDomain,
+			Timestamp:   tx.Timestamp,
+		})
+
+		hash := sha256.Sum256(txData)
+		tx.ID = hex.EncodeToString(hash[:])
+	}
+
+	// Validate the transaction
+	if !node.ValidateEventTransaction(tx) {
+		RecordTransactionProcessed("event", false)
+		return "", fmt.Errorf("invalid event transaction")
+	}
+
+	node.PendingTxsMutex.Lock()
+	defer node.PendingTxsMutex.Unlock()
+
+	// Add transaction to pending pool
+	node.PendingTxs = append(node.PendingTxs, tx)
+
+	// Record metrics
+	RecordTransactionProcessed("event", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
+
+	// Broadcast to other nodes in the same trust domain
+	go node.BroadcastTransaction(tx)
+
+	logger.Info("Added event transaction to pending pool", "txId", tx.ID, "subjectId", tx.SubjectID, "domain", tx.TrustDomain)
+	return tx.ID, nil
+}
+
+// ValidateEventTransaction validates an event transaction
+func (node *QuidnugNode) ValidateEventTransaction(tx EventTransaction) bool {
+	// Validate trust domain if specified
+	if tx.TrustDomain != "" {
+		node.TrustDomainsMutex.RLock()
+		_, domainExists := node.TrustDomains[tx.TrustDomain]
+		node.TrustDomainsMutex.RUnlock()
+		if !domainExists {
+			if logger != nil {
+				logger.Debug("Event transaction validation failed: unknown trust domain",
+					"txId", tx.ID,
+					"domain", tx.TrustDomain)
+			}
+			return false
+		}
+	}
+
+	// Validate required fields
+	if tx.SubjectID == "" {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: missing subject ID", "txId", tx.ID)
+		}
+		return false
+	}
+
+	if !IsValidQuidID(tx.SubjectID) {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: invalid subject ID format",
+				"txId", tx.ID,
+				"subjectId", tx.SubjectID)
+		}
+		return false
+	}
+
+	if tx.EventType == "" {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: missing event type", "txId", tx.ID)
+		}
+		return false
+	}
+
+	// Validate signature
+	if tx.Signature == "" || tx.PublicKey == "" {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: missing signature or public key", "txId", tx.ID)
+		}
+		return false
+	}
+
+	// Verify signature by clearing it and re-marshaling
+	txCopy := tx
+	txCopy.Signature = ""
+	signableData, err := json.Marshal(txCopy)
+	if err != nil {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: could not marshal for signature verification", "txId", tx.ID)
+		}
+		return false
+	}
+
+	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
+		if logger != nil {
+			logger.Debug("Event transaction validation failed: invalid signature", "txId", tx.ID)
+		}
+		return false
+	}
+
+	return true
 }
 
 // AddTitleTransaction adds a title transaction to the pending pool
