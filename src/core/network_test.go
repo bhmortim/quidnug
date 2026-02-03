@@ -343,6 +343,7 @@ func TestDomainHierarchyWalking(t *testing.T) {
 		defer server.Close()
 
 		node.KnownNodesMutex.Lock()
+		node.KnownNodes = make(map[string]Node)
 		node.KnownNodes["parent_domain_node"] = Node{
 			ID:           "parent_domain_node",
 			Address:      server.Listener.Addr().String(),
@@ -373,6 +374,7 @@ func TestDomainHierarchyWalking(t *testing.T) {
 		defer server.Close()
 
 		node.KnownNodesMutex.Lock()
+		node.KnownNodes = make(map[string]Node)
 		node.KnownNodes["root_node"] = Node{
 			ID:           "root_node",
 			Address:      server.Listener.Addr().String(),
@@ -409,6 +411,7 @@ func TestDomainHierarchyWalking(t *testing.T) {
 		defer exactServer.Close()
 
 		node.KnownNodesMutex.Lock()
+		node.KnownNodes = make(map[string]Node)
 		node.KnownNodes["parent_node_pref"] = Node{
 			ID:           "parent_node_pref",
 			Address:      parentServer.Listener.Addr().String(),
@@ -437,6 +440,10 @@ func TestDomainHierarchyWalking(t *testing.T) {
 	})
 
 	t.Run("returns error when no nodes found at any level", func(t *testing.T) {
+		node.KnownNodesMutex.Lock()
+		node.KnownNodes = make(map[string]Node)
+		node.KnownNodesMutex.Unlock()
+
 		_, err := node.QueryOtherDomain("totally.unknown.tld", "identity", "test")
 		if err == nil {
 			t.Error("Expected error for completely unknown domain hierarchy")
