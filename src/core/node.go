@@ -32,6 +32,7 @@ import (
 //   8. TentativeBlocksMutex  - Protects TentativeBlocks map
 //   9. UnverifiedRegistryMutex - Protects UnverifiedTrustRegistry map
 //  10. KnownNodesMutex       - Protects KnownNodes map
+//  11. DomainRegistryMutex   - Protects DomainRegistry map (reverse index of domain->nodes)
 //
 // Guidelines:
 //   - Prefer acquiring a single lock when possible
@@ -94,6 +95,9 @@ type QuidnugNode struct {
 	// HTTP client for network communication
 	httpClient *http.Client
 
+	// Domain registry - reverse index from domain to node IDs for efficient lookup
+	DomainRegistry map[string][]string
+
 	// Mutexes for thread safety
 	BlockchainMutex       sync.RWMutex
 	PendingTxsMutex       sync.RWMutex
@@ -103,6 +107,7 @@ type QuidnugNode struct {
 	IdentityRegistryMutex sync.RWMutex
 	TitleRegistryMutex    sync.RWMutex
 	EventStreamMutex      sync.RWMutex
+	DomainRegistryMutex   sync.RWMutex
 
 	// Node identity for signing blocks
 	NodeQuidID string
@@ -341,6 +346,7 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		TentativeBlocks:          make(map[string][]Block),
 		VerifiedTrustEdges:       make(map[string]map[string]TrustEdge),
 		UnverifiedTrustRegistry:  make(map[string]map[string]TrustEdge),
+		DomainRegistry:           make(map[string][]string),
 		DistrustThreshold:         0.0,
 		TransactionTrustThreshold: 0.0,
 		SupportedDomains:          cfg.SupportedDomains,

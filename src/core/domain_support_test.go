@@ -618,6 +618,295 @@ func TestFetchNodeDomains_UnsuccessfulResponse(t *testing.T) {
 	}
 }
 
+func TestFindNodesForSubdomains_NoMatches(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"other.com":     {"node1"},
+		"different.org": {"node2"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+		"node2": {ID: "node2", Address: "localhost:8002"},
+	}
+
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 0 {
+		t.Errorf("Expected 0 nodes, got %d", len(nodes))
+	}
+}
+
+func TestFindNodesForSubdomains_SingleMatch(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"api.example.com": {"node1"},
+		"other.com":       {"node2"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+		"node2": {ID: "node2", Address: "localhost:8002"},
+	}
+
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 1 {
+		t.Fatalf("Expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].ID != "node1" {
+		t.Errorf("Expected node1, got %s", nodes[0].ID)
+	}
+}
+
+func TestFindNodesForSubdomains_MultipleMatches(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"api.example.com":      {"node1"},
+		"auth.example.com":     {"node2"},
+		"deep.sub.example.com": {"node3"},
+		"other.com":            {"node4"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+		"node2": {ID: "node2", Address: "localhost:8002"},
+		"node3": {ID: "node3", Address: "localhost:8003"},
+		"node4": {ID: "node4", Address: "localhost:8004"},
+	}
+
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 3 {
+		t.Errorf("Expected 3 nodes, got %d", len(nodes))
+	}
+
+	// Verify all expected nodes are present
+	nodeIDs := make(map[string]bool)
+	for _, n := range nodes {
+		nodeIDs[n.ID] = true
+	}
+	for _, expected := range []string{"node1", "node2", "node3"} {
+		if !nodeIDs[expected] {
+			t.Errorf("Expected %s in results", expected)
+		}
+	}
+	if nodeIDs["node4"] {
+		t.Error("node4 should not be in results (manages other.com)")
+	}
+}
+
+func TestFindNodesForSubdomains_MultipleNodesPerDomain(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"api.example.com": {"node1", "node2"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+		"node2": {ID: "node2", Address: "localhost:8002"},
+	}
+
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 2 {
+		t.Errorf("Expected 2 nodes, got %d", len(nodes))
+	}
+}
+
+func TestFindNodesForSubdomains_DoesNotMatchExactDomain(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"example.com": {"node1"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+	}
+
+	// Looking for subdomains of example.com should NOT return example.com itself
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 0 {
+		t.Errorf("Expected 0 nodes (exact match should not be included), got %d", len(nodes))
+	}
+}
+
+func TestFindNodesForSubdomains_DoesNotMatchSimilarDomain(t *testing.T) {
+	node := newTestNode()
+	node.DomainRegistry = map[string][]string{
+		"notexample.com":    {"node1"},
+		"myexample.com":     {"node2"},
+		"example.com.other": {"node3"},
+	}
+	node.KnownNodes = map[string]Node{
+		"node1": {ID: "node1", Address: "localhost:8001"},
+		"node2": {ID: "node2", Address: "localhost:8002"},
+		"node3": {ID: "node3", Address: "localhost:8003"},
+	}
+
+	nodes := node.findNodesForSubdomains("example.com")
+	if len(nodes) != 0 {
+		t.Errorf("Expected 0 nodes (similar but not subdomain), got %d", len(nodes))
+	}
+}
+
+func TestUpdateDomainRegistry_AddDomains(t *testing.T) {
+	node := newTestNode()
+
+	node.updateDomainRegistry("node1", []string{"example.com", "test.org"})
+
+	node.DomainRegistryMutex.RLock()
+	defer node.DomainRegistryMutex.RUnlock()
+
+	if len(node.DomainRegistry["example.com"]) != 1 || node.DomainRegistry["example.com"][0] != "node1" {
+		t.Errorf("Expected node1 in example.com, got %v", node.DomainRegistry["example.com"])
+	}
+	if len(node.DomainRegistry["test.org"]) != 1 || node.DomainRegistry["test.org"][0] != "node1" {
+		t.Errorf("Expected node1 in test.org, got %v", node.DomainRegistry["test.org"])
+	}
+}
+
+func TestUpdateDomainRegistry_UpdateDomains(t *testing.T) {
+	node := newTestNode()
+
+	// Initial registration
+	node.updateDomainRegistry("node1", []string{"old.com", "shared.org"})
+
+	// Update to new domains
+	node.updateDomainRegistry("node1", []string{"new.com", "shared.org"})
+
+	node.DomainRegistryMutex.RLock()
+	defer node.DomainRegistryMutex.RUnlock()
+
+	// old.com should be removed
+	if _, exists := node.DomainRegistry["old.com"]; exists {
+		t.Error("old.com should have been removed")
+	}
+
+	// new.com should be added
+	if len(node.DomainRegistry["new.com"]) != 1 || node.DomainRegistry["new.com"][0] != "node1" {
+		t.Errorf("Expected node1 in new.com, got %v", node.DomainRegistry["new.com"])
+	}
+
+	// shared.org should still have node1
+	if len(node.DomainRegistry["shared.org"]) != 1 || node.DomainRegistry["shared.org"][0] != "node1" {
+		t.Errorf("Expected node1 in shared.org, got %v", node.DomainRegistry["shared.org"])
+	}
+}
+
+func TestUpdateDomainRegistry_MultipleNodes(t *testing.T) {
+	node := newTestNode()
+
+	node.updateDomainRegistry("node1", []string{"shared.com"})
+	node.updateDomainRegistry("node2", []string{"shared.com"})
+
+	node.DomainRegistryMutex.RLock()
+	defer node.DomainRegistryMutex.RUnlock()
+
+	if len(node.DomainRegistry["shared.com"]) != 2 {
+		t.Errorf("Expected 2 nodes in shared.com, got %d", len(node.DomainRegistry["shared.com"]))
+	}
+}
+
+func TestUpdateDomainRegistry_RemoveAllDomains(t *testing.T) {
+	node := newTestNode()
+
+	node.updateDomainRegistry("node1", []string{"example.com"})
+	node.updateDomainRegistry("node1", []string{})
+
+	node.DomainRegistryMutex.RLock()
+	defer node.DomainRegistryMutex.RUnlock()
+
+	if _, exists := node.DomainRegistry["example.com"]; exists {
+		t.Error("example.com should have been removed when node1 has no domains")
+	}
+}
+
+func TestQueryOtherDomain_FallsBackToSubdomainNodes(t *testing.T) {
+	// Create a test server that responds to queries
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"result": "found via subdomain node",
+			},
+		})
+	}))
+	defer testServer.Close()
+
+	node := newTestNode()
+	address := strings.TrimPrefix(testServer.URL, "http://")
+
+	// Register a node that manages a subdomain
+	node.KnownNodes["subnode1"] = Node{
+		ID:           "subnode1",
+		Address:      address,
+		TrustDomains: []string{"api.example.com"},
+	}
+	node.updateDomainRegistry("subnode1", []string{"api.example.com"})
+
+	// Query for parent domain (example.com) - no node manages it directly
+	// but subnode1 manages api.example.com
+	result, err := node.QueryOtherDomain("example.com", "identity", "test")
+	if err != nil {
+		t.Fatalf("Expected success via subdomain fallback, got error: %v", err)
+	}
+
+	if result == nil {
+		t.Error("Expected non-nil result")
+	}
+}
+
+func TestQueryOtherDomain_PrefersParentOverSubdomain(t *testing.T) {
+	parentCalled := false
+	subdomainCalled := false
+
+	// Create parent domain server
+	parentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parentCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"data":    map[string]interface{}{"source": "parent"},
+		})
+	}))
+	defer parentServer.Close()
+
+	// Create subdomain server
+	subdomainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		subdomainCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"data":    map[string]interface{}{"source": "subdomain"},
+		})
+	}))
+	defer subdomainServer.Close()
+
+	node := newTestNode()
+	parentAddr := strings.TrimPrefix(parentServer.URL, "http://")
+	subdomainAddr := strings.TrimPrefix(subdomainServer.URL, "http://")
+
+	// Register both parent and subdomain nodes
+	node.KnownNodes["parentnode"] = Node{
+		ID:           "parentnode",
+		Address:      parentAddr,
+		TrustDomains: []string{"example.com"},
+	}
+	node.KnownNodes["subnode"] = Node{
+		ID:           "subnode",
+		Address:      subdomainAddr,
+		TrustDomains: []string{"api.example.com"},
+	}
+	node.updateDomainRegistry("parentnode", []string{"example.com"})
+	node.updateDomainRegistry("subnode", []string{"api.example.com"})
+
+	// Query for sub.example.com - should try example.com first (parent walking)
+	_, err := node.QueryOtherDomain("sub.example.com", "identity", "test")
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	if !parentCalled {
+		t.Error("Expected parent domain node to be called")
+	}
+	if subdomainCalled {
+		t.Error("Subdomain node should not be called when parent succeeds")
+	}
+}
+
 func TestDiscoverFromSeeds_PopulatesDomains(t *testing.T) {
 	// Create a test node that will be "discovered"
 	discoveredNodeID := "discovered12345"
@@ -676,5 +965,121 @@ func TestDiscoverFromSeeds_PopulatesDomains(t *testing.T) {
 
 	if discoveredNode.TrustDomains[0] != "discovered.example.com" {
 		t.Errorf("Expected first domain 'discovered.example.com', got %s", discoveredNode.TrustDomains[0])
+	}
+
+	// Verify domain registry was also populated
+	node.DomainRegistryMutex.RLock()
+	nodesForDomain := node.DomainRegistry["discovered.example.com"]
+	node.DomainRegistryMutex.RUnlock()
+
+	if len(nodesForDomain) != 1 || nodesForDomain[0] != discoveredNodeID {
+		t.Errorf("Expected domain registry to contain discovered node, got %v", nodesForDomain)
+	}
+}
+
+func TestDiscoverFromSeeds_UpdatesDomainRegistry(t *testing.T) {
+	discoveredNodeID := "discovered12345"
+
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/nodes":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"nodes": []map[string]interface{}{
+					{
+						"id":               discoveredNodeID,
+						"address":          strings.TrimPrefix(r.Host, "http://"),
+						"trustDomains":     []string{},
+						"isValidator":      true,
+						"lastSeen":         time.Now().Unix(),
+						"connectionStatus": "connected",
+					},
+				},
+			})
+		case "/api/v1/node/domains":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"data": map[string]interface{}{
+					"nodeId":  discoveredNodeID,
+					"domains": []string{"api.example.com", "auth.example.com"},
+				},
+			})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer testServer.Close()
+
+	node := newTestNode()
+	ctx := context.Background()
+	seedAddress := strings.TrimPrefix(testServer.URL, "http://")
+
+	node.discoverFromSeeds(ctx, []string{seedAddress})
+
+	// Verify subdomain lookup works via domain registry
+	subdomainNodes := node.findNodesForSubdomains("example.com")
+	if len(subdomainNodes) != 1 {
+		t.Fatalf("Expected 1 subdomain node, got %d", len(subdomainNodes))
+	}
+	if subdomainNodes[0].ID != discoveredNodeID {
+		t.Errorf("Expected %s, got %s", discoveredNodeID, subdomainNodes[0].ID)
+	}
+}
+
+func TestCrossDomainQueryDelegation_ViaSubdomain(t *testing.T) {
+	// This integration test verifies that queries can be delegated to subdomain nodes
+	// when no exact or parent domain node exists
+
+	queryReceived := make(chan string, 1)
+
+	// Create a server for the subdomain node
+	subdomainServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/query") {
+			queryReceived <- r.URL.Query().Get("param")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"data": map[string]interface{}{
+					"quidId": "testquid1234567",
+					"name":   "Test Identity",
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer subdomainServer.Close()
+
+	node := newTestNode()
+	subAddr := strings.TrimPrefix(subdomainServer.URL, "http://")
+
+	// Register a node that manages a subdomain of example.com
+	node.KnownNodes["subnode1"] = Node{
+		ID:           "subnode1",
+		Address:      subAddr,
+		TrustDomains: []string{"api.example.com"},
+	}
+	node.updateDomainRegistry("subnode1", []string{"api.example.com"})
+
+	// Query for example.com (no direct or parent node exists)
+	// Should fall back to subdomain node
+	result, err := node.QueryOtherDomain("example.com", "identity", "testquid1234567")
+	if err != nil {
+		t.Fatalf("Expected query to succeed via subdomain delegation, got error: %v", err)
+	}
+
+	// Verify the query was received by the subdomain node
+	select {
+	case param := <-queryReceived:
+		if param != "testquid1234567" {
+			t.Errorf("Expected param 'testquid1234567', got '%s'", param)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Subdomain node did not receive the query")
+	}
+
+	if result == nil {
+		t.Error("Expected non-nil result from subdomain delegation")
 	}
 }

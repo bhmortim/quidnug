@@ -89,6 +89,9 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 			node.KnownNodes[discoveredNode.ID] = discoveredNode
 			node.KnownNodesMutex.Unlock()
 
+			// Update domain registry for efficient subdomain lookups
+			node.updateDomainRegistry(discoveredNode.ID, discoveredNode.TrustDomains)
+
 			logger.Info("Discovered node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address, "domains", discoveredNode.TrustDomains)
 		}
 	}
@@ -168,6 +171,9 @@ func (node *QuidnugNode) refreshKnownNodeDomains(ctx context.Context) {
 			node.KnownNodes[knownNode.ID] = existingNode
 		}
 		node.KnownNodesMutex.Unlock()
+
+		// Update domain registry for efficient subdomain lookups
+		node.updateDomainRegistry(knownNode.ID, domains)
 
 		logger.Debug("Refreshed domains for node", "nodeId", knownNode.ID, "domains", domains)
 	}
@@ -286,12 +292,24 @@ func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON 
 	}
 }
 
-// QueryOtherDomain queries other trust domains with hierarchical domain walking
+// QueryOtherDomain queries other trust domains with hierarchical domain walking.
+// First tries exact match and parent domains, then falls back to subdomain nodes.
 func (node *QuidnugNode) QueryOtherDomain(domainName, queryType, queryParam string) (interface{}, error) {
+	// First try exact match and parent domains (walking up the hierarchy)
 	domainManagers := node.findNodesForDomainWithHierarchy(domainName)
 
+	// If no nodes found via parent hierarchy, try subdomain nodes
 	if len(domainManagers) == 0 {
-		return nil, fmt.Errorf("no known nodes manage trust domain: %s (or any parent domain)", domainName)
+		domainManagers = node.findNodesForSubdomains(domainName)
+		if len(domainManagers) > 0 {
+			logger.Debug("Found nodes via subdomain discovery",
+				"requestedDomain", domainName,
+				"nodeCount", len(domainManagers))
+		}
+	}
+
+	if len(domainManagers) == 0 {
+		return nil, fmt.Errorf("no known nodes manage trust domain: %s (or any related domain)", domainName)
 	}
 
 	var lastErr error
@@ -352,6 +370,64 @@ func (node *QuidnugNode) findNodesForExactDomain(domainName string) []Node {
 	}
 
 	return domainManagers
+}
+
+// findNodesForSubdomains finds nodes that manage any subdomain of the given domain.
+// For example, if domainName is "example.com", this finds nodes managing
+// "api.example.com", "auth.example.com", "deep.sub.example.com", etc.
+func (node *QuidnugNode) findNodesForSubdomains(domainName string) []Node {
+	suffix := "." + domainName
+	nodeIDs := make(map[string]bool)
+
+	// Use domain registry for efficient lookup
+	node.DomainRegistryMutex.RLock()
+	for domain, ids := range node.DomainRegistry {
+		if strings.HasSuffix(domain, suffix) {
+			for _, id := range ids {
+				nodeIDs[id] = true
+			}
+		}
+	}
+	node.DomainRegistryMutex.RUnlock()
+
+	// Convert node IDs to Node objects
+	var subdomainNodes []Node
+	node.KnownNodesMutex.RLock()
+	for nodeID := range nodeIDs {
+		if knownNode, exists := node.KnownNodes[nodeID]; exists {
+			subdomainNodes = append(subdomainNodes, knownNode)
+		}
+	}
+	node.KnownNodesMutex.RUnlock()
+
+	return subdomainNodes
+}
+
+// updateDomainRegistry updates the domain-to-nodes registry for a node.
+// This maintains a reverse index for efficient subdomain lookups.
+func (node *QuidnugNode) updateDomainRegistry(nodeID string, domains []string) {
+	node.DomainRegistryMutex.Lock()
+	defer node.DomainRegistryMutex.Unlock()
+
+	// Remove node from all existing domain entries
+	for domain, nodeIDs := range node.DomainRegistry {
+		filtered := make([]string, 0, len(nodeIDs))
+		for _, id := range nodeIDs {
+			if id != nodeID {
+				filtered = append(filtered, id)
+			}
+		}
+		if len(filtered) > 0 {
+			node.DomainRegistry[domain] = filtered
+		} else {
+			delete(node.DomainRegistry, domain)
+		}
+	}
+
+	// Add node to its current domains
+	for _, domain := range domains {
+		node.DomainRegistry[domain] = append(node.DomainRegistry[domain], nodeID)
+	}
 }
 
 // queryNode performs an HTTP GET query to a specific node
