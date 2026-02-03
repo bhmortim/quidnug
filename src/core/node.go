@@ -636,6 +636,15 @@ func (node *QuidnugNode) FilterTransactionsForBlock(txs []interface{}, domain st
 				creatorQuid = t.Owners[0].OwnerID
 			}
 			txID = t.ID
+		case EventTransaction:
+			// For event transactions, derive creator quid from signer's public key
+			if t.PublicKey != "" {
+				pubKeyBytes, err := hex.DecodeString(t.PublicKey)
+				if err == nil {
+					creatorQuid = fmt.Sprintf("%x", sha256.Sum256(pubKeyBytes))[:16]
+				}
+			}
+			txID = t.ID
 		default:
 			// Unknown transaction type, skip
 			logger.Debug("Skipping unknown transaction type in trust filter")
