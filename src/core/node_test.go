@@ -955,7 +955,7 @@ func TestVerifySignature(t *testing.T) {
 			t.Fatalf("Failed to sign data: %v", err)
 		}
 
-		otherNode, _ := NewQuidnugNode()
+		otherNode, _ := NewQuidnugNode(nil)
 		wrongPublicKeyHex := otherNode.GetPublicKeyHex()
 		signatureHex := hex.EncodeToString(signature)
 

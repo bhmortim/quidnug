@@ -36,7 +36,7 @@ func setupTestCluster(t *testing.T, nodeCount int) (*testCluster, func()) {
 
 	// Create all nodes first
 	for i := 0; i < nodeCount; i++ {
-		node, err := NewQuidnugNode()
+		node, err := NewQuidnugNode(nil)
 		if err != nil {
 			t.Fatalf("Failed to create node %d: %v", i, err)
 		}
@@ -393,21 +393,21 @@ func TestNodeDiscovery(t *testing.T) {
 	basePort := 19100 + int(time.Now().UnixNano()%1000)
 
 	// Create node 1 (seed node)
-	node1, err := NewQuidnugNode()
+	node1, err := NewQuidnugNode(nil)
 	if err != nil {
 		t.Fatalf("Failed to create node 1: %v", err)
 	}
 	port1 := fmt.Sprintf("%d", basePort)
 
 	// Create node 2 (knows node 1)
-	node2, err := NewQuidnugNode()
+	node2, err := NewQuidnugNode(nil)
 	if err != nil {
 		t.Fatalf("Failed to create node 2: %v", err)
 	}
 	port2 := fmt.Sprintf("%d", basePort+1)
 
 	// Create node 3 (will discover through node 1)
-	node3, err := NewQuidnugNode()
+	node3, err := NewQuidnugNode(nil)
 	if err != nil {
 		t.Fatalf("Failed to create node 3: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestNodeDiscovery(t *testing.T) {
 
 // TestGracefulShutdownDuringBlockGeneration tests clean shutdown during operations
 func TestGracefulShutdownDuringBlockGeneration(t *testing.T) {
-	node, err := NewQuidnugNode()
+	node, err := NewQuidnugNode(nil)
 	if err != nil {
 		t.Fatalf("Failed to create node: %v", err)
 	}
