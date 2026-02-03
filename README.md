@@ -194,6 +194,32 @@ Each domain can have:
 | **Trust** | Establish trust between quids | "I trust Dr. Smith at 0.9 for medical advice" |
 | **Identity** | Define attributes for a quid | "This quid represents Acme Corp, located in Austin" |
 | **Title** | Establish ownership relationships | "Property X is owned 60% by Alice, 40% by Bob" |
+| **Event** | Record events for subjects | "Profile updated: name changed to Alice Chen" |
+
+### Event Streams
+
+**Event streams** provide an immutable, append-only history of events for any quid or title:
+
+| Characteristic | Description |
+|----------------|-------------|
+| **Subject-based** | Events are recorded against a subject (quid or title) |
+| **Sequenced** | Each event has a monotonically increasing sequence number |
+| **Immutable** | Once recorded, events cannot be modified or deleted |
+| **Flexible payloads** | Inline payloads up to 64KB, or reference larger content via IPFS |
+| **Signed** | Every event is cryptographically signed by the subject owner |
+
+Event streams enable audit trails, activity logs, state change histories, and any use case requiring a verifiable sequence of events tied to an identity or asset.
+
+```go
+type EventTransaction struct {
+    SubjectID   string                 `json:"subjectId"`   // Quid or asset ID
+    SubjectType string                 `json:"subjectType"` // "QUID" or "TITLE"
+    Sequence    int64                  `json:"sequence"`    // Auto-assigned if not provided
+    EventType   string                 `json:"eventType"`   // e.g., "profile.updated"
+    Payload     map[string]interface{} `json:"payload"`     // Inline data (max 64KB)
+    PayloadCID  string                 `json:"payloadCid"`  // Or IPFS CID for larger content
+}
+```
 
 ## How It Works
 
@@ -676,6 +702,28 @@ curl -X POST http://localhost:8080/api/transactions/title -H "Content-Type: appl
 }'
 ```
 
+### 7. Record an Event
+
+```bash
+# Record an event for a quid
+curl -X POST http://localhost:8080/api/transactions/event -H "Content-Type: application/json" -d '{
+  "subjectId": "a1b2c3d4e5f6g7h8",
+  "subjectType": "QUID",
+  "eventType": "profile.updated",
+  "trustDomain": "example.com",
+  "payload": {"field": "name", "newValue": "Alice Chen"},
+  "signature": "...",
+  "publicKey": "..."
+}'
+
+# Response:
+# {
+#   "status": "success",
+#   "transaction_id": "evt_abc123...",
+#   "sequence": 1
+# }
+```
+
 ## Getting Started
 
 ### Installation
@@ -771,6 +819,9 @@ require_node_auth: false
 | `HTTP_CLIENT_TIMEOUT` | `5s` | Timeout for outgoing HTTP requests |
 | `NODE_AUTH_SECRET` | *(empty)* | Shared secret for node-to-node authentication |
 | `REQUIRE_NODE_AUTH` | `false` | Set to `true` to require authenticated node communication |
+| `IPFS_ENABLED` | `false` | Enable IPFS integration for large payloads |
+| `IPFS_GATEWAY_URL` | `http://localhost:5001` | IPFS API gateway URL |
+| `IPFS_TIMEOUT` | `30s` | Timeout for IPFS operations |
 
 ### Configuration Examples
 
@@ -800,6 +851,21 @@ DATA_DIR=/var/lib/quidnug \
 | `POST` | `/api/transactions/trust` | Submit a trust transaction |
 | `POST` | `/api/transactions/identity` | Submit an identity transaction |
 | `POST` | `/api/transactions/title` | Submit a title transaction |
+| `POST` | `/api/transactions/event` | Submit an event transaction |
+
+### Event Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/events/streams/{subjectId}` | Get event stream metadata |
+| `GET` | `/api/events/streams/{subjectId}/events` | Get paginated events |
+
+### IPFS Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/ipfs/pin` | Pin content to IPFS |
+| `GET` | `/api/ipfs/{cid}` | Retrieve content from IPFS |
 
 ### Query Endpoints
 
