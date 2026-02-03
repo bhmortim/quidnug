@@ -227,3 +227,153 @@ func TestRegisterTrustDomain_SupportedDomain(t *testing.T) {
 		t.Errorf("Unexpected error registering supported domain: %v", err)
 	}
 }
+
+func TestAddTrustTransaction_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	tx := TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "notallowed.com",
+		},
+		Truster:    "1234567890abcdef",
+		Trustee:    "abcdef1234567890",
+		TrustLevel: 0.8,
+	}
+
+	_, err := node.AddTrustTransaction(tx)
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+}
+
+func TestAddIdentityTransaction_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	tx := IdentityTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "notallowed.com",
+		},
+		QuidID:  "1234567890abcdef",
+		Name:    "Test",
+		Creator: "abcdef1234567890",
+	}
+
+	_, err := node.AddIdentityTransaction(tx)
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+}
+
+func TestAddTitleTransaction_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	tx := TitleTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "notallowed.com",
+		},
+		AssetID: "1234567890abcdef",
+		Owners: []OwnershipStake{
+			{OwnerID: "abcdef1234567890", Percentage: 100.0},
+		},
+	}
+
+	_, err := node.AddTitleTransaction(tx)
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+}
+
+func TestAddEventTransaction_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	tx := EventTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "notallowed.com",
+		},
+		SubjectID:   "1234567890abcdef",
+		SubjectType: "QUID",
+		EventType:   "test",
+		Payload:     map[string]interface{}{"key": "value"},
+	}
+
+	_, err := node.AddEventTransaction(tx)
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+}
+
+func TestGenerateBlock_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	_, err := node.GenerateBlock("notallowed.com")
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+}
+
+func TestReceiveBlock_UnsupportedDomain(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"allowed.com"}
+
+	block := Block{
+		Index:     1,
+		Timestamp: 1234567890,
+		TrustProof: TrustProof{
+			TrustDomain: "notallowed.com",
+			ValidatorID: node.NodeID,
+		},
+		PrevHash: node.Blockchain[0].Hash,
+	}
+	block.Hash = calculateBlockHash(block)
+
+	acceptance, err := node.ReceiveBlock(block)
+	if err == nil {
+		t.Error("Expected error for unsupported domain")
+	}
+	if acceptance != BlockUntrusted {
+		t.Errorf("Expected BlockUntrusted, got %v", acceptance)
+	}
+}
+
+func TestAddTransaction_DefaultDomainSupported(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{"default"}
+
+	tx := signTrustTx(node, TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "",
+		},
+		Truster:    node.NodeID,
+		Trustee:    "abcdef1234567890",
+		TrustLevel: 0.8,
+	})
+
+	_, err := node.AddTrustTransaction(tx)
+	if err != nil {
+		t.Errorf("Expected default domain to be supported when listed, got error: %v", err)
+	}
+}
+
+func TestAddTransaction_EmptyDomainList_AllAllowed(t *testing.T) {
+	node := newTestNode()
+	node.SupportedDomains = []string{}
+
+	tx := signTrustTx(node, TrustTransaction{
+		BaseTransaction: BaseTransaction{
+			TrustDomain: "any.domain.com",
+		},
+		Truster:    node.NodeID,
+		Trustee:    "abcdef1234567890",
+		TrustLevel: 0.8,
+	})
+
+	_, err := node.AddTrustTransaction(tx)
+	if err != nil {
+		t.Errorf("Expected all domains allowed with empty list, got error: %v", err)
+	}
+}
