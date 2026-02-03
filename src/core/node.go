@@ -140,7 +140,6 @@ type QuidnugNode struct {
 	GossipSeenMutex sync.RWMutex
 	GossipTTL       int // Default TTL for outgoing gossip messages
 }
-=======
 
 func main() {
 	// Load configuration
@@ -1178,4 +1177,3 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	logger.Info("Registered new trust domain", "domain", domain.Name, "validators", len(domain.ValidatorNodes))
 	return nil
 }
-

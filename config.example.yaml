@@ -70,3 +70,35 @@ node_auth_secret: ""
 # When true, requests from other nodes must include valid HMAC signatures
 # Environment variable: REQUIRE_NODE_AUTH (set to "true" to enable)
 require_node_auth: false
+
+# Trust computation cache TTL
+# Cached trust computations expire after this duration
+# Uses Go duration format: "30s", "1m", etc.
+# Environment variable: TRUST_CACHE_TTL
+trust_cache_ttl: "60s"
+
+# Supported trust domains (empty list = all domains allowed)
+# Nodes will only process transactions for these domains
+# Supports wildcard patterns like "*.example.com" for subdomains
+# Environment variable: SUPPORTED_DOMAINS (JSON array, e.g., '["example.com","*.myapp.net"]')
+supported_domains: []
+
+# Whether dynamic domain registration is allowed
+# When false, new trust domains cannot be registered via API
+# Environment variable: ALLOW_DOMAIN_REGISTRATION (set to "false" to disable)
+allow_domain_registration: true
+
+# Whether subdomain registration requires parent domain validator authorization
+# When true, registering "sub.example.com" requires a validator from "example.com" to trust the new validators
+# Environment variable: REQUIRE_PARENT_DOMAIN_AUTH (set to "false" to disable)
+require_parent_domain_auth: true
+
+# Domain gossip protocol settings
+# Interval between domain gossip broadcasts
+# Uses Go duration format: "30s", "2m", etc.
+# Environment variable: DOMAIN_GOSSIP_INTERVAL
+domain_gossip_interval: "2m"
+
+# TTL (hop count) for gossip messages before they stop propagating
+# Environment variable: DOMAIN_GOSSIP_TTL
+domain_gossip_ttl: 3

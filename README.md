@@ -187,6 +187,26 @@ Each domain can have:
 - **Custom trust thresholds**: Minimum trust required for various operations
 - **Inheritance**: Child domains can inherit rules from parents
 
+### Domain Configuration & Discovery
+
+Quidnug nodes can be configured to support specific trust domains, enabling domain-focused deployments:
+
+**Domain Restriction**
+- Nodes can restrict which domains they process via `SUPPORTED_DOMAINS`
+- Supports exact matches (`example.com`) and wildcard patterns (`*.example.com`)
+- Empty list means all domains are accepted
+
+**Subdomain Authorization**
+- By default, registering a subdomain requires authorization from parent domain validators
+- For example, registering `api.example.com` requires at least one `example.com` validator to trust the new domain's validators
+- This prevents unauthorized subdomain squatting while maintaining the hierarchical trust model
+
+**Domain Gossip Protocol**
+- Nodes automatically advertise their supported domains to the network
+- Domain information propagates via gossip with configurable TTL to prevent flooding
+- Enables efficient discovery of which nodes support which domains
+- New domains are announced immediately when registered
+
 ### Transaction Types
 
 | Type | Purpose | Example |
@@ -795,6 +815,12 @@ shutdown_timeout: "30s"
 http_client_timeout: "5s"
 node_auth_secret: ""
 require_node_auth: false
+trust_cache_ttl: "60s"
+supported_domains: []
+allow_domain_registration: true
+require_parent_domain_auth: true
+domain_gossip_interval: "2m"
+domain_gossip_ttl: 3
 ```
 
 **Config file search order:**
@@ -822,6 +848,12 @@ require_node_auth: false
 | `IPFS_ENABLED` | `false` | Enable IPFS integration for large payloads |
 | `IPFS_GATEWAY_URL` | `http://localhost:5001` | IPFS API gateway URL |
 | `IPFS_TIMEOUT` | `30s` | Timeout for IPFS operations |
+| `TRUST_CACHE_TTL` | `60s` | TTL for cached trust computation results |
+| `SUPPORTED_DOMAINS` | `[]` | JSON array of supported domain patterns (empty = all allowed) |
+| `ALLOW_DOMAIN_REGISTRATION` | `true` | Set to `false` to disable dynamic domain registration |
+| `REQUIRE_PARENT_DOMAIN_AUTH` | `true` | Set to `false` to allow subdomains without parent validator trust |
+| `DOMAIN_GOSSIP_INTERVAL` | `2m` | Interval between domain gossip broadcasts |
+| `DOMAIN_GOSSIP_TTL` | `3` | Hop count before gossip messages stop propagating |
 
 ### Configuration Examples
 
@@ -891,6 +923,9 @@ DATA_DIR=/var/lib/quidnug \
 | `GET` | `/api/domains` | List domains managed by this node |
 | `POST` | `/api/domains` | Register a new domain |
 | `GET` | `/api/domains/{domain}/query` | Query a specific domain |
+| `GET` | `/api/v1/node/domains` | Get this node's supported domains |
+| `POST` | `/api/v1/node/domains` | Update this node's supported domains |
+| `POST` | `/api/v1/gossip/domains` | Receive domain gossip (node-to-node) |
 
 ### System Endpoints
 
