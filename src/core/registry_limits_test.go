@@ -6,13 +6,14 @@ import (
 	"testing"
 )
 
-// TestComputeRelationalTrust_ResourceLimits tests that dense graphs trigger resource limits
+// TestComputeRelationalTrust_ResourceLimits tests that large graphs trigger resource limits
 func TestComputeRelationalTrust_ResourceLimits(t *testing.T) {
 	node := newTestNode()
 
-	// Create a dense graph that will exceed resource limits
-	// Each node connects to many other nodes, creating exponential path exploration
-	numNodes := 200
+	// Create a graph with more than MaxTrustVisitedSize (10000) nodes
+	// to reliably exceed resource limits. The BFS visited set is bounded
+	// by the number of unique nodes, so we need > 10000 nodes.
+	numNodes := 10500
 	nodesPerConnection := 50
 
 	node.TrustRegistryMutex.Lock()
@@ -21,7 +22,6 @@ func TestComputeRelationalTrust_ResourceLimits(t *testing.T) {
 		if node.TrustRegistry[truster] == nil {
 			node.TrustRegistry[truster] = make(map[string]float64)
 		}
-		// Connect to next nodesPerConnection nodes (wrapping around)
 		for j := 1; j <= nodesPerConnection; j++ {
 			trustee := fmt.Sprintf("de05e00de000%04x", (i+j)%numNodes)
 			node.TrustRegistry[truster][trustee] = 0.9
@@ -29,12 +29,13 @@ func TestComputeRelationalTrust_ResourceLimits(t *testing.T) {
 	}
 	node.TrustRegistryMutex.Unlock()
 
-	// Try to compute trust across the dense graph
-	_, _, err := node.ComputeRelationalTrust("de05e00de0000000", "de05e00de0000064", 10)
+	// Search for a non-existent node to force exhaustive exploration
+	// until resource limits are hit
+	_, _, err := node.ComputeRelationalTrust("de05e00de0000000", "ffff000000000000", 10)
 
 	// Should return ErrTrustGraphTooLarge
 	if err == nil {
-		t.Error("Expected ErrTrustGraphTooLarge error for dense graph, got nil")
+		t.Error("Expected ErrTrustGraphTooLarge error for large graph, got nil")
 	} else if !errors.Is(err, ErrTrustGraphTooLarge) {
 		t.Errorf("Expected ErrTrustGraphTooLarge, got: %v", err)
 	}
@@ -80,8 +81,9 @@ func TestComputeRelationalTrust_NormalGraphSucceeds(t *testing.T) {
 func TestComputeRelationalTrustEnhanced_ResourceLimits(t *testing.T) {
 	node := newTestNode()
 
-	// Create a dense graph
-	numNodes := 200
+	// Create a graph with more than MaxTrustVisitedSize (10000) nodes
+	// to reliably exceed resource limits
+	numNodes := 10500
 	nodesPerConnection := 50
 
 	node.TrustRegistryMutex.Lock()
@@ -102,11 +104,12 @@ func TestComputeRelationalTrustEnhanced_ResourceLimits(t *testing.T) {
 	}
 	node.TrustRegistryMutex.Unlock()
 
-	// Try to compute enhanced trust across the dense graph
-	_, err := node.ComputeRelationalTrustEnhanced("e00a00ced0000000", "e00a00ced0000064", 10, false)
+	// Search for a non-existent node to force exhaustive exploration
+	// until resource limits are hit
+	_, err := node.ComputeRelationalTrustEnhanced("e00a00ced0000000", "ffff000000000000", 10, false)
 
 	if err == nil {
-		t.Error("Expected ErrTrustGraphTooLarge error for dense graph, got nil")
+		t.Error("Expected ErrTrustGraphTooLarge error for large graph, got nil")
 	} else if !errors.Is(err, ErrTrustGraphTooLarge) {
 		t.Errorf("Expected ErrTrustGraphTooLarge, got: %v", err)
 	}
