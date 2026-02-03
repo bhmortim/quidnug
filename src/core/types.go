@@ -7,6 +7,7 @@ const (
 	TxTypeTrust    TransactionType = "TRUST"
 	TxTypeIdentity TransactionType = "IDENTITY"
 	TxTypeTitle    TransactionType = "TITLE"
+	TxTypeEvent    TransactionType = "EVENT"
 	TxTypeGeneric  TransactionType = "GENERIC"
 )
 
@@ -65,6 +66,36 @@ type TitleTransaction struct {
 	Signatures     map[string]string `json:"signatures"`
 	ExpiryDate     int64             `json:"expiryDate,omitempty"`
 	TitleType      string            `json:"titleType,omitempty"`
+}
+
+// EventTransaction represents an event in an append-only stream for a quid or title
+type EventTransaction struct {
+	BaseTransaction
+	SubjectID       string                 `json:"subjectId"`
+	SubjectType     string                 `json:"subjectType"`
+	Sequence        int64                  `json:"sequence"`
+	EventType       string                 `json:"eventType"`
+	Payload         map[string]interface{} `json:"payload,omitempty"`
+	PayloadCID      string                 `json:"payloadCid,omitempty"`
+	PreviousEventID string                 `json:"previousEventId,omitempty"`
+}
+
+// EventStream tracks the state of an event stream for a subject
+type EventStream struct {
+	SubjectID      string `json:"subjectId"`
+	SubjectType    string `json:"subjectType"`
+	LatestSequence int64  `json:"latestSequence"`
+	EventCount     int64  `json:"eventCount"`
+	CreatedAt      int64  `json:"createdAt"`
+	UpdatedAt      int64  `json:"updatedAt"`
+	LatestEventID  string `json:"latestEventId"`
+}
+
+// GlobalEventOrder provides a total ordering for events across the blockchain
+type GlobalEventOrder struct {
+	BlockIndex int64 `json:"blockIndex"`
+	TxIndex    int   `json:"txIndex"`
+	Sequence   int64 `json:"sequence"`
 }
 
 // Block represents a block in the blockchain
