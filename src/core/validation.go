@@ -210,6 +210,188 @@ func (node *QuidnugNode) ValidateIdentityTransaction(tx IdentityTransaction) boo
 	return true
 }
 
+// MaxEventTypeLength is the maximum length for event type field
+const MaxEventTypeLength = 64
+
+// MaxPayloadSize is the maximum size in bytes for event payload (64KB)
+const MaxPayloadSize = 64 * 1024
+
+// ValidateEventTransaction validates an event transaction
+func (node *QuidnugNode) ValidateEventTransaction(tx EventTransaction) bool {
+	// Validate TrustDomain is not empty
+	if tx.TrustDomain == "" {
+		logger.Warn("Event transaction missing trust domain", "txId", tx.ID)
+		return false
+	}
+
+	// Check if transaction belongs to a known trust domain
+	node.TrustDomainsMutex.RLock()
+	_, domainExists := node.TrustDomains[tx.TrustDomain]
+	node.TrustDomainsMutex.RUnlock()
+
+	if !domainExists {
+		logger.Warn("Event transaction from unknown trust domain", "domain", tx.TrustDomain, "txId", tx.ID)
+		return false
+	}
+
+	// Validate SubjectID is present and has valid format
+	if tx.SubjectID == "" {
+		logger.Warn("Event transaction missing subject ID", "txId", tx.ID)
+		return false
+	}
+
+	if !IsValidQuidID(tx.SubjectID) {
+		logger.Warn("Invalid subject ID format", "subjectId", tx.SubjectID, "txId", tx.ID)
+		return false
+	}
+
+	// Validate SubjectType must be "QUID" or "TITLE"
+	if tx.SubjectType != "QUID" && tx.SubjectType != "TITLE" {
+		logger.Warn("Invalid subject type: must be 'QUID' or 'TITLE'", "subjectType", tx.SubjectType, "txId", tx.ID)
+		return false
+	}
+
+	// Validate EventType (not empty, max 64 chars)
+	if tx.EventType == "" {
+		logger.Warn("Event type is empty", "txId", tx.ID)
+		return false
+	}
+
+	if len(tx.EventType) > MaxEventTypeLength {
+		logger.Warn("Event type exceeds max length", "length", len(tx.EventType), "max", MaxEventTypeLength, "txId", tx.ID)
+		return false
+	}
+
+	// Validate payload - either Payload or PayloadCID must be provided
+	hasPayload := len(tx.Payload) > 0
+	hasPayloadCID := tx.PayloadCID != ""
+
+	if !hasPayload && !hasPayloadCID {
+		logger.Warn("Event transaction missing payload: either Payload or PayloadCID required", "txId", tx.ID)
+		return false
+	}
+
+	// If PayloadCID provided, validate CID format
+	if hasPayloadCID && !IsValidCID(tx.PayloadCID) {
+		logger.Warn("Invalid payload CID format", "payloadCid", tx.PayloadCID, "txId", tx.ID)
+		return false
+	}
+
+	// Validate Payload size (max 64KB when serialized)
+	if hasPayload {
+		payloadBytes, err := json.Marshal(tx.Payload)
+		if err != nil {
+			logger.Warn("Failed to marshal payload for size check", "txId", tx.ID, "error", err)
+			return false
+		}
+		if len(payloadBytes) > MaxPayloadSize {
+			logger.Warn("Payload exceeds max size", "size", len(payloadBytes), "max", MaxPayloadSize, "txId", tx.ID)
+			return false
+		}
+	}
+
+	// Validate subject exists based on SubjectType and capture for ownership check
+	var subjectIdentity IdentityTransaction
+	var title TitleTransaction
+
+	if tx.SubjectType == "QUID" {
+		node.IdentityRegistryMutex.RLock()
+		identity, exists := node.IdentityRegistry[tx.SubjectID]
+		node.IdentityRegistryMutex.RUnlock()
+
+		if !exists {
+			logger.Warn("Subject QUID not found in identity registry", "subjectId", tx.SubjectID, "txId", tx.ID)
+			return false
+		}
+		subjectIdentity = identity
+	} else {
+		node.TitleRegistryMutex.RLock()
+		t, exists := node.TitleRegistry[tx.SubjectID]
+		node.TitleRegistryMutex.RUnlock()
+
+		if !exists {
+			logger.Warn("Subject TITLE not found in title registry", "subjectId", tx.SubjectID, "txId", tx.ID)
+			return false
+		}
+		title = t
+	}
+
+	// Validate sequence
+	node.EventStreamMutex.RLock()
+	stream, streamExists := node.EventStreamRegistry[tx.SubjectID]
+	node.EventStreamMutex.RUnlock()
+
+	if streamExists {
+		if tx.Sequence <= stream.LatestSequence {
+			logger.Warn("Invalid sequence: must be greater than current",
+				"providedSequence", tx.Sequence,
+				"currentSequence", stream.LatestSequence,
+				"subjectId", tx.SubjectID,
+				"txId", tx.ID)
+			return false
+		}
+	} else {
+		if tx.Sequence != 0 && tx.Sequence != 1 {
+			logger.Warn("Invalid sequence for new stream: must be 0 or 1",
+				"providedSequence", tx.Sequence,
+				"txId", tx.ID)
+			return false
+		}
+	}
+
+	// Verify signature
+	if tx.Signature == "" || tx.PublicKey == "" {
+		logger.Warn("Missing signature or public key in event transaction", "txId", tx.ID)
+		return false
+	}
+
+	txCopy := tx
+	txCopy.Signature = ""
+	signableData, err := json.Marshal(txCopy)
+	if err != nil {
+		logger.Error("Failed to marshal transaction for signature verification", "txId", tx.ID, "error", err)
+		return false
+	}
+
+	if !VerifySignature(tx.PublicKey, signableData, tx.Signature) {
+		logger.Warn("Invalid signature in event transaction", "txId", tx.ID)
+		return false
+	}
+
+	// Verify signer is the subject owner
+	if tx.SubjectType == "QUID" {
+		if subjectIdentity.PublicKey != tx.PublicKey {
+			logger.Warn("Signer is not the subject owner",
+				"txId", tx.ID,
+				"subjectId", tx.SubjectID,
+				"subjectType", tx.SubjectType)
+			return false
+		}
+	} else {
+		isOwner := false
+		for _, stake := range title.Owners {
+			node.IdentityRegistryMutex.RLock()
+			ownerIdentity, exists := node.IdentityRegistry[stake.OwnerID]
+			node.IdentityRegistryMutex.RUnlock()
+
+			if exists && ownerIdentity.PublicKey == tx.PublicKey {
+				isOwner = true
+				break
+			}
+		}
+
+		if !isOwner {
+			logger.Warn("Signer is not an owner of the subject",
+				"txId", tx.ID,
+				"subjectId", tx.SubjectID,
+				"subjectType", tx.SubjectType)
+			return false
+		}
+	}
+
+	return true
+}
+
 // ValidateTitleTransaction validates a title transaction
 func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 	// Check if transaction belongs to a known trust domain

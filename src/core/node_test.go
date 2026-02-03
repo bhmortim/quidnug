@@ -1166,9 +1166,10 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			SubjectID: "0000000000000001",
-			EventType: "status_update",
-			Data:      `{"status": "active"}`,
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "status_update",
+			Payload:     map[string]interface{}{"status": "active"},
 		})
 
 		txID, err := node.AddEventTransaction(tx)
@@ -1206,9 +1207,10 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000001,
 			},
-			SubjectID: "0000000000000002",
-			EventType: "created",
-			Data:      `{}`,
+			SubjectID:   "0000000000000002",
+			SubjectType: "QUID",
+			EventType:   "created",
+			Payload:     map[string]interface{}{"action": "create"},
 		})
 
 		txID, err := freshNode.AddEventTransaction(tx)
@@ -1237,12 +1239,16 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 		freshNode := newTestNode()
 		subjectID := "0000000000000003"
 
-		// Pre-populate EventRegistry with existing events
+		// Pre-populate EventRegistry and EventStreamRegistry with existing events
 		freshNode.EventStreamMutex.Lock()
 		freshNode.EventRegistry[subjectID] = []EventTransaction{
 			{Sequence: 1},
 			{Sequence: 2},
-			{Sequence: 5}, // Gap in sequence, should still use latest + 1
+			{Sequence: 5},
+		}
+		freshNode.EventStreamRegistry[subjectID] = &EventStream{
+			SubjectID:      subjectID,
+			LatestSequence: 5,
 		}
 		freshNode.EventStreamMutex.Unlock()
 
@@ -1252,9 +1258,11 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000002,
 			},
-			SubjectID: subjectID,
-			EventType: "updated",
-			Data:      `{}`,
+			SubjectID:   subjectID,
+			SubjectType: "QUID",
+			EventType:   "updated",
+			Sequence:    6,
+			Payload:     map[string]interface{}{"action": "update"},
 		})
 
 		txID, err := freshNode.AddEventTransaction(tx)
@@ -1275,7 +1283,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 		freshNode.PendingTxsMutex.RUnlock()
 
 		if addedTx.Sequence != 6 {
-			t.Errorf("Expected sequence 6 (5+1), got %d", addedTx.Sequence)
+			t.Errorf("Expected sequence 6, got %d", addedTx.Sequence)
 		}
 	})
 
@@ -1284,14 +1292,15 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 
 		tx := signEventTx(freshNode, EventTransaction{
 			BaseTransaction: BaseTransaction{
-				ID:          "", // Empty ID
+				ID:          "",
 				Type:        TxTypeEvent,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000003,
 			},
-			SubjectID: "0000000000000001",
-			EventType: "test",
-			Data:      `{}`,
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Payload:     map[string]interface{}{"test": true},
 		})
 
 		txID, err := freshNode.AddEventTransaction(tx)
@@ -1303,7 +1312,7 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 			t.Error("Expected generated transaction ID")
 		}
 
-		if len(txID) != 64 { // SHA-256 hex string
+		if len(txID) != 64 {
 			t.Errorf("Expected 64-character hex ID, got %d characters", len(txID))
 		}
 	})
@@ -1319,9 +1328,10 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000004,
 			},
-			SubjectID: "0000000000000001",
-			EventType: "test",
-			Data:      `{}`,
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Payload:     map[string]interface{}{"test": true},
 		})
 
 		txID, err := freshNode.AddEventTransaction(tx)
@@ -1331,6 +1341,406 @@ func TestAddEventTransaction_BasicFlow(t *testing.T) {
 
 		if txID != providedID {
 			t.Errorf("Expected ID %s, got %s", providedID, txID)
+		}
+	})
+}
+
+func TestValidateEventTransaction(t *testing.T) {
+	node := newTestNode()
+
+	t.Run("valid event transaction with Payload", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_valid",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "status_update",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"status": "active"},
+		})
+		if !node.ValidateEventTransaction(tx) {
+			t.Error("Expected valid event transaction to pass")
+		}
+	})
+
+	t.Run("valid event transaction with PayloadCID", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_cid",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "document_stored",
+			Sequence:    1,
+			PayloadCID:  "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG",
+		})
+		if !node.ValidateEventTransaction(tx) {
+			t.Error("Expected valid event transaction with PayloadCID to pass")
+		}
+	})
+
+	t.Run("valid event transaction for TITLE subject", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_title",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000003",
+			SubjectType: "TITLE",
+			EventType:   "transfer_initiated",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"action": "transfer"},
+		})
+		if !node.ValidateEventTransaction(tx) {
+			t.Error("Expected valid event transaction for TITLE subject to pass")
+		}
+	})
+
+	t.Run("invalid: empty trust domain", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_domain",
+				Type:        TxTypeEvent,
+				TrustDomain: "",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected empty trust domain to fail")
+		}
+	})
+
+	t.Run("invalid: unknown trust domain", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_unknown_domain",
+				Type:        TxTypeEvent,
+				TrustDomain: "unknown.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected unknown trust domain to fail")
+		}
+	})
+
+	t.Run("invalid: empty subject ID", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_subject",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected empty subject ID to fail")
+		}
+	})
+
+	t.Run("invalid: malformed subject ID", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_bad_subject",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "invalid-format!",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected malformed subject ID to fail")
+		}
+	})
+
+	t.Run("invalid: wrong subject type", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_bad_type",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "INVALID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected invalid subject type to fail")
+		}
+	})
+
+	t.Run("invalid: empty event type", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_type",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected empty event type to fail")
+		}
+	})
+
+	t.Run("invalid: event type too long", func(t *testing.T) {
+		longEventType := ""
+		for i := 0; i < 65; i++ {
+			longEventType += "a"
+		}
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_long_type",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   longEventType,
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected event type exceeding 64 chars to fail")
+		}
+	})
+
+	t.Run("invalid: missing payload (both Payload and PayloadCID empty)", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_payload",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected missing payload to fail")
+		}
+	})
+
+	t.Run("invalid: bad PayloadCID format", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_bad_cid",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			PayloadCID:  "invalid-cid-format",
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected invalid CID format to fail")
+		}
+	})
+
+	t.Run("invalid: subject QUID not found", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_quid",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "aaaa000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected non-existent QUID subject to fail")
+		}
+	})
+
+	t.Run("invalid: subject TITLE not found", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_title",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "bbbb000000000001",
+			SubjectType: "TITLE",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected non-existent TITLE subject to fail")
+		}
+	})
+
+	t.Run("invalid: sequence not greater than current for existing stream", func(t *testing.T) {
+		freshNode := newTestNode()
+		subjectID := "0000000000000001"
+
+		freshNode.EventStreamMutex.Lock()
+		freshNode.EventStreamRegistry[subjectID] = &EventStream{
+			SubjectID:      subjectID,
+			LatestSequence: 5,
+		}
+		freshNode.EventStreamMutex.Unlock()
+
+		tx := signEventTx(freshNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_bad_seq",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   subjectID,
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    5,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if freshNode.ValidateEventTransaction(tx) {
+			t.Error("Expected sequence <= current to fail")
+		}
+	})
+
+	t.Run("invalid: sequence not 0 or 1 for new stream", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_bad_init_seq",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    5,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected sequence != 0 or 1 for new stream to fail")
+		}
+	})
+
+	t.Run("valid: sequence 0 for new stream (auto-assign)", func(t *testing.T) {
+		tx := signEventTx(node, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_seq_zero",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    0,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if !node.ValidateEventTransaction(tx) {
+			t.Error("Expected sequence 0 for new stream to pass")
+		}
+	})
+
+	t.Run("invalid: missing signature", func(t *testing.T) {
+		tx := EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_no_sig",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+				PublicKey:   node.GetPublicKeyHex(),
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		}
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected missing signature to fail")
+		}
+	})
+
+	t.Run("invalid: signer not owner for QUID subject", func(t *testing.T) {
+		otherNode, _ := NewQuidnugNode(nil)
+		tx := signEventTx(otherNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_wrong_owner",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000001",
+			SubjectType: "QUID",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected signer not being owner to fail for QUID")
+		}
+	})
+
+	t.Run("invalid: signer not owner for TITLE subject", func(t *testing.T) {
+		otherNode, _ := NewQuidnugNode(nil)
+		tx := signEventTx(otherNode, EventTransaction{
+			BaseTransaction: BaseTransaction{
+				ID:          "tx_event_wrong_title_owner",
+				Type:        TxTypeEvent,
+				TrustDomain: "test.domain.com",
+				Timestamp:   1000000,
+			},
+			SubjectID:   "0000000000000003",
+			SubjectType: "TITLE",
+			EventType:   "test",
+			Sequence:    1,
+			Payload:     map[string]interface{}{"test": true},
+		})
+		if node.ValidateEventTransaction(tx) {
+			t.Error("Expected signer not being owner to fail for TITLE")
 		}
 	})
 }
