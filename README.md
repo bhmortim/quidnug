@@ -1077,7 +1077,8 @@ quidnug/
 │   ├── quidnug-client.js  # Client implementation
 │   └── quidnug-client.test.js
 ├── docs/                  # Documentation
-│   ├── api-spec.yaml      # OpenAPI 3.0 specification
+│   ├── openapi.yaml       # OpenAPI 3.0 specification (authoritative)
+│   ├── api-spec.yaml      # Deprecated, see openapi.yaml
 │   ├── integration-guide.md
 │   └── architecture.md
 ├── go.mod                 # Go module definition
