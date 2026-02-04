@@ -1,8 +1,19 @@
+# ==============================================================================
+# DEPRECATED: This file is no longer maintained.
+# Please use docs/openapi.yaml as the authoritative API specification.
+# This file is kept for backward compatibility but may be removed in a future release.
+# ==============================================================================
+
 openapi: 3.0.0
 info:
-  title: Quidnug Node API
-  description: API specification for interacting with Quidnug nodes
+  title: Quidnug Node API (DEPRECATED)
+  description: |
+    **⚠️ DEPRECATED**: This specification is no longer maintained.
+    Please refer to [docs/openapi.yaml](openapi.yaml) for the current API specification.
+    
+    This file is kept for backward compatibility only.
   version: 1.0.0
+  deprecated: true
 servers:
   - url: https://api.quidnug.org/v1
     description: Production Quidnug API
