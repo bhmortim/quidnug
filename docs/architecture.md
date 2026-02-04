@@ -162,6 +162,183 @@ Blocks are generated periodically (configurable via `BLOCK_INTERVAL`):
 
 **Cross-Domain Queries**: Hierarchical domain walking (e.g., `sub.domain.com` -> `domain.com` -> `com`) to find authoritative nodes.
 
+## Domain Gossip Protocol
+
+Nodes advertise their supported domains to the network using a gossip protocol. This enables efficient discovery of which nodes support which domains without requiring centralized coordination.
+
+### Purpose
+
+The Domain Gossip Protocol allows nodes to:
+- Announce the trust domains they support to the network
+- Discover other nodes that support specific domains
+- Route domain-specific queries to appropriate nodes
+- Maintain an up-to-date view of the network's domain topology
+
+### DomainGossip Structure
+
+```go
+type DomainGossip struct {
+    NodeID    string   `json:"nodeId"`    // QuidID of the originating node
+    Domains   []string `json:"domains"`   // List of domains the node supports
+    Timestamp int64    `json:"timestamp"` // Unix timestamp when gossip was created
+    TTL       int      `json:"ttl"`       // Time-to-live (maximum hop count)
+    HopCount  int      `json:"hopCount"`  // Current hop count (incremented on forward)
+    MessageID string   `json:"messageId"` // Unique identifier for deduplication
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `NodeID` | QuidID of the node that originally created this gossip message |
+| `Domains` | Array of domain names the originating node supports |
+| `Timestamp` | Unix timestamp (seconds) when the gossip was created |
+| `TTL` | Maximum number of hops before the message stops propagating |
+| `HopCount` | Number of hops this message has traveled (starts at 0) |
+| `MessageID` | Unique identifier used to prevent duplicate processing |
+
+### Protocol Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Domain Gossip Flow                           │
+└─────────────────────────────────────────────────────────────────┘
+
+  Node A                    Node B                    Node C
+    │                         │                         │
+    │  1. Create gossip       │                         │
+    │     (HopCount=0)        │                         │
+    │                         │                         │
+    │──── POST /api/gossip/domains ────►│               │
+    │                         │                         │
+    │                   2. Check MessageID              │
+    │                      in GossipSeen               │
+    │                         │                         │
+    │                   3. Process & store              │
+    │                      domain info                  │
+    │                         │                         │
+    │                   4. HopCount < TTL?              │
+    │                      Yes: Forward                 │
+    │                         │                         │
+    │                         │──── Forward (HopCount+1) ────►│
+    │                         │                         │
+    │                         │                   5. Check MessageID
+    │                         │                      (already seen?)
+    │                         │                         │
+    │                         │                   6. Process if new
+```
+
+#### Broadcast Cycle
+
+1. **Periodic Broadcasting**: Each node runs a background goroutine (`runDomainGossip`) that broadcasts domain info at configurable intervals
+2. **Gossip Creation**: `createDomainGossip()` generates a new message with:
+   - The node's QuidID
+   - Current supported domains (from `SupportedDomains` config or registered `TrustDomains`)
+   - Current Unix timestamp
+   - Configured TTL from `GossipTTL`
+   - HopCount starting at 0
+   - Unique MessageID (UUID)
+3. **Broadcast**: `BroadcastDomainInfo()` sends the gossip to all known nodes
+
+#### Reception and Forwarding
+
+When a node receives gossip via `ReceiveDomainGossip()`:
+
+1. **Validation**: Rejects gossip with empty `NodeID` or negative `TTL`
+2. **Self-Check**: Ignores gossip originating from itself
+3. **Deduplication**: Checks `GossipSeen` map using `hasSeenGossip(messageID)`
+   - If seen: Silently ignore (prevents loops and duplicate processing)
+   - If new: Mark as seen with `markGossipSeen(messageID)` and continue
+4. **Processing**: `processDomainGossip()` updates the `DomainRegistry` with the originator's domain information
+5. **Forwarding**: If `HopCount < TTL`, increment `HopCount` and forward to known nodes (excluding the originator)
+
+#### Deduplication and Cleanup
+
+The `GossipSeen` map tracks processed messages:
+
+```go
+GossipSeen      map[string]int64      // MessageID -> timestamp when seen
+GossipSeenMutex sync.RWMutex          // Protects concurrent access
+```
+
+- `hasSeenGossip(messageID)`: Returns true if the message was already processed
+- `markGossipSeen(messageID)`: Records the message ID with current timestamp
+- `cleanupGossipSeen()`: Periodically removes old entries to prevent unbounded growth
+
+### Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `DOMAIN_GOSSIP_INTERVAL` | `2m` | Interval between gossip broadcasts |
+| `DOMAIN_GOSSIP_TTL` | `3` | Maximum hop count before gossip stops propagating |
+
+Example configuration:
+
+```bash
+# Broadcast domain info every 5 minutes, allow up to 5 hops
+DOMAIN_GOSSIP_INTERVAL=5m DOMAIN_GOSSIP_TTL=5 ./quidnug-node
+```
+
+Or in `config.yaml`:
+
+```yaml
+domain_gossip_interval: "2m"
+domain_gossip_ttl: 3
+```
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/node/domains` | Get this node's currently supported domains |
+| `POST` | `/api/node/domains` | Update this node's supported domains (triggers immediate gossip) |
+| `POST` | `/api/gossip/domains` | Receive domain gossip from another node |
+
+#### GET /api/node/domains
+
+Returns the node's supported domains:
+
+```json
+{
+  "nodeId": "a1b2c3d4e5f6g7h8",
+  "domains": ["example.com", "api.example.com"]
+}
+```
+
+#### POST /api/node/domains
+
+Update supported domains and trigger immediate gossip broadcast:
+
+```json
+{
+  "domains": ["example.com", "api.example.com", "new.example.com"]
+}
+```
+
+#### POST /api/gossip/domains
+
+Receives gossip from other nodes (node-to-node communication):
+
+```json
+{
+  "nodeId": "b2c3d4e5f6g7h8i9",
+  "domains": ["other.com"],
+  "timestamp": 1699900000,
+  "ttl": 3,
+  "hopCount": 1,
+  "messageId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Thread Safety
+
+The gossip protocol uses dedicated mutexes:
+
+| Mutex | Protects |
+|-------|----------|
+| `GossipSeenMutex` | `GossipSeen` map for deduplication |
+| `DomainRegistryMutex` | `DomainRegistry` map storing node→domains mappings |
+| `KnownNodesMutex` | `KnownNodes` map when iterating for broadcast |
+
 ## Cryptographic Operations (`crypto.go`)
 
 | Function | Purpose |
