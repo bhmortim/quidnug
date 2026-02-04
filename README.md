@@ -845,9 +845,9 @@ domain_gossip_ttl: 3
 | `HTTP_CLIENT_TIMEOUT` | `5s` | Timeout for outgoing HTTP requests |
 | `NODE_AUTH_SECRET` | *(empty)* | Shared secret for node-to-node authentication |
 | `REQUIRE_NODE_AUTH` | `false` | Set to `true` to require authenticated node communication |
-| `IPFS_ENABLED` | `false` | Enable IPFS integration for large payloads |
-| `IPFS_GATEWAY_URL` | `http://localhost:5001` | IPFS API gateway URL |
-| `IPFS_TIMEOUT` | `30s` | Timeout for IPFS operations |
+| `QUIDNUG_IPFS_ENABLED` | `false` | Enable IPFS integration for large payloads |
+| `QUIDNUG_IPFS_GATEWAY_URL` | `http://localhost:5001` | IPFS API gateway URL |
+| `QUIDNUG_IPFS_TIMEOUT` | `30s` | Timeout for IPFS operations |
 | `TRUST_CACHE_TTL` | `60s` | TTL for cached trust computation results |
 | `SUPPORTED_DOMAINS` | `[]` | JSON array of supported domain patterns (empty = all allowed) |
 | `ALLOW_DOMAIN_REGISTRATION` | `true` | Set to `false` to disable dynamic domain registration |

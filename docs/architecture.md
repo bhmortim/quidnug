@@ -201,9 +201,9 @@ type IPFSClient interface {
 | `HTTPIPFSClient` | Production client that communicates with an IPFS gateway via HTTP API |
 | `NoOpIPFSClient` | Stub implementation when IPFS is disabled; `IsAvailable()` returns `false` |
 
-The implementation is selected at startup based on the `IPFS_ENABLED` configuration:
-- When `IPFS_ENABLED=true`: `HTTPIPFSClient` connects to `IPFS_GATEWAY_URL`
-- When `IPFS_ENABLED=false` (default): `NoOpIPFSClient` is used
+The implementation is selected at startup based on the `QUIDNUG_IPFS_ENABLED` configuration:
+- When `QUIDNUG_IPFS_ENABLED=true`: `HTTPIPFSClient` connects to `QUIDNUG_IPFS_GATEWAY_URL`
+- When `QUIDNUG_IPFS_ENABLED=false` (default): `NoOpIPFSClient` is used
 
 ### Payload Storage Strategy
 
