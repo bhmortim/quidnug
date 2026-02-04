@@ -1289,10 +1289,10 @@ class QuidnugClient {
       transaction.publicKey = quid.publicKey;
     }
     
-    // Submit via POST /api/v1/events
+    // Submit via POST /api/events
     try {
       const nodeUrl = this._getHealthyNode();
-      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/events`, {
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/events`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -1324,7 +1324,7 @@ class QuidnugClient {
     
     try {
       const nodeUrl = this._getHealthyNode();
-      let url = `${nodeUrl}/api/v1/streams/${subjectId}`;
+      let url = `${nodeUrl}/api/streams/${subjectId}`;
       
       if (domain) {
         url += `?domain=${encodeURIComponent(domain)}`;
@@ -1357,7 +1357,7 @@ class QuidnugClient {
     
     try {
       const nodeUrl = this._getHealthyNode();
-      let url = `${nodeUrl}/api/v1/streams/${subjectId}/events`;
+      let url = `${nodeUrl}/api/streams/${subjectId}/events`;
       
       const params = new URLSearchParams();
       if (options.limit !== undefined) params.append('limit', options.limit);
@@ -1408,7 +1408,7 @@ class QuidnugClient {
         throw new Error('Content must be a string or ArrayBuffer');
       }
       
-      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/ipfs/pin`, {
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/ipfs/pin`, {
         method: 'POST',
         headers: headers,
         body: body
@@ -1434,7 +1434,7 @@ class QuidnugClient {
     
     try {
       const nodeUrl = this._getHealthyNode();
-      const response = await this._fetchWithRetry(`${nodeUrl}/api/v1/ipfs/${cid}`);
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/ipfs/${cid}`);
       
       if (!response.ok) {
         const errorData = await response.json();
