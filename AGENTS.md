@@ -2,7 +2,7 @@ This style guide is derived from the Quidnug protocol implementation, focusing o
 
 ### 1. Cryptographic Naming & Types
 *   **Quid as First-Class Entity:** Use the term `Quid` (not User or Account) for identities. IDs should be 16-character hex strings derived from the SHA-256 hash of the public key.
-*   **Transaction Typing:** Strictly use `TransactionType` enums (`TRUST`, `IDENTITY`, `TITLE`).
+*   **Transaction Typing:** Strictly use `TransactionType` enums (`TRUST`, `IDENTITY`, `TITLE`, `EVENT`). EVENT transactions are used for immutable event streaming and audit trails.
 *   **Signatures:** Signatures must be Base64 encoded strings in JSON/JS and raw byte arrays in Go.
 
 ### 2. Go: Concurrency & Registry Patterns
