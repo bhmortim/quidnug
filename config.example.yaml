@@ -71,6 +71,22 @@ node_auth_secret: ""
 # Environment variable: REQUIRE_NODE_AUTH (set to "true" to enable)
 require_node_auth: false
 
+# IPFS Integration
+# Enable IPFS for storing large event payloads (exceeding 64KB inline limit)
+# When enabled, the node can pin content to IPFS and retrieve it by CID
+# Environment variable: QUIDNUG_IPFS_ENABLED (set to "true" to enable)
+ipfs_enabled: false
+
+# IPFS gateway URL (API endpoint)
+# This should point to an IPFS node's HTTP API (typically port 5001)
+# Environment variable: QUIDNUG_IPFS_GATEWAY_URL
+ipfs_gateway_url: "http://localhost:5001"
+
+# Timeout for IPFS operations (pin and retrieve)
+# Uses Go duration format: "30s", "1m", etc.
+# Environment variable: QUIDNUG_IPFS_TIMEOUT
+ipfs_timeout: "30s"
+
 # Trust computation cache TTL
 # Cached trust computations expire after this duration
 # Uses Go duration format: "30s", "1m", etc.
