@@ -346,9 +346,9 @@ paths:
         '429':
           description: Rate limit exceeded
 
-  /api/transactions/event:
+  /api/events:
     post:
-      tags: [Transactions, Events]
+      tags: [Events]
       summary: Submit event transaction
       description: |
         Creates an event in a subject's event stream.
@@ -390,7 +390,7 @@ paths:
         '429':
           description: Rate limit exceeded
 
-  /api/events/streams/{subjectId}:
+  /api/streams/{subjectId}:
     get:
       tags: [Events]
       summary: Get event stream metadata
@@ -422,7 +422,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIError'
 
-  /api/events/streams/{subjectId}/events:
+  /api/streams/{subjectId}/events:
     get:
       tags: [Events]
       summary: Get paginated events
@@ -538,6 +538,101 @@ paths:
                 $ref: '#/components/schemas/APIError'
         '503':
           description: IPFS service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/node/domains:
+    get:
+      tags: [Nodes]
+      summary: Get node's supported domains
+      description: Returns the domains this node currently supports
+      operationId: getNodeDomains
+      responses:
+        '200':
+          description: Node domain information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nodeId:
+                    type: string
+                    description: Node's quid ID
+                  domains:
+                    type: array
+                    items:
+                      type: string
+                    description: List of supported domain names
+    post:
+      tags: [Nodes]
+      summary: Update node's supported domains
+      description: Updates the list of domains this node supports
+      operationId: updateNodeDomains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - domains
+              properties:
+                domains:
+                  type: array
+                  items:
+                    type: string
+                  description: List of domain names to support
+      responses:
+        '200':
+          description: Domains updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  domains:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/gossip/domains:
+    post:
+      tags: [Nodes]
+      summary: Receive domain gossip
+      description: |
+        Receives domain gossip from other nodes. This is a node-to-node endpoint
+        used for propagating domain information across the network.
+      operationId: receiveDomainGossip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainGossip'
+      responses:
+        '200':
+          description: Gossip received successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+        '400':
+          description: Invalid gossip message
           content:
             application/json:
               schema:
@@ -1603,6 +1698,32 @@ components:
         code:
           type: string
           description: Error code
+
+    DomainGossip:
+      type: object
+      description: Domain gossip message for node-to-node propagation
+      properties:
+        nodeId:
+          type: string
+          description: Node's quid ID
+        domains:
+          type: array
+          items:
+            type: string
+          description: List of domains the node supports
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp when gossip was created
+        ttl:
+          type: integer
+          description: Time-to-live hop count
+        hopCount:
+          type: integer
+          description: Number of hops this message has traveled
+        messageId:
+          type: string
+          description: Unique message identifier for deduplication
 
     SubjectType:
       type: string
