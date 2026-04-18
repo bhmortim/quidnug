@@ -658,3 +658,45 @@ anchor gossip mechanism (cross-domain coordination is the highest-risk
 part of this design), (b) §7.2 subdomain semantics (do we really want
 `sub.example.com` and `example.com` to be fully independent?), (c)
 §12.2 anchor-gossip suppression acceptable-risk framing.
+
+---
+
+## Implementation status (2026-04-18)
+
+The foundation is landed: per-domain nonce keys (QDP-0001 Phase C),
+`DomainFingerprint` sign/verify/store, `AnchorGossipMessage` with
+full validation, and HTTP submit/query endpoints under `/api/v2/`.
+
+Two points where the implementation deliberately simplifies or
+deviates from the proposal text:
+
+1. **Signable bytes sign `OriginBlock.Hash`, not the full block.**
+   QDP-0003 §9 suggests signing the full gossip envelope. In practice
+   `OriginBlock.Transactions` is a `[]interface{}` that acquires
+   different JSON key orderings depending on whether a given element
+   is a typed wrapper struct (sender side) or a
+   `map[string]interface{}` (after an HTTP round-trip on the
+   receiver). Signing the hash avoids the canonicalization hazard
+   without weakening security — block integrity is independently
+   verified against `calculateBlockHash`.
+
+2. **Gossip is pull/submit, not push.** QDP-0003 §7.3 describes a
+   push-based fingerprint gossip channel colocated with the existing
+   domain gossip (`DomainGossip`). The current implementation
+   exposes fingerprints through `GET /api/v2/domain-fingerprints/
+   {domain}/latest` and accepts inbound fingerprints via `POST
+   /api/v2/domain-fingerprints`. Push gossip is a follow-up
+   optimization.
+
+Still deferred:
+
+- §15.4 "lazy epoch propagation" — proactive home-domain queries on
+  first tx from a long-quiet signer.
+- Out-of-order gossip queueing: a Veto for a pending recovery that
+  hasn't yet been propagated to the target domain will simply fail
+  validation and need retry. A mempool-style retry layer could
+  handle this transparently.
+- Push-based fingerprint gossip (see above).
+- Compact inclusion proofs via a transaction-tree root on Block
+  (QDP-0003 §15.4 sketch). Shipping the full block is fine for
+  anchor traffic volume but could be improved later.

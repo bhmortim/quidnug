@@ -7,6 +7,40 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0003 cross-domain anchor gossip (new)
+
+- **`DomainFingerprint`**: a signed claim by a domain validator that
+  a specific block in that domain was sealed with a given hash and
+  height. Serves as the trust anchor for cross-domain gossip (§7.3).
+  Monotonic storage: older heights don't overwrite newer ones.
+- **`AnchorGossipMessage`**: ships a full origin block + inline
+  fingerprint + producer signature to any node that also cares about
+  the signer. The receiver verifies the full chain (gossip sig →
+  fingerprint sig → block self-hash → tx index → deduplication) before
+  dispatching the anchor through the same apply path as an in-domain
+  Trusted-block anchor. Global-per-signer ledger state (epoch, keys,
+  caps) is updated; domain-scoped nonce counters are NOT (that remains
+  each domain's local consensus concern).
+- **Gossip-signature canonicalization**: signs over `OriginBlock.Hash`
+  rather than the full block contents. `OriginBlock.Transactions` is
+  `[]interface{}`, and JSON round-trips change the shape of its
+  entries from typed wrapper structs to `map[string]interface{}`,
+  which would make signatures un-verifiable after transmission.
+  Signing the hash avoids this entirely.
+- **HTTP endpoints** under `/api/v2/`:
+  - `POST domain-fingerprints` — submit a signed fingerprint.
+  - `GET domain-fingerprints/{domain}/latest` — fetch the stored
+    latest fingerprint for a domain.
+  - `POST anchor-gossip` — submit a cross-domain anchor gossip
+    message. Returns 202 on first acceptance, 200 with `duplicate:
+    true` on replay (so relay retries are idempotent).
+- **Deduplication-first validation**: gossip MessageID is checked
+  before the expensive ECDSA verification. This matters extra when
+  the gossip carries the producer's own rotation: applying the
+  rotation advances the producer's `currentEpoch`, which would make
+  a naive re-verification of the same message fail against the new
+  key. Dedup-first prevents that false-positive failure on replays.
+
 ### QDP-0002 guardian-based recovery (new)
 
 - **Guardian set installation** (`AnchorGuardianSetUpdate`) with full

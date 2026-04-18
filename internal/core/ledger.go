@@ -108,6 +108,20 @@ type NonceLedger struct {
 	// RecoveryReplaced.
 	pendingRecoveries map[string]*PendingRecovery
 
+	// latestFingerprints[domain] is the most recent DomainFingerprint
+	// we've received or produced for each domain. Used by
+	// AnchorGossipMessage validation (QDP-0003 §7.3) to confirm that
+	// an allegedly-cross-domain block is really the one the origin
+	// domain has committed.
+	latestFingerprints map[string]DomainFingerprint
+
+	// seenGossipMessages is a bounded dedup set for cross-domain
+	// anchor gossip (QDP-0003 §6.4). Keyed by MessageID, value is
+	// the unix timestamp at which we first observed the message;
+	// entries older than DomainFingerprintRetention are pruned
+	// opportunistically.
+	seenGossipMessages map[string]int64
+
 	maxNonceGap int64
 }
 
@@ -121,9 +135,11 @@ func NewNonceLedger() *NonceLedger {
 		signerKeys:        make(map[string]map[uint32]string),
 		epochCaps:         make(map[string]map[uint32]int64),
 		frozenEpochs:      make(map[string]map[uint32]bool),
-		guardianSets:      make(map[string]*GuardianSet),
-		pendingRecoveries: make(map[string]*PendingRecovery),
-		maxNonceGap:       DefaultMaxNonceGap,
+		guardianSets:       make(map[string]*GuardianSet),
+		pendingRecoveries:  make(map[string]*PendingRecovery),
+		latestFingerprints: make(map[string]DomainFingerprint),
+		seenGossipMessages: make(map[string]int64),
+		maxNonceGap:        DefaultMaxNonceGap,
 	}
 }
 

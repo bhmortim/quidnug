@@ -48,9 +48,36 @@ func GetBlockSignableData(block Block) []byte {
 	return blockData
 }
 
-// calculateBlockHash calculates the hash for a block
+// calculateBlockHash calculates the hash for a block.
+//
+// Block.Transactions is typed as []interface{}, so json.Marshal
+// produces struct-declaration-order bytes for typed wrapper structs
+// (TrustTransaction, AnchorTransaction, etc.) but alphabetical order
+// for the map[string]interface{} values that result from a JSON
+// round-trip. The hash must be stable across both shapes — otherwise
+// any process that serializes, transmits, and re-hashes a block
+// (cross-node block sync, QDP-0003 anchor gossip, any future replay
+// diagnostic) would compute a different hash for the same logical
+// block.
+//
+// We canonicalize by round-tripping through map[string]interface{}
+// ourselves. The resulting bytes are always alphabetical-order JSON
+// regardless of the input's typed shape. This is a behavior change
+// vs. the pre-canonicalization impl but is internal (no on-wire
+// hash format change — block hashes are stored AND verified with
+// the same function).
 func calculateBlockHash(block Block) string {
-	blockData, _ := json.Marshal(struct {
+	blockData, _ := canonicalBlockBytes(block)
+	hash := sha256.Sum256(blockData)
+	return hex.EncodeToString(hash[:])
+}
+
+// canonicalBlockBytes marshals the block's hashable fields in a form
+// that's stable under JSON round-tripping. See calculateBlockHash for
+// the rationale.
+func canonicalBlockBytes(block Block) ([]byte, error) {
+	// Stage 1: marshal the typed structure.
+	typed, err := json.Marshal(struct {
 		Index        int64
 		Timestamp    int64
 		Transactions []interface{}
@@ -63,10 +90,19 @@ func calculateBlockHash(block Block) string {
 		TrustProof:   block.TrustProof,
 		PrevHash:     block.PrevHash,
 	})
-
-	hash := sha256.Sum256(blockData)
-	return hex.EncodeToString(hash[:])
+	if err != nil {
+		return nil, err
+	}
+	// Stage 2: round-trip through interface{} / map so every sub-
+	// value is normalized to alphabetical key ordering. Re-marshaling
+	// the resulting value produces canonical bytes.
+	var generic interface{}
+	if err := json.Unmarshal(typed, &generic); err != nil {
+		return nil, err
+	}
+	return json.Marshal(generic)
 }
+
 
 // SignData signs data with the node's private key
 func (node *QuidnugNode) SignData(data []byte) ([]byte, error) {

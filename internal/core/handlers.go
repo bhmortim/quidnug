@@ -102,11 +102,13 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	apiRouter := router.PathPrefix("/api").Subrouter()
 	node.registerAPIRoutes(apiRouter)
 
-	// v2 surface: new-protocol endpoints (QDP-0002 guardians). Kept
-	// under /api/v2 so existing v1 clients don't accidentally depend
-	// on them before the protocol work is stabilized.
+	// v2 surface: new-protocol endpoints (QDP-0002 guardians +
+	// QDP-0003 cross-domain gossip). Kept under /api/v2 so existing
+	// v1 clients don't accidentally depend on them before the
+	// protocol work is stabilized.
 	v2Router := router.PathPrefix("/api/v2").Subrouter()
 	node.registerGuardianRoutes(v2Router)
+	node.registerCrossDomainRoutes(v2Router)
 
 	// Apply middleware chain (outermost to innermost processing order):
 	//   RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> SecurityHeaders -> RequestID -> Router
