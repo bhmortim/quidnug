@@ -149,6 +149,15 @@ type Block struct {
 	PrevHash         string            `json:"prevHash"`
 	Hash             string            `json:"hash"`
 	NonceCheckpoints []NonceCheckpoint `json:"nonceCheckpoints,omitempty"`
+
+	// TransactionsRoot (QDP-0010 / H2): root of a binary Merkle
+	// tree over canonical transaction bytes. Empty when the
+	// block was produced under pre-H2 code (omitempty keeps the
+	// wire format backward-compatible). Receivers that observe
+	// the `require_tx_tree_root` fork activation (QDP-0009)
+	// reject blocks with empty root; pre-activation receivers
+	// ignore the field.
+	TransactionsRoot string `json:"transactionsRoot,omitempty"`
 }
 
 // TrustProof implements the proof of trust system

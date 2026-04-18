@@ -609,6 +609,15 @@ func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
 		return BlockInvalid
 	}
 
+	// QDP-0010 / H2: after the `require_tx_tree_root` fork has
+	// been activated on this node, blocks missing
+	// TransactionsRoot are rejected as malformed. Before
+	// activation the field is optional (shadow period).
+	if node.RequireTxTreeRoot && block.TransactionsRoot == "" {
+		blockMissingTxRootRejectedTotal.Inc()
+		return BlockInvalid
+	}
+
 	// Validate all transactions in the block
 	for _, txInterface := range block.Transactions {
 		txJson, _ := json.Marshal(txInterface)

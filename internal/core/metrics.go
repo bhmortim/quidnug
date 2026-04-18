@@ -122,6 +122,20 @@ var (
 		Name: "quidnug_fork_block_activated_total",
 		Help: "Fork-block activations at ForkHeight.",
 	}, []string{"domain", "feature"})
+
+	// QDP-0010 / H2 compact Merkle proofs.
+	merkleProofUsedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "quidnug_merkle_proof_used_total",
+		Help: "Gossip messages verified via Merkle proof rather than full-block walk.",
+	})
+	merkleProofFallbackTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_merkle_proof_fallback_total",
+		Help: "Gossip messages falling back to full-block verification, by reason.",
+	}, []string{"reason"})
+	blockMissingTxRootRejectedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "quidnug_block_missing_tx_root_rejected_total",
+		Help: "Blocks rejected post-fork for empty TransactionsRoot.",
+	})
 )
 
 // RecordBlockGenerated records a block generation event

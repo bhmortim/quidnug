@@ -7,6 +7,39 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0010 compact Merkle proofs (H2, new, soft fork)
+
+- **New Block field** `TransactionsRoot`: SHA-256 binary Merkle
+  root over canonical transaction bytes. Computed at block seal
+  time; omitempty for backward compatibility with pre-H2 blocks.
+- **Leaf canonicalization**: `sha256(canonicalMarshal(tx))` where
+  `canonicalMarshal` applies the QDP-0003 §8.3 map-round-trip
+  pattern. Ensures typed-struct and JSON-unmarshaled leaf hashes
+  match bit-for-bit across the network.
+- **Inclusion proofs**: `MerkleProofFrame` records the sibling
+  hash and its concat side (left/right) at each tree level.
+  Bitcoin-style odd-tail duplication for non-power-of-2 block
+  sizes.
+- **AnchorGossipMessage.MerkleProof**: optional field. When
+  populated, receivers verify inclusion via the proof and skip
+  full-block reconstruction. Pre-H2 messages and shadow-period
+  producers without proofs fall back to full-block
+  verification.
+- **Proof length cap**: `ceil(log2(MaxTxsPerBlock=4096)) + 1`
+  frames. Longer proofs rejected as amplification attempts.
+- **Block validation hook**: when the `require_tx_tree_root`
+  feature has been activated via QDP-0009 fork, blocks with
+  empty `TransactionsRoot` are rejected as malformed. Pre-fork
+  activation the field is optional (shadow period).
+- **Metrics**: `merkle_proof_used_total`,
+  `merkle_proof_fallback_total{reason}`,
+  `merkle_proof_verify_fail_total{reason}`,
+  `block_missing_tx_root_rejected_total`.
+- **Rollout**: soft-fork via QDP-0009. Stage 1 populates the
+  field (shadow). Stage 2 attaches proofs to gossip. Stage 3
+  activates `require_tx_tree_root` at a coordinated ForkHeight;
+  receivers enforce the field from that block on.
+
 ### QDP-0009 fork-block migration trigger (H5, new)
 
 - **New AnchorKind** `AnchorForkBlock` (value 9) + transaction

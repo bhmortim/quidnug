@@ -200,6 +200,14 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	// see GetBlockSignableData for the rationale.
 	newBlock.NonceCheckpoints = computeNonceCheckpoints(domainTxs, trustDomain)
 
+	// QDP-0010 / H2: compute the Merkle root over canonical tx
+	// bytes. Populated always (post-H2 code emits the field
+	// during shadow period; old receivers ignore omitempty; new
+	// receivers post-`require_tx_tree_root` fork require it).
+	if root, err := MerkleRoot(newBlock.Transactions); err == nil {
+		newBlock.TransactionsRoot = root
+	}
+
 	// Sign the full block content (not just PrevHash) to prevent transaction tampering
 	signableData := GetBlockSignableData(newBlock)
 	signature, err := node.SignData(signableData)

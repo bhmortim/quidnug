@@ -48,6 +48,17 @@ type AnchorGossipMessage struct {
 	Timestamp          int64  `json:"timestamp"`
 	GossipProducerQuid string `json:"gossipProducerQuid"`
 	GossipSignature    string `json:"gossipSignature"`
+
+	// MerkleProof (QDP-0010 / H2): optional inclusion proof
+	// for the anchor tx against OriginBlock.TransactionsRoot.
+	// When present, receivers verify inclusion via the proof
+	// and can skip re-deserializing the other transactions.
+	// When absent, receivers fall back to full-block
+	// verification. Not covered by GossipSignature because
+	// the proof is derived from OriginBlock (which IS bound
+	// via BlockHash). A tampered proof produces an incorrect
+	// root and fails verification deterministically.
+	MerkleProof []MerkleProofFrame `json:"merkleProof,omitempty"`
 }
 
 const AnchorGossipSchemaVersion = 1
@@ -204,6 +215,21 @@ func ValidateAnchorGossip(l *NonceLedger, m AnchorGossipMessage, now time.Time) 
 	}
 	if kind == "" {
 		return ErrGossipTxNotAnchor
+	}
+
+	// 5. QDP-0010 / H2: if the message carries a MerkleProof
+	//    AND the origin block has a populated TransactionsRoot,
+	//    verify inclusion. A failed proof rejects. If either is
+	//    absent we skip — pre-H2 blocks and shadow-period
+	//    producers don't necessarily include proofs. The
+	//    `require_tx_tree_root` fork activation path (QDP-0009)
+	//    separately rejects blocks with empty root.
+	if len(m.MerkleProof) > 0 && m.OriginBlock.TransactionsRoot != "" {
+		anchorTx := m.OriginBlock.Transactions[m.AnchorTxIndex]
+		if err := VerifyTransactionInclusion(anchorTx, m.MerkleProof, m.OriginBlock.TransactionsRoot); err != nil {
+			return fmt.Errorf("anchor-gossip: merkle proof: %w", err)
+		}
+		merkleProofUsedTotal.Inc()
 	}
 
 	return nil

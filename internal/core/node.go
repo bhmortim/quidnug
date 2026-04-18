@@ -186,6 +186,12 @@ type QuidnugNode struct {
 	// activation at ForkHeight flips the corresponding node
 	// flag deterministically across the network.
 	forks *forkRegistry
+
+	// QDP-0010 / H2: when true (activated via QDP-0009 fork
+	// for `require_tx_tree_root`), incoming blocks with empty
+	// TransactionsRoot are rejected. Before activation the
+	// field is optional and producers emit it in shadow mode.
+	RequireTxTreeRoot bool
 }
 
 // Run starts the Quidnug node's main loop: loads configuration, initializes

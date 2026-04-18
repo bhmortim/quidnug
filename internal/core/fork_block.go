@@ -403,8 +403,10 @@ func (node *QuidnugNode) activateFeature(feature string) {
 		// fires regardless so tooling can still observe the
 		// activation event.
 	case "require_tx_tree_root":
-		// H2 will wire this to enforce TransactionsRoot on
-		// incoming blocks. For now it's a declared intent only.
+		// QDP-0010 / H2: from this activation, incoming blocks
+		// MUST carry a non-empty TransactionsRoot. ValidateBlock
+		// consults this flag and rejects on empty root.
+		node.RequireTxTreeRoot = true
 	default:
 		logger.Warn("activateFeature: unknown feature", "feature", feature)
 	}

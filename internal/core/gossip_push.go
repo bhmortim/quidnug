@@ -514,6 +514,15 @@ func (node *QuidnugNode) maybePushAnchorFromBlock(block Block, txIdx int) {
 		Timestamp:          time.Now().Unix(),
 		GossipProducerQuid: node.NodeID,
 	}
+	// QDP-0010 / H2: attach a compact inclusion proof when the
+	// block has a TransactionsRoot. Receivers prefer proof-based
+	// verification (skips re-marshal of other txs) and fall back
+	// to full-block otherwise.
+	if block.TransactionsRoot != "" {
+		if proof, err := MerkleProof(block.Transactions, txIdx); err == nil {
+			payload.MerkleProof = proof
+		}
+	}
 	signed, err := node.SignAnchorGossip(payload)
 	if err != nil {
 		logger.Error("gossip-push: sign anchor failed", "error", err)
