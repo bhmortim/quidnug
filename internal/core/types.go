@@ -9,6 +9,11 @@ const (
 	TxTypeTitle    TransactionType = "TITLE"
 	TxTypeEvent    TransactionType = "EVENT"
 	TxTypeGeneric  TransactionType = "GENERIC"
+	// TxTypeAnchor wraps a NonceAnchor inside the block's transaction
+	// list (QDP-0001 §6.5). Anchors are not "transactions" in the
+	// transfer-of-value sense — the wrapper just lets them share the
+	// block-inclusion machinery.
+	TxTypeAnchor TransactionType = "ANCHOR"
 )
 
 // Trust computation resource limits
@@ -91,6 +96,15 @@ type EventTransaction struct {
 	Payload         map[string]interface{} `json:"payload,omitempty"`
 	PayloadCID      string                 `json:"payloadCid,omitempty"`
 	PreviousEventID string                 `json:"previousEventId,omitempty"`
+}
+
+// AnchorTransaction carries a NonceAnchor through the block transaction
+// envelope. Signature-wise the anchor is self-contained: the Signature
+// inside the embedded NonceAnchor is what matters, not the envelope's
+// BaseTransaction.Signature (which should remain empty for anchors).
+type AnchorTransaction struct {
+	BaseTransaction
+	Anchor NonceAnchor `json:"anchor"`
 }
 
 // EventStream tracks the state of an event stream for a subject

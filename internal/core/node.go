@@ -370,6 +370,13 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 		},
 	}
 
+	// Seed the node's own epoch-0 signing key into the ledger so that a
+	// self-rotation anchor can be verified. Other signers' keys are
+	// seeded as their identity transactions land (see
+	// updateIdentityRegistry) or via explicit SetSignerKey calls during
+	// migration from a snapshot.
+	node.NonceLedger.SetSignerKey(nodeID, 0, publicKeyHex)
+
 	// Initialize default trust domain with this node's public key
 	node.TrustDomains["default"] = TrustDomain{
 		Name:                "default",

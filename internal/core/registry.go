@@ -169,6 +169,14 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateEventStreamRegistry(tx)
+
+		case TxTypeAnchor:
+			var tx AnchorTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal anchor transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyAnchorFromBlock(tx.Anchor, block)
 		}
 	}
 }
@@ -207,10 +215,19 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 // updateIdentityRegistry updates the identity registry with an identity transaction
 func (node *QuidnugNode) updateIdentityRegistry(tx IdentityTransaction) {
 	node.IdentityRegistryMutex.Lock()
-	defer node.IdentityRegistryMutex.Unlock()
-
-	// Add or update identity
 	node.IdentityRegistry[tx.QuidID] = tx
+	node.IdentityRegistryMutex.Unlock()
+
+	// Seed the nonce ledger with the signer's epoch-0 public key so
+	// future anchors from this signer can be signature-verified. Only
+	// the first identity transaction for a quid establishes the key;
+	// later ones (UpdateNonce > 0) don't change it without a rotation
+	// anchor.
+	if node.NonceLedger != nil && tx.QuidID != "" && tx.PublicKey != "" {
+		if _, seen := node.NonceLedger.GetSignerKey(tx.QuidID, 0); !seen {
+			node.NonceLedger.SetSignerKey(tx.QuidID, 0, tx.PublicKey)
+		}
+	}
 
 	logger.Debug("Updated identity registry", "quidId", tx.QuidID, "name", tx.Name)
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -40,6 +41,8 @@ var (
 	ErrNonceEpochStale    = errors.New("nonce: transaction key-epoch is stale")
 	ErrNonceEpochUnknown  = errors.New("nonce: transaction key-epoch exceeds current")
 	ErrNonceInvalidInput  = errors.New("nonce: invalid input")
+	ErrNonceEpochFrozen   = errors.New("nonce: transaction key-epoch has been invalidated")
+	ErrNonceEpochCapped   = errors.New("nonce: transaction exceeds epoch cap")
 )
 
 // DefaultMaxNonceGap is the maximum advance any single transaction may
@@ -71,13 +74,28 @@ type NonceLedger struct {
 	tentative map[NonceKey]int64
 
 	// currentEpoch[quid] is the active key-epoch for a signer's
-	// identity. Epoch advancement is a future-extension hook; for the
-	// Phase-0 / feature-flagged deployment this is always zero.
+	// identity. Advanced by AnchorRotation via ApplyAnchor.
 	currentEpoch map[string]uint32
 
 	// lastAnchorNonce[quid] is the strictly-monotonic anchor-nonce for
-	// the signer. Future work; populated once anchors land.
+	// the signer, advanced by any applied anchor.
 	lastAnchorNonce map[string]int64
+
+	// signerKeys[quid][epoch] is the hex-encoded P-256 public key that
+	// the signer has authorized for a given epoch. Populated by
+	// SetSignerKey (from identity records and anchor processing).
+	// Consulted by ValidateAnchor to verify anchor signatures.
+	signerKeys map[string]map[uint32]string
+
+	// epochCaps[quid][epoch] is the maximum nonce accepted for the
+	// given (signer, epoch). Set by AnchorEpochCap/Invalidation/
+	// Rotation's MaxAcceptedOldNonce. int64 zero value means "no cap".
+	epochCaps map[string]map[uint32]int64
+
+	// frozenEpochs[quid][epoch] records an AnchorInvalidation. When
+	// present, no new transaction at that epoch is admitted regardless
+	// of the cap.
+	frozenEpochs map[string]map[uint32]bool
 
 	maxNonceGap int64
 }
@@ -89,6 +107,9 @@ func NewNonceLedger() *NonceLedger {
 		tentative:       make(map[NonceKey]int64),
 		currentEpoch:    make(map[string]uint32),
 		lastAnchorNonce: make(map[string]int64),
+		signerKeys:      make(map[string]map[uint32]string),
+		epochCaps:       make(map[string]map[uint32]int64),
+		frozenEpochs:    make(map[string]map[uint32]bool),
 		maxNonceGap:     DefaultMaxNonceGap,
 	}
 }
@@ -162,6 +183,16 @@ func (l *NonceLedger) Admit(key NonceKey, nonce int64) error {
 		return ErrNonceEpochUnknown
 	case !hasEpoch && key.Epoch != 0:
 		return ErrNonceEpochUnknown
+	}
+
+	// Anchor-imposed limits for this epoch.
+	if m, ok := l.frozenEpochs[key.Quid]; ok && m[key.Epoch] {
+		return ErrNonceEpochFrozen
+	}
+	if m, ok := l.epochCaps[key.Quid]; ok {
+		if cap := m[key.Epoch]; cap > 0 && nonce > cap {
+			return ErrNonceEpochCapped
+		}
 	}
 
 	if accepted, ok := l.accepted[key]; ok && nonce <= accepted {
@@ -298,7 +329,139 @@ func nonceRejectionReason(err error) string {
 		return "epoch_unknown"
 	case errors.Is(err, ErrNonceInvalidInput):
 		return "invalid_input"
+	case errors.Is(err, ErrNonceEpochFrozen):
+		return "epoch_frozen"
+	case errors.Is(err, ErrNonceEpochCapped):
+		return "epoch_capped"
 	default:
 		return "other"
 	}
+}
+
+// ----- Anchor state accessors ----------------------------------------------
+
+// SetSignerKey records the hex-encoded P-256 public key authorized for
+// (quid, epoch). Safe to call multiple times with the same value; a
+// different value for the same (quid, epoch) silently overwrites — the
+// caller is responsible for anchor-driven invariants, not this.
+func (l *NonceLedger) SetSignerKey(quid string, epoch uint32, pubkeyHex string) {
+	if quid == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, ok := l.signerKeys[quid]; !ok {
+		l.signerKeys[quid] = make(map[uint32]string)
+	}
+	l.signerKeys[quid][epoch] = pubkeyHex
+}
+
+// GetSignerKey returns the hex-encoded public key recorded for
+// (quid, epoch), or ("", false) if none.
+func (l *NonceLedger) GetSignerKey(quid string, epoch uint32) (string, bool) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if m, ok := l.signerKeys[quid]; ok {
+		k, ok := m[epoch]
+		return k, ok
+	}
+	return "", false
+}
+
+// LastAnchorNonce returns the strictly-monotonic anchor-nonce counter
+// for a signer, or 0 if no anchor has applied to them.
+func (l *NonceLedger) LastAnchorNonce(quid string) int64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.lastAnchorNonce[quid]
+}
+
+// EpochCap returns the maximum nonce allowed for (quid, epoch). A
+// return of 0 means no cap has been applied; Admit treats that as
+// "unlimited except by MaxNonceGap."
+func (l *NonceLedger) EpochCap(quid string, epoch uint32) int64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if m, ok := l.epochCaps[quid]; ok {
+		return m[epoch]
+	}
+	return 0
+}
+
+// IsEpochInvalidated returns true if an AnchorInvalidation has been
+// applied to (quid, epoch).
+func (l *NonceLedger) IsEpochInvalidated(quid string, epoch uint32) bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	if m, ok := l.frozenEpochs[quid]; ok {
+		return m[epoch]
+	}
+	return false
+}
+
+// ApplyAnchor installs an anchor's effects into the ledger. The anchor
+// must already have been accepted into a Trusted block and validated
+// with ValidateAnchor. Returns ErrNonceNotMonotonic if the anchor-nonce
+// check has slipped through somehow; otherwise nil.
+//
+// Effects by kind:
+//
+//   - Rotation: currentEpoch[quid] = ToEpoch; signerKeys[quid][ToEpoch] =
+//     NewPublicKey; epochCaps[quid][FromEpoch] = MaxAcceptedOldNonce.
+//     lastAnchorNonce advanced.
+//   - Invalidation: frozenEpochs[quid][FromEpoch] = true;
+//     epochCaps[quid][FromEpoch] = MaxAcceptedOldNonce. lastAnchorNonce
+//     advanced.
+//   - EpochCap: epochCaps[quid][FromEpoch] = MaxAcceptedOldNonce.
+//     lastAnchorNonce advanced.
+func (l *NonceLedger) ApplyAnchor(a NonceAnchor) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if a.SignerQuid == "" {
+		return ErrNonceInvalidInput
+	}
+	if a.AnchorNonce <= l.lastAnchorNonce[a.SignerQuid] {
+		return ErrNonceNotMonotonic
+	}
+
+	switch a.Kind {
+	case AnchorRotation:
+		l.currentEpoch[a.SignerQuid] = a.ToEpoch
+		if _, ok := l.signerKeys[a.SignerQuid]; !ok {
+			l.signerKeys[a.SignerQuid] = make(map[uint32]string)
+		}
+		l.signerKeys[a.SignerQuid][a.ToEpoch] = a.NewPublicKey
+
+		if a.MaxAcceptedOldNonce > 0 {
+			if _, ok := l.epochCaps[a.SignerQuid]; !ok {
+				l.epochCaps[a.SignerQuid] = make(map[uint32]int64)
+			}
+			l.epochCaps[a.SignerQuid][a.FromEpoch] = a.MaxAcceptedOldNonce
+		}
+	case AnchorInvalidation:
+		if _, ok := l.frozenEpochs[a.SignerQuid]; !ok {
+			l.frozenEpochs[a.SignerQuid] = make(map[uint32]bool)
+		}
+		l.frozenEpochs[a.SignerQuid][a.FromEpoch] = true
+
+		if _, ok := l.epochCaps[a.SignerQuid]; !ok {
+			l.epochCaps[a.SignerQuid] = make(map[uint32]int64)
+		}
+		if a.MaxAcceptedOldNonce > 0 {
+			l.epochCaps[a.SignerQuid][a.FromEpoch] = a.MaxAcceptedOldNonce
+		}
+	case AnchorEpochCap:
+		if _, ok := l.epochCaps[a.SignerQuid]; !ok {
+			l.epochCaps[a.SignerQuid] = make(map[uint32]int64)
+		}
+		if a.MaxAcceptedOldNonce > 0 {
+			l.epochCaps[a.SignerQuid][a.FromEpoch] = a.MaxAcceptedOldNonce
+		}
+	default:
+		return fmt.Errorf("ApplyAnchor: unknown kind %d", a.Kind)
+	}
+
+	l.lastAnchorNonce[a.SignerQuid] = a.AnchorNonce
+	return nil
 }
