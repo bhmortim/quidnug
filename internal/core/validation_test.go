@@ -97,15 +97,16 @@ func TestValidateTrustProof_RelationalTrustRequired(t *testing.T) {
 		ValidatorSigs: []string{"somesignature"},
 	}
 
-	// No trust relationship exists - should fail
+	// No trust relationship exists - should fail. This populates the
+	// trust cache with a zero-trust entry for (node, validator).
 	if node.ValidateTrustProof(proof) {
 		t.Error("Expected trust proof to be invalid when no trust relationship exists")
 	}
 
-	// Add trust relationship: this node trusts the validator with 0.6
-	node.TrustRegistry[node.NodeID] = map[string]float64{
-		validatorID: 0.6,
-	}
+	// Add trust relationship via setTestTrust, which also invalidates
+	// the trust cache; a direct TrustRegistry write would leave the
+	// stale zero-trust entry in place and break the next assertion.
+	setTestTrust(node, node.NodeID, validatorID, 0.6)
 
 	// Now should pass (0.6 >= 0.5 threshold)
 	if !node.ValidateTrustProof(proof) {
@@ -1335,10 +1336,9 @@ func TestReEvaluateTentativeBlocks_Promotion(t *testing.T) {
 	}
 	receiverNode.Blockchain = validatorNode.Blockchain
 
-	// Start with tentative trust
-	receiverNode.TrustRegistry[receiverNode.NodeID] = map[string]float64{
-		validatorNode.NodeID: 0.5, // Below 0.8 threshold
-	}
+	// Start with tentative trust (below the 0.8 threshold so the first
+	// block is classified as Tentative, not Trusted).
+	setTestTrust(receiverNode, receiverNode.NodeID, validatorNode.NodeID, 0.5)
 
 	block := Block{
 		Index:        1,
@@ -1364,8 +1364,10 @@ func TestReEvaluateTentativeBlocks_Promotion(t *testing.T) {
 		t.Fatalf("Expected 1 tentative block, got %d", len(tentative))
 	}
 
-	// Increase trust to meet threshold
-	receiverNode.TrustRegistry[receiverNode.NodeID][validatorNode.NodeID] = 0.9
+	// Raise trust above the threshold — setTestTrust invalidates the
+	// cache so ReEvaluateTentativeBlocks sees the new value rather
+	// than the stale 0.5 it cached on the first ReceiveBlock call.
+	setTestTrust(receiverNode, receiverNode.NodeID, validatorNode.NodeID, 0.9)
 
 	// Re-evaluate
 	err := receiverNode.ReEvaluateTentativeBlocks("testdomain")

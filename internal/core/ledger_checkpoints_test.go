@@ -1,3 +1,21 @@
+// Package core — ledger_checkpoints_test.go
+//
+// Methodology
+// -----------
+// Verifies computeNonceCheckpoints (QDP-0001 §6.3) has the three
+// properties block-sealing depends on:
+//
+//   1. It is deterministic: two honest producers given the same
+//      logical transaction set must produce byte-identical
+//      checkpoints so their block hashes match. We test this by
+//      shuffling input order and comparing outputs element-by-
+//      element.
+//   2. It groups by signer (Truster) and takes the max nonce per
+//      signer — any other aggregation would allow partial-order
+//      replay windows.
+//   3. It tolerates degenerate inputs (nil, empty slice, non-trust
+//      tx types, empty signer, non-positive nonce) without panicking
+//      or emitting junk entries.
 package core
 
 import "testing"

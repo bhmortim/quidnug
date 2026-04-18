@@ -10,16 +10,24 @@ import (
 )
 
 func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error) {
-	// Set timestamp if not set
-	if tx.Timestamp == 0 {
+	// Auto-fill of Timestamp / Type / Nonce is a test and server-side
+	// convenience. If the transaction is already signed, these fields
+	// are part of the signable data and mutating them would silently
+	// invalidate the signature — so we leave signed transactions
+	// exactly as the client provided them. An unsigned tx may still be
+	// coming from an internal caller or a pre-signing pipeline; we
+	// help it out.
+	signed := tx.Signature != ""
+
+	if !signed && tx.Timestamp == 0 {
 		tx.Timestamp = time.Now().Unix()
 	}
-
-	// Set type
-	tx.Type = TxTypeTrust
+	if !signed {
+		tx.Type = TxTypeTrust
+	}
 
 	// Set nonce if not provided (use current highest nonce + 1 for this truster-trustee pair)
-	if tx.Nonce == 0 {
+	if !signed && tx.Nonce == 0 {
 		node.TrustRegistryMutex.RLock()
 		currentNonce := int64(0)
 		if trusterNonces, exists := node.TrustNonceRegistry[tx.Truster]; exists {
@@ -31,8 +39,12 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 		tx.Nonce = currentNonce + 1
 	}
 
-	// Generate transaction ID if not present
-	if tx.ID == "" {
+	// Generate transaction ID if not present. Same signed/unsigned
+	// rationale as Timestamp/Type/Nonce above: mutating the ID on a
+	// signed transaction would silently break signature verification,
+	// because ValidateTrustTransaction re-marshals the struct to check
+	// the signature.
+	if !signed && tx.ID == "" {
 		txData, _ := json.Marshal(struct {
 			Truster     string
 			Trustee     string

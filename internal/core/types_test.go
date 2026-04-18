@@ -1,3 +1,23 @@
+// Package core — types_test.go
+//
+// Methodology
+// -----------
+// types.go is mostly data structure declarations — nothing to test
+// in the traditional sense. But the declarations carry invariants
+// other code depends on, and a regression here would silently break
+// the rest of the system. These tests guard those invariants:
+//
+//   * TransactionType string constants match their wire JSON values.
+//     Clients produce these strings; a typo breaks compatibility.
+//   * BlockAcceptance iota ordering (Trusted < Tentative < Untrusted
+//     < Invalid). Comparison logic elsewhere encodes this ordering
+//     implicitly — flipping it would silently change behavior.
+//   * JSON round-trip for BaseTransaction/TrustTransaction to catch
+//     field-tag regressions.
+//   * OwnershipStake intentionally does NOT normalize percentages —
+//     callers (TitleTransaction validation) are responsible. The
+//     test pins this contract so a future "helpful" normalization
+//     doesn't silently change behavior.
 package core
 
 import (

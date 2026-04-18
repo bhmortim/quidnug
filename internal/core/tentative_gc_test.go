@@ -1,3 +1,22 @@
+// Package core — tentative_gc_test.go
+//
+// Methodology
+// -----------
+// Tests the synchronous pruneExpiredTentativeBlocks function — the
+// long-running runTentativeBlockGC goroutine is just a time-ticker
+// around it, so unit-testing the prune function covers the
+// interesting logic without timing flakes.
+//
+// Invariants checked:
+//   * Age-based eviction: blocks older than maxAge are removed, newer
+//     ones stay.
+//   * Empty domain keys are deleted (no phantom empty slices left
+//     behind to bloat the map).
+//   * Nonce reservations held by pruned blocks are released from the
+//     ledger's tentative map, but never below the accepted floor —
+//     ReleaseTentative's clamp-to-accepted behavior is verified on a
+//     scenario where accepted=10, tentative=15, and the pruned block
+//     held the 15 reservation. Post-prune tentative must clamp to 10.
 package core
 
 import (

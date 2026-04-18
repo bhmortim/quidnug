@@ -41,25 +41,23 @@ func (m *mockIPFSClient) IsAvailable() bool {
 	return m.available
 }
 
+// setupTestRouter builds the same router the real server uses. Tests
+// previously listed routes by hand here, which caused drift every time
+// a new endpoint was added — the /node/domains and /gossip/domains
+// endpoints, among others, were missing, which is why handler tests
+// that hit them returned 404. Delegating to registerAPIRoutes keeps
+// the test surface and the production surface strictly in sync.
+//
+// Both the legacy `/api` prefix and the versioned `/api/v1` prefix are
+// mounted to match StartServerWithConfig in handlers.go.
+//
+// Middleware (rate limiting, security headers, etc.) is deliberately
+// omitted — handler tests exercise handler logic, not middleware,
+// which is covered in middleware_test.go.
 func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router := mux.NewRouter()
-	router.HandleFunc("/api/health", node.HealthCheckHandler).Methods("GET")
-	router.HandleFunc("/api/info", node.GetInfoHandler).Methods("GET")
-	router.HandleFunc("/api/quids", node.CreateQuidHandler).Methods("POST")
-	router.HandleFunc("/api/trust/query", node.RelationalTrustQueryHandler).Methods("POST")
-	router.HandleFunc("/api/trust/edges/{quidId}", node.GetTrustEdgesHandler).Methods("GET")
-	router.HandleFunc("/api/trust/{observer}/{target}", node.GetTrustHandler).Methods("GET")
-	router.HandleFunc("/api/identity/{quidId}", node.GetIdentityHandler).Methods("GET")
-	router.HandleFunc("/api/title/{assetId}", node.GetTitleHandler).Methods("GET")
-	router.HandleFunc("/api/nodes", node.GetNodesHandler).Methods("GET")
-	router.HandleFunc("/api/blocks", node.GetBlocksHandler).Methods("GET")
-	router.HandleFunc("/api/blocks/tentative/{domain}", node.GetTentativeBlocksHandler).Methods("GET")
-	router.HandleFunc("/api/domains", node.GetDomainsHandler).Methods("GET")
-	router.HandleFunc("/api/events", node.CreateEventTransactionHandler).Methods("POST")
-	router.HandleFunc("/api/streams/{subjectId}", node.GetEventStreamHandler).Methods("GET")
-	router.HandleFunc("/api/streams/{subjectId}/events", node.GetStreamEventsHandler).Methods("GET")
-	router.HandleFunc("/api/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
-	router.HandleFunc("/api/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
+	node.registerAPIRoutes(router.PathPrefix("/api/v1").Subrouter())
+	node.registerAPIRoutes(router.PathPrefix("/api").Subrouter())
 	return router
 }
 

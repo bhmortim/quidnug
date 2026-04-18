@@ -1,3 +1,27 @@
+// Package core — ledger_test.go
+//
+// Methodology
+// -----------
+// Exercises the NonceLedger type (QDP-0001 §6.1.2). Tests are grouped
+// into four stanzas reflecting the ledger's public surface:
+//
+//   1. Admit happy paths     — fresh signer, monotonic sequence,
+//                              independence across (quid, domain).
+//   2. Admit rejection paths — each error class surfaced exactly once
+//                              (replay, reservation, gap, invalid).
+//   3. Tentative lifecycle   — Reserve/Release/CommitAccepted state
+//                              transitions + checkpoint application.
+//   4. Epoch semantics       — ensures Admit honors rotation state.
+//
+// Concurrency is exercised by a single race test that fans 100
+// goroutines through Admit on the same key. Go's race detector (run
+// in CI via `go test -race`) is the primary line of defense against
+// ledger data races; the test here just exercises the code path.
+//
+// The ledger's authoritative state is reconstructible from the
+// blockchain, so tests construct state by direct method calls rather
+// than replaying blocks — block-level flow is covered by the
+// anchor_integration_test and by the upstream block_operations tests.
 package core
 
 import (

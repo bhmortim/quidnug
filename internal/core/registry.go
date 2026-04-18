@@ -28,13 +28,19 @@ func NewTrustCache(ttl time.Duration) *TrustCache {
 	}
 }
 
-// Get retrieves a cached trust computation result
+// Get retrieves a cached trust computation result.
+//
+// ExpiresAt is stored as a UnixNano value so sub-second TTLs work
+// correctly. An older implementation used Unix() seconds, which
+// silently truncated any TTL < 1s to zero — every entry expired at
+// its store-second boundary, and the cache was effectively useless
+// for short-lived testing (which is most of the cache tests).
 func (c *TrustCache) Get(key string) (float64, []string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	entry, exists := c.entries[key]
-	if !exists || time.Now().Unix() > entry.ExpiresAt {
+	if !exists || time.Now().UnixNano() > entry.ExpiresAt {
 		return 0, nil, false
 	}
 	// Return a copy of the path to prevent mutation
@@ -55,17 +61,18 @@ func (c *TrustCache) Set(key string, trustLevel float64, trustPath []string) {
 	c.entries[key] = TrustCacheEntry{
 		TrustLevel: trustLevel,
 		TrustPath:  pathCopy,
-		ExpiresAt:  time.Now().Add(c.ttl).Unix(),
+		ExpiresAt:  time.Now().Add(c.ttl).UnixNano(),
 	}
 }
 
-// GetEnhanced retrieves a cached enhanced trust computation result
+// GetEnhanced retrieves a cached enhanced trust computation result.
+// See Get for the rationale behind UnixNano precision.
 func (c *TrustCache) GetEnhanced(key string) (EnhancedTrustResult, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	entry, exists := c.enhancedEntries[key]
-	if !exists || time.Now().Unix() > entry.ExpiresAt {
+	if !exists || time.Now().UnixNano() > entry.ExpiresAt {
 		return EnhancedTrustResult{}, false
 	}
 	// Return a copy to prevent mutation
@@ -91,7 +98,7 @@ func (c *TrustCache) SetEnhanced(key string, result EnhancedTrustResult) {
 
 	c.enhancedEntries[key] = EnhancedTrustCacheEntry{
 		Result:    resultCopy,
-		ExpiresAt: time.Now().Add(c.ttl).Unix(),
+		ExpiresAt: time.Now().Add(c.ttl).UnixNano(),
 	}
 }
 

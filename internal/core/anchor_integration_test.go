@@ -1,3 +1,25 @@
+// Package core — anchor_integration_test.go
+//
+// Methodology
+// -----------
+// Unlike anchor_test.go which isolates ValidateAnchor and
+// ApplyAnchor, these tests exercise the END-TO-END flow: anchor
+// wrapped in an AnchorTransaction, inserted into a block's
+// transaction list, consumed by processBlockTransactions, resulting
+// in a ledger state change.
+//
+// This is the path a real anchor takes through the system once its
+// containing block reaches the Trusted tier. The integration test is
+// intentionally minimal — it does NOT sign the containing block or
+// run it through ReceiveBlock; that's covered elsewhere. It calls
+// processBlockTransactions directly to focus on the anchor-dispatch
+// logic in registry.go.
+//
+// Rejection path test (RejectsBadSignature) ensures that the
+// defense-in-depth re-validation in applyAnchorFromBlock catches a
+// malformed anchor even if it somehow made it into a Trusted block —
+// we want an audit trail (the log warning) rather than silent state
+// corruption.
 package core
 
 import (

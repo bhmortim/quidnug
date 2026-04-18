@@ -1,3 +1,25 @@
+// Package core — ledger_migration_test.go
+//
+// Methodology
+// -----------
+// MigrateLedgerFromBlocks is load-bearing for QDP-0001's hard-fork
+// rollout (§10.2.1): two honest nodes performing the one-shot
+// migration MUST arrive at byte-identical ledgers, or the network
+// diverges. These tests therefore focus on determinism and on the
+// subset of inputs the migration function must tolerate:
+//
+//   * Trust / Identity / Event transactions (each with their legacy
+//     per-type nonce field).
+//   * Both value and pointer variants (the Go decoder sometimes
+//     emits one, sometimes the other).
+//   * Multiple blocks where a later block's lower nonce must not
+//     rewind the accepted counter.
+//   * Degenerate inputs (empty signer, zero/negative nonce) are
+//     silently dropped rather than erroring.
+//
+// A dedicated Deterministic test runs the migration twice on the same
+// input and compares snapshots via reflect.DeepEqual — the bar for
+// consensus correctness.
 package core
 
 import (

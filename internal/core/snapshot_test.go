@@ -1,3 +1,27 @@
+// Package core — snapshot_test.go
+//
+// Methodology
+// -----------
+// Exercises NonceSnapshot production and verification (QDP-0001 §7):
+//
+//   * ProduceSnapshot correctness: empty ledger yields empty entries
+//     (not nil — wire compat), entries are filtered by domain, and
+//     output is deterministically sorted so two producers at the
+//     same height produce byte-identical snapshots. Determinism is
+//     the load-bearing property for the fresh-join K-of-K agreement
+//     protocol we haven't implemented yet; breaking it now would
+//     poison that future work.
+//
+//   * Sign/verify round-trip: snapshot signed by a real node's key
+//     passes VerifySnapshot against the ledger's recorded public
+//     key for that node.
+//
+//   * Rejection paths: tampered entries (signature mismatch), wrong
+//     schema version, unknown producer.
+//
+// Tests use the production SignData / VerifySignature helpers so any
+// canonicalization drift between producer and verifier will show up
+// here rather than in a future integration debugging session.
 package core
 
 import (

@@ -239,7 +239,21 @@ func (node *QuidnugNode) AddBlock(block Block) error {
 
 // ReceiveBlock processes an incoming block with tiered acceptance.
 // Extracts trust graph data from all cryptographically valid blocks.
+//
+// The policy check (IsDomainSupported) runs before the cryptographic
+// check. Rationale: a block from a domain this node has no business
+// validating is returned as BlockUntrusted so operators can
+// distinguish "foreign block" from "malformed block" in logs and
+// metrics. The cryptographic test would also fail on an unknown
+// domain (validator public keys wouldn't resolve), but BlockInvalid
+// incorrectly suggests the block is corrupt — policy-reject first.
 func (node *QuidnugNode) ReceiveBlock(block Block) (BlockAcceptance, error) {
+	// 0. Domain policy check — cheap, conservative, happens first.
+	domain := block.TrustProof.TrustDomain
+	if !node.IsDomainSupported(domain) {
+		return BlockUntrusted, fmt.Errorf("block rejected: domain %q is not supported by this node", domain)
+	}
+
 	// 1. Cryptographic validation
 	if !node.ValidateBlockCryptographic(block) {
 		return BlockInvalid, fmt.Errorf("block failed cryptographic validation")

@@ -27,13 +27,13 @@ const (
 type TrustCacheEntry struct {
 	TrustLevel float64
 	TrustPath  []string
-	ExpiresAt  int64 // Unix timestamp for expiration
+	ExpiresAt  int64 // UnixNano timestamp for expiration; nanosecond precision is required so sub-second TTLs work
 }
 
 // EnhancedTrustCacheEntry holds a cached enhanced trust computation result
 type EnhancedTrustCacheEntry struct {
 	Result    EnhancedTrustResult
-	ExpiresAt int64 // Unix timestamp for expiration
+	ExpiresAt int64 // UnixNano timestamp for expiration
 }
 
 // Base Transaction represents common fields for all transaction types

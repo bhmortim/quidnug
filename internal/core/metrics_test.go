@@ -1,3 +1,26 @@
+// Package core — metrics_test.go
+//
+// Methodology
+// -----------
+// Prometheus metrics are global-state by nature (promauto registers
+// them in a singleton registry). These tests therefore verify the
+// DELTA a metric operation produces rather than its absolute value —
+// other tests in the suite that happen to increment the same counter
+// must not cause false positives.
+//
+// Helpers:
+//   * counterVecValue reads the current value of a labelled counter.
+//   * gaugeValue reads a gauge's current value.
+//
+// Tests:
+//   * RecordBlockGenerated / RecordBlockReceived cover each of the
+//     four BlockAcceptance tiers to catch a mis-mapping between tier
+//     and metric label.
+//   * RecordTransactionProcessed(accepted=true) and
+//     RecordTransactionProcessed(accepted=false) are paired so a
+//     transposed true/false case is caught.
+//   * Gauges round-trip a known value through their setter and read
+//     it back.
 package core
 
 import (

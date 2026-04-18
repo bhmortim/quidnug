@@ -1,3 +1,31 @@
+// Package core — anchor_test.go
+//
+// Methodology
+// -----------
+// Covers the QDP-0001 §6.5 anchor system across all three kinds
+// (Rotation, Invalidation, EpochCap). Tests are split into three
+// tranches:
+//
+//   1. ValidateAnchor happy paths — one per kind, all fields correct.
+//   2. ValidateAnchor rejection paths — one test per error class
+//      exported from anchor.go. This gives us a guarantee that every
+//      public error is reachable and recognized by errors.Is.
+//   3. Ledger.ApplyAnchor state-transition tests — what each kind
+//      actually does to the ledger once validation passes.
+//
+// Why the three-kind coverage matters: a common class of bug in
+// protocol code is "Rotation works, Invalidation and EpochCap don't"
+// because the first is exercised in demos. Testing each explicitly
+// catches that whole class.
+//
+// Signing helpers (keypairHex, signAnchor, signWithKey) use the same
+// production SignData path so tests would catch a canonicalization
+// drift between signer and verifier.
+//
+// The test clock (`time.Now()`) is passed in explicitly to
+// ValidateAnchor; stale/future tests fabricate a ValidFrom value
+// relative to the current moment and verify the window is enforced
+// at the documented boundaries (5min future, 30d past).
 package core
 
 import (

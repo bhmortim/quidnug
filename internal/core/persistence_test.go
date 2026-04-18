@@ -1,3 +1,21 @@
+// Package core — persistence_test.go
+//
+// Methodology
+// -----------
+// Tests cover Save/Load/Clear for pending transactions, the on-disk
+// state the node persists across restarts.
+//
+//   * Round-trip: save with one transaction, load into a fresh node,
+//     verify PendingTxs has the same count.
+//   * No-op on empty: saving an empty PendingTxs does NOT create a
+//     file (documented behavior; prevents empty-file clutter).
+//   * Missing file on Load is not an error: a fresh node should
+//     start cleanly without a pre-existing state file.
+//   * Malformed JSON on Load is a hard error.
+//   * Clear is idempotent: clearing twice must not error.
+//
+// All tests use t.TempDir() so file I/O is automatically cleaned up
+// and cannot interfere with other tests or persist between runs.
 package core
 
 import (

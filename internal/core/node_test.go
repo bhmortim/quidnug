@@ -120,6 +120,26 @@ func newTestNode() *QuidnugNode {
 	return node
 }
 
+// setTestTrust directly installs a trust edge into the registry and
+// invalidates the trust cache. Use this in tests that set up a trust
+// graph without going through AddTrustTransaction (which would require
+// full signing/validation). Skipping the cache invalidation is a
+// recurring test-writing mistake: ComputeRelationalTrust caches the
+// *absence* of trust just as aggressively as a positive result, so a
+// test that queries once (gets zero, caches zero), then installs
+// trust, then queries again will read stale zero from the cache.
+func setTestTrust(node *QuidnugNode, truster, trustee string, level float64) {
+	node.TrustRegistryMutex.Lock()
+	if _, ok := node.TrustRegistry[truster]; !ok {
+		node.TrustRegistry[truster] = make(map[string]float64)
+	}
+	node.TrustRegistry[truster][trustee] = level
+	node.TrustRegistryMutex.Unlock()
+	if node.TrustCache != nil {
+		node.TrustCache.Invalidate()
+	}
+}
+
 // signTrustTx signs a trust transaction using the node's private key
 func signTrustTx(node *QuidnugNode, tx TrustTransaction) TrustTransaction {
 	tx.PublicKey = node.GetPublicKeyHex()

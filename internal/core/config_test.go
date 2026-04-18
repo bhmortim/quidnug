@@ -7,22 +7,40 @@ import (
 	"time"
 )
 
+// clearConfigEnvVars clears every environment variable LoadConfig
+// consults. Tests that mutate any of these MUST call this before and
+// after (usually as defer) to prevent state leakage into the rest of
+// the suite. Missing an entry here has bitten us before — see the
+// TrustCacheTTL-leak that caused TestLoadConfigTrustCacheTTLDefault
+// to fail when run after TestLoadConfigTrustCacheTTLFromEnv.
+//
+// Keep this list aligned with every os.Getenv call in config.go.
 func clearConfigEnvVars() {
-	os.Unsetenv("CONFIG_FILE")
-	os.Unsetenv("PORT")
-	os.Unsetenv("SEED_NODES")
-	os.Unsetenv("LOG_LEVEL")
-	os.Unsetenv("BLOCK_INTERVAL")
-	os.Unsetenv("RATE_LIMIT_PER_MINUTE")
-	os.Unsetenv("MAX_BODY_SIZE_BYTES")
-	os.Unsetenv("DATA_DIR")
-	os.Unsetenv("SHUTDOWN_TIMEOUT")
-	os.Unsetenv("HTTP_CLIENT_TIMEOUT")
-	os.Unsetenv("NODE_AUTH_SECRET")
-	os.Unsetenv("REQUIRE_NODE_AUTH")
-	os.Unsetenv("QUIDNUG_IPFS_ENABLED")
-	os.Unsetenv("QUIDNUG_IPFS_GATEWAY_URL")
-	os.Unsetenv("QUIDNUG_IPFS_TIMEOUT")
+	for _, k := range []string{
+		"CONFIG_FILE",
+		"PORT",
+		"SEED_NODES",
+		"LOG_LEVEL",
+		"BLOCK_INTERVAL",
+		"RATE_LIMIT_PER_MINUTE",
+		"MAX_BODY_SIZE_BYTES",
+		"DATA_DIR",
+		"SHUTDOWN_TIMEOUT",
+		"HTTP_CLIENT_TIMEOUT",
+		"NODE_AUTH_SECRET",
+		"REQUIRE_NODE_AUTH",
+		"QUIDNUG_IPFS_ENABLED",
+		"QUIDNUG_IPFS_GATEWAY_URL",
+		"QUIDNUG_IPFS_TIMEOUT",
+		"SUPPORTED_DOMAINS",
+		"ALLOW_DOMAIN_REGISTRATION",
+		"REQUIRE_PARENT_DOMAIN_AUTH",
+		"TRUST_CACHE_TTL",
+		"DOMAIN_GOSSIP_INTERVAL",
+		"DOMAIN_GOSSIP_TTL",
+	} {
+		os.Unsetenv(k)
+	}
 }
 
 func TestLoadConfigDefaults(t *testing.T) {

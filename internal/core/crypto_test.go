@@ -1,3 +1,24 @@
+// Package core — crypto_test.go
+//
+// Methodology
+// -----------
+// crypto.go had no dedicated test file before the audit; behavior
+// was being exercised only indirectly through upstream integration
+// tests. This file fills the gap with focused tests of each exported
+// helper:
+//
+//   * SignData + VerifySignature: sign-then-verify round-trip,
+//     tampered-payload rejection, wrong-key rejection, degenerate
+//     inputs (empty/garbage hex).
+//   * GetPublicKeyHex: nil-receiver and nil-PublicKey safety — the
+//     defensive check added during the audit that stopped a panic
+//     on incompletely-initialized test nodes.
+//   * GetBlockSignableData: the "signatures don't sign themselves"
+//     invariant — mutating ValidatorSigs must not change the
+//     canonical bytes used for signing.
+//
+// Tests use freshly-generated P-256 keys from crypto/ecdsa; key
+// material is never shared across tests or persisted to disk.
 package core
 
 import (

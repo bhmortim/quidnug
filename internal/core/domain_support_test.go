@@ -346,40 +346,71 @@ func TestReceiveBlock_UnsupportedDomain(t *testing.T) {
 	}
 }
 
+// TestAddTransaction_DefaultDomainSupported verifies that when a node
+// lists "default" in SupportedDomains, a transaction with an empty
+// TrustDomain is accepted (the empty value is treated as the default).
+//
+// Methodology: sign a complete transaction (Timestamp, Nonce, Type
+// pre-filled) so that AddTrustTransaction's no-op pass through a
+// signed tx doesn't break the signature — see AddTrustTransaction's
+// "signed" guard for why this matters.
 func TestAddTransaction_DefaultDomainSupported(t *testing.T) {
 	node := newTestNode()
 	node.SupportedDomains = []string{"default"}
 
 	tx := signTrustTx(node, TrustTransaction{
 		BaseTransaction: BaseTransaction{
+			Type:        TxTypeTrust,
 			TrustDomain: "",
+			Timestamp:   1_700_000_000,
 		},
 		Truster:    node.NodeID,
 		Trustee:    "abcdef1234567890",
 		TrustLevel: 0.8,
+		Nonce:      1,
 	})
 
-	_, err := node.AddTrustTransaction(tx)
-	if err != nil {
+	if _, err := node.AddTrustTransaction(tx); err != nil {
 		t.Errorf("Expected default domain to be supported when listed, got error: %v", err)
 	}
 }
 
+// TestAddTransaction_EmptyDomainList_AllAllowed verifies that with
+// SupportedDomains = [] the node accepts transactions for any domain,
+// provided the domain has been registered (ValidateTrustTransaction
+// still enforces that the domain is a known TrustDomain — policy and
+// registration are separate concerns).
+//
+// Methodology: register "any.domain.com" explicitly so the domain
+// check passes; the "AllAllowed" assertion is about the
+// SupportedDomains policy, not about skipping domain registration.
 func TestAddTransaction_EmptyDomainList_AllAllowed(t *testing.T) {
 	node := newTestNode()
 	node.SupportedDomains = []string{}
 
+	// Register the target domain. In production this happens via
+	// RegisterDomainHandler; here we insert directly since domain-
+	// registration semantics are tested separately.
+	node.TrustDomains["any.domain.com"] = TrustDomain{
+		Name:           "any.domain.com",
+		ValidatorNodes: []string{node.NodeID},
+		TrustThreshold: 0.75,
+		Validators:     map[string]float64{node.NodeID: 1.0},
+	}
+
 	tx := signTrustTx(node, TrustTransaction{
 		BaseTransaction: BaseTransaction{
+			Type:        TxTypeTrust,
 			TrustDomain: "any.domain.com",
+			Timestamp:   1_700_000_000,
 		},
 		Truster:    node.NodeID,
 		Trustee:    "abcdef1234567890",
 		TrustLevel: 0.8,
+		Nonce:      1,
 	})
 
-	_, err := node.AddTrustTransaction(tx)
-	if err != nil {
+	if _, err := node.AddTrustTransaction(tx); err != nil {
 		t.Errorf("Expected all domains allowed with empty list, got error: %v", err)
 	}
 }
@@ -1245,20 +1276,19 @@ func TestValidateSubdomainAuthority_BothDomainsRegistered(t *testing.T) {
 	}
 	node.TrustDomainsMutex.Unlock()
 
-	// No trust established - should return false
+	// No trust established - should return false. This call populates
+	// the trust cache with a zero-trust entry for (parent, child).
 	result := node.ValidateSubdomainAuthority("sub.example.com", "example.com")
 	if result {
 		t.Error("Expected false when no trust exists between validators")
 	}
 
-	// Establish trust
-	node.TrustRegistryMutex.Lock()
-	node.TrustRegistry[parentValidatorNode.NodeID] = map[string]float64{
-		childValidatorNode.NodeID: 0.9,
-	}
-	node.TrustRegistryMutex.Unlock()
+	// Establish trust. setTestTrust also invalidates the trust cache,
+	// otherwise the second ValidateSubdomainAuthority call below would
+	// read the cached zero and incorrectly return false.
+	setTestTrust(node, parentValidatorNode.NodeID, childValidatorNode.NodeID, 0.9)
 
-	// Now should return true
+	// Now should return true.
 	result = node.ValidateSubdomainAuthority("sub.example.com", "example.com")
 	if !result {
 		t.Error("Expected true when trust exists between validators")

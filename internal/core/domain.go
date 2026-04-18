@@ -96,25 +96,24 @@ func (node *QuidnugNode) IsDomainSupported(domain string) bool {
 // RegisterTrustDomain registers a new trust domain with this node.
 // For subdomains (domains containing dots), validates that at least one parent
 // domain validator trusts the new domain's validators (if RequireParentDomainAuth is enabled).
+//
+// Lock ordering: the subdomain-authority check calls into
+// validateProposedSubdomainAuthority which, via ComputeRelationalTrust,
+// takes TrustRegistryMutex. To avoid lock-order inversion and the
+// previous defer-plus-manual-unlock double-unlock bug, the check runs
+// BEFORE TrustDomainsMutex is acquired. Everything inside the lock is
+// purely local map mutation.
 func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
-	// Check if dynamic domain registration is allowed
+	// Policy gates, no lock required.
 	if !node.AllowDomainRegistration {
 		return fmt.Errorf("dynamic domain registration is not allowed on this node")
 	}
-
-	// Check if the domain is supported
 	if !node.IsDomainSupported(domain.Name) {
 		return fmt.Errorf("trust domain %s is not supported by this node", domain.Name)
 	}
 
-	node.TrustDomainsMutex.Lock()
-	defer node.TrustDomainsMutex.Unlock()
-
-	if _, exists := node.TrustDomains[domain.Name]; exists {
-		return fmt.Errorf("trust domain %s already exists", domain.Name)
-	}
-
-	// Ensure this node is included as a validator
+	// Ensure this node is included as a validator before the
+	// subdomain-authority check inspects the validator set.
 	validatorFound := false
 	for _, validatorID := range domain.ValidatorNodes {
 		if validatorID == node.NodeID {
@@ -122,28 +121,15 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 			break
 		}
 	}
-
 	if !validatorFound {
 		domain.ValidatorNodes = append(domain.ValidatorNodes, node.NodeID)
 	}
 
-	// Validate subdomain authority if required and this is not a root domain
+	// Subdomain authority check — uses its own locks internally.
 	if node.RequireParentDomainAuth && !IsRootDomain(domain.Name) {
 		parentDomain := GetParentDomain(domain.Name)
-		// Need to release lock before calling validateProposedSubdomainAuthority
-		// which may acquire TrustRegistryMutex via ComputeRelationalTrust
-		node.TrustDomainsMutex.Unlock()
-
 		if !node.validateProposedSubdomainAuthority(parentDomain, domain.ValidatorNodes) {
-			// Re-acquire lock is not needed as we're returning an error
 			return fmt.Errorf("subdomain %s requires authorization from parent domain %s validators", domain.Name, parentDomain)
-		}
-
-		// Re-acquire lock to continue registration
-		node.TrustDomainsMutex.Lock()
-		// Re-check domain doesn't exist (could have been added while lock was released)
-		if _, exists := node.TrustDomains[domain.Name]; exists {
-			return fmt.Errorf("trust domain %s already exists", domain.Name)
 		}
 	}
 
@@ -151,7 +137,6 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	if domain.Validators == nil {
 		domain.Validators = make(map[string]float64)
 	}
-
 	// Add this node as a validator with full participation weight
 	domain.Validators[node.NodeID] = 1.0
 
@@ -159,11 +144,15 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	if domain.ValidatorPublicKeys == nil {
 		domain.ValidatorPublicKeys = make(map[string]string)
 	}
-
 	// Add this node's public key for signature verification
 	domain.ValidatorPublicKeys[node.NodeID] = node.GetPublicKeyHex()
 
-	// Register the domain
+	// Single exclusive section for the registry mutation.
+	node.TrustDomainsMutex.Lock()
+	defer node.TrustDomainsMutex.Unlock()
+	if _, exists := node.TrustDomains[domain.Name]; exists {
+		return fmt.Errorf("trust domain %s already exists", domain.Name)
+	}
 	node.TrustDomains[domain.Name] = domain
 
 	logger.Info("Registered new trust domain", "domain", domain.Name, "validators", len(domain.ValidatorNodes))

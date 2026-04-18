@@ -279,15 +279,24 @@ func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *Config) {
 	}
 }
 
-// NewQuidnugNode initializes a new quidnug node
+// NewQuidnugNode initializes a new quidnug node.
+//
+// When `cfg` is nil (typical in tests), the defaults applied here must
+// match LoadConfig's defaults — otherwise tests behave differently
+// from production. A previous version only set a handful of fields,
+// which left AllowDomainRegistration=false and silently broke every
+// test that relied on RegisterTrustDomain.
 func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
-	// Handle nil config with defaults for testing
 	if cfg == nil {
 		cfg = &Config{
-			IPFSEnabled:    DefaultIPFSEnabled,
-			IPFSGatewayURL: DefaultIPFSGatewayURL,
-			IPFSTimeout:    DefaultIPFSTimeout,
-			TrustCacheTTL:  DefaultTrustCacheTTL,
+			IPFSEnabled:             DefaultIPFSEnabled,
+			IPFSGatewayURL:          DefaultIPFSGatewayURL,
+			IPFSTimeout:             DefaultIPFSTimeout,
+			TrustCacheTTL:           DefaultTrustCacheTTL,
+			AllowDomainRegistration: DefaultAllowDomainRegistration,
+			RequireParentDomainAuth: DefaultRequireParentDomainAuth,
+			DomainGossipInterval:    DefaultDomainGossipInterval,
+			DomainGossipTTL:         DefaultDomainGossipTTL,
 		}
 	}
 	// Ensure TrustCacheTTL has a valid value
