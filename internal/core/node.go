@@ -180,6 +180,12 @@ type QuidnugNode struct {
 	// in-flight and completed bootstrap sessions. Lazily
 	// allocated on first bootstrap call.
 	bootstrap *bootstrapRegistry
+
+	// QDP-0009 fork-block migration trigger (H5). Tracks
+	// pending and active fork-block transactions. Feature
+	// activation at ForkHeight flips the corresponding node
+	// flag deterministically across the network.
+	forks *forkRegistry
 }
 
 // Run starts the Quidnug node's main loop: loads configuration, initializes
@@ -411,6 +417,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		EpochProbeTimeout:         cfg.EpochProbeTimeout,
 		ProbeTimeoutPolicy:        cfg.ProbeTimeoutPolicy,
 		quarantine:                newQuarantineState(),
+		forks:                     newForkRegistry(),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},

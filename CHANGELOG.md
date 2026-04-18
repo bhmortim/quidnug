@@ -7,6 +7,39 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0009 fork-block migration trigger (H5, new)
+
+- **New AnchorKind** `AnchorForkBlock` (value 9) + transaction
+  type `FORK_BLOCK`. Declares "at block height H in domain D,
+  every node honoring this tx flips feature F." The `ForkHeight`
+  is the synchronization boundary; pre-fork blocks validate
+  under old rules, post-fork under new.
+- **Supported features** enumerated in `ForkSupportedFeatures`:
+  `enable_nonce_ledger`, `enable_push_gossip`,
+  `enable_lazy_epoch_probe`, `enable_kofk_bootstrap`,
+  `require_tx_tree_root` (future H2). Unknown features rejected.
+- **Validator quorum**: signatures from at least 2/3 (ceiling)
+  of the domain's declared validators required. Each signature
+  validates against the signer's current-epoch key; duplicate
+  signers rejected.
+- **Notice period**: `MinForkNoticeBlocks` (default 1440 ≈ 24h)
+  between acceptance and `ForkHeight`. Forks scheduled too soon
+  are rejected so operators have coordination time.
+- **Nonce monotonicity** per `(domain, feature)` — replay
+  protection across forks.
+- **Supersede window**: a later fork with strictly-higher nonce
+  arriving BEFORE the earlier `ForkHeight` replaces it. After
+  activation, the fork is historical fact and new forks for the
+  same (domain, feature) are rejected.
+- **Activation path**: after block-tx processing, every pending
+  fork whose `ForkHeight <= block.Index` activates idempotently
+  — catches up correctly when a node replays a chain that has
+  already crossed activation boundaries.
+- **HTTP surface** `/api/v2/fork-block` (POST) and
+  `/api/v2/fork-block/status` (GET).
+- **Metrics**: `fork_block_accepted_total`,
+  `fork_block_rejected_total`, `fork_block_activated_total`.
+
 ### QDP-0008 K-of-K snapshot bootstrap (H3, new, shadow flag)
 
 - **BootstrapFromPeers**: fetches latest `NonceSnapshot` from

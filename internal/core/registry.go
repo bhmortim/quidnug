@@ -233,8 +233,21 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 			}
 			node.applyGuardianResignation(tx.Resignation, block)
 			node.maybePushAnchorFromBlock(block, txIdx)
+
+		case TxTypeForkBlock:
+			var tx ForkBlockTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal fork-block transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyForkBlockFromBlock(tx.Fork, block)
 		}
 	}
+
+	// QDP-0009 (H5): after all transactions in this block have
+	// been processed, check whether any pending forks for this
+	// domain have reached their ForkHeight.
+	node.maybeActivateForks(block.TrustProof.TrustDomain, block.Index)
 }
 
 // updateTrustRegistry updates the trust registry with a trust transaction

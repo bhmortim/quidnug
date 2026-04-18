@@ -108,6 +108,20 @@ var (
 		Name: "quidnug_probe_failure_total",
 		Help: "Failed epoch-refresh probes, by reason.",
 	}, []string{"reason"})
+
+	// QDP-0009 fork-block migration trigger (H5).
+	forkBlockAcceptedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_fork_block_accepted_total",
+		Help: "Fork-block transactions accepted and queued for activation.",
+	}, []string{"domain", "feature"})
+	forkBlockRejectedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_fork_block_rejected_total",
+		Help: "Fork-block transactions rejected, by validation reason.",
+	}, []string{"reason"})
+	forkBlockActivatedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_fork_block_activated_total",
+		Help: "Fork-block activations at ForkHeight.",
+	}, []string{"domain", "feature"})
 )
 
 // RecordBlockGenerated records a block generation event

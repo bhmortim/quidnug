@@ -45,6 +45,7 @@ func (node *QuidnugNode) registerCrossDomainRoutes(router *mux.Router) {
 	router.HandleFunc("/anchor-gossip", node.SubmitAnchorGossipHandler).Methods("POST")
 	node.registerPushGossipRoutes(router)
 	node.registerSnapshotRoutes(router)
+	node.registerForkBlockRoutes(router)
 }
 
 // SubmitDomainFingerprintHandler accepts a signed DomainFingerprint
