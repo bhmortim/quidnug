@@ -339,6 +339,15 @@ func (node *QuidnugNode) ApplyAnchorGossip(m AnchorGossipMessage) error {
 	}
 
 	node.NonceLedger.markSeenGossip(m.MessageID, time.Now())
+	// QDP-0007 (H4): push / pull gossip counts as recency evidence
+	// for both the gossip producer and the anchor's subject.
+	node.NonceLedger.MarkEpochRefresh(m.GossipProducerQuid, time.Now())
+	if subject := anchorSubjectQuid(m); subject != "" {
+		node.NonceLedger.MarkEpochRefresh(subject, time.Now())
+		if node.quarantine != nil {
+			node.releaseQuarantinedForSigner(subject, "gossip")
+		}
+	}
 	logger.Info("Applied cross-domain anchor gossip",
 		"messageId", m.MessageID,
 		"originDomain", m.OriginDomain,

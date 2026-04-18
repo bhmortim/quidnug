@@ -7,6 +7,40 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0007 lazy epoch propagation (H4, new, shadow flag)
+
+- **Stale-signer quarantine.** When `EnableLazyEpochProbe` is on,
+  a transaction from a signer whose local epoch state is older
+  than `EpochRecencyWindow` (default 7d) is held in an in-memory
+  quarantine queue pending an asynchronous probe against the
+  signer's home domain.
+- **Home-domain probe.** New `ProbeHomeDomain` client issues
+  `GET /api/v2/domain-fingerprints/{home}/latest` to up to 3
+  peers that serve the home domain. A valid signed fingerprint
+  updates the ledger and refreshes the signer's recency;
+  quarantined txs are released back into `PendingTxs`.
+- **HomeDomain field on IdentityTransaction.** Optional; empty
+  falls back to the node's primary supported domain. Backward-
+  compatible — pre-H4 identity records don't have the field.
+- **Recency hooks.** `MarkEpochRefresh` is called from three
+  paths: Trusted-block anchor application, push/pull gossip
+  arrival, and successful probe. Any of these counts as
+  evidence of a live path.
+- **Overflow + age-out.** Quarantine is bounded to 1024 entries
+  (oldest evicted on overflow) and entries older than 1h are
+  swept periodically. Both emit metrics.
+- **Timeout policy.** `ProbeTimeoutPolicy` = `reject` (default)
+  drops stale txs when the probe fails; `admit_warn` admits
+  with a warning log + metric.
+- **Metrics**: `quarantine_size`, `quarantine_enqueued_total`,
+  `quarantine_released_total`, `quarantine_rejected_total`,
+  `probe_attempts_total`, `probe_success_total`,
+  `probe_failure_total`.
+- **Feature flag** `EnableLazyEpochProbe` (env
+  `ENABLE_LAZY_EPOCH_PROBE`); default off. Timing knobs
+  `EPOCH_RECENCY_WINDOW`, `EPOCH_PROBE_TIMEOUT`,
+  `PROBE_TIMEOUT_POLICY` all env-configurable.
+
 ### QDP-0006 guardian resignation (H6, new)
 
 - **New anchor kind** `AnchorGuardianResign` (value 8, append-only)

@@ -66,6 +66,14 @@ type IdentityTransaction struct {
 	Attributes  map[string]interface{} `json:"attributes,omitempty"`
 	Creator     string                 `json:"creator"`
 	UpdateNonce int64                  `json:"updateNonce"`
+
+	// HomeDomain (QDP-0007 / H4): the trust domain where this
+	// signer authoritatively rotates their key. When set, other
+	// domains probe this domain for epoch refreshes on stale
+	// transactions. Empty falls back to the receiving node's
+	// primary domain. Optional for backward compatibility with
+	// identity records written before H4.
+	HomeDomain string `json:"homeDomain,omitempty"`
 }
 
 // OwnershipStake represents a single ownership claim

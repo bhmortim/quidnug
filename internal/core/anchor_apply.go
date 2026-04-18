@@ -39,6 +39,16 @@ func (node *QuidnugNode) applyAnchorFromBlock(a NonceAnchor, block Block) {
 		return
 	}
 
+	// QDP-0007 (H4): observing the signer's rotation in a Trusted
+	// block is the strongest possible recency evidence — update so
+	// subsequent admission paths don't needlessly re-probe. Also
+	// release any quarantined txs for this signer now that we have
+	// fresh state.
+	node.NonceLedger.MarkEpochRefresh(a.SignerQuid, time.Now())
+	if node.quarantine != nil {
+		node.releaseQuarantinedForSigner(a.SignerQuid, "anchor_applied")
+	}
+
 	logger.Info("Applied anchor",
 		"kind", a.Kind.String(),
 		"signer", a.SignerQuid,

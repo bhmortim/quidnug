@@ -134,6 +134,14 @@ type NonceLedger struct {
 	// for resignations.
 	guardianResignationNonces map[string]map[string]int64
 
+	// lastEpochRefresh[signer] is the unix timestamp at which this
+	// node last confirmed the signer's current-epoch state —
+	// either by observing a rotation in a Trusted block, by
+	// receiving push gossip for the signer, or by a successful
+	// epoch probe (QDP-0007 / H4). Empty means "never refreshed",
+	// which is treated as stale for quarantine purposes.
+	lastEpochRefresh map[string]int64
+
 	maxNonceGap int64
 }
 
@@ -153,6 +161,7 @@ func NewNonceLedger() *NonceLedger {
 		seenGossipMessages:        make(map[string]int64),
 		guardianResignations:      make(map[string][]GuardianResignation),
 		guardianResignationNonces: make(map[string]map[string]int64),
+		lastEpochRefresh:          make(map[string]int64),
 		maxNonceGap:               DefaultMaxNonceGap,
 	}
 }

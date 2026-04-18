@@ -50,6 +50,17 @@ type Config struct {
 	// EnableNonceLedger; push gossip operates in shadow mode for
 	// the first two weeks of v2.3 before defaulting on.
 	EnablePushGossip bool `json:"enablePushGossip" yaml:"enable_push_gossip"`
+
+	// QDP-0007 lazy epoch propagation (H4). When true, any
+	// transaction from a signer whose local epoch state is older
+	// than EpochRecencyWindow is quarantined pending a probe
+	// against the signer's home domain. Default false — new
+	// behavior that operators opt into. Complements EnablePushGossip
+	// rather than replacing it.
+	EnableLazyEpochProbe bool          `json:"enableLazyEpochProbe" yaml:"enable_lazy_epoch_probe"`
+	EpochRecencyWindow   time.Duration `json:"epochRecencyWindow" yaml:"-"`
+	EpochProbeTimeout    time.Duration `json:"epochProbeTimeout" yaml:"-"`
+	ProbeTimeoutPolicy   string        `json:"probeTimeoutPolicy" yaml:"probe_timeout_policy"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -429,6 +440,23 @@ func LoadConfig() *Config {
 
 	if enablePushGossip := os.Getenv("ENABLE_PUSH_GOSSIP"); enablePushGossip != "" {
 		cfg.EnablePushGossip = enablePushGossip == "true"
+	}
+
+	if enableLazyProbe := os.Getenv("ENABLE_LAZY_EPOCH_PROBE"); enableLazyProbe != "" {
+		cfg.EnableLazyEpochProbe = enableLazyProbe == "true"
+	}
+	if recency := os.Getenv("EPOCH_RECENCY_WINDOW"); recency != "" {
+		if d, err := time.ParseDuration(recency); err == nil {
+			cfg.EpochRecencyWindow = d
+		}
+	}
+	if probeTimeout := os.Getenv("EPOCH_PROBE_TIMEOUT"); probeTimeout != "" {
+		if d, err := time.ParseDuration(probeTimeout); err == nil {
+			cfg.EpochProbeTimeout = d
+		}
+	}
+	if policy := os.Getenv("PROBE_TIMEOUT_POLICY"); policy != "" {
+		cfg.ProbeTimeoutPolicy = policy
 	}
 
 	return cfg

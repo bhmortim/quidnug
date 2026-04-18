@@ -78,6 +78,36 @@ var (
 		Name: "quidnug_guardian_set_weakened_total",
 		Help: "Guardian sets whose effective weight dropped below threshold after a resignation.",
 	}, []string{"subject"})
+
+	// QDP-0007 lazy epoch propagation (H4).
+	quarantineSizeGauge = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "quidnug_quarantine_size",
+		Help: "Current number of transactions held in the stale-epoch quarantine.",
+	})
+	quarantineEnqueuedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_quarantine_enqueued_total",
+		Help: "Transactions enqueued to quarantine, by reason.",
+	}, []string{"reason"})
+	quarantineReleasedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_quarantine_released_total",
+		Help: "Transactions released from quarantine, by trigger.",
+	}, []string{"trigger"})
+	quarantineRejectedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_quarantine_rejected_total",
+		Help: "Transactions dropped from quarantine without admission, by reason.",
+	}, []string{"reason"})
+	probeAttemptsTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "quidnug_probe_attempts_total",
+		Help: "Epoch-refresh probe attempts.",
+	})
+	probeSuccessTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "quidnug_probe_success_total",
+		Help: "Successful epoch-refresh probes.",
+	})
+	probeFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_probe_failure_total",
+		Help: "Failed epoch-refresh probes, by reason.",
+	}, []string{"reason"})
 )
 
 // RecordBlockGenerated records a block generation event

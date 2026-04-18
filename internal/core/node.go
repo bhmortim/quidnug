@@ -164,6 +164,17 @@ type QuidnugNode struct {
 	PushGossipEnabled bool
 	gossipRate        *gossipRateState
 	gossipRateMutex   sync.Mutex
+
+	// QDP-0007 lazy epoch propagation (H4). LazyEpochProbeEnabled
+	// gates the quarantine + probe behavior. Recency window,
+	// probe timeout, and timeout policy are deliberately settable
+	// per-node (not just config-loaded) so tests can override
+	// without LoadConfig round-trips.
+	LazyEpochProbeEnabled bool
+	EpochRecencyWindow    time.Duration
+	EpochProbeTimeout     time.Duration
+	ProbeTimeoutPolicy    string
+	quarantine            *quarantineState
 }
 
 // Run starts the Quidnug node's main loop: loads configuration, initializes
@@ -390,6 +401,11 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		NonceLedger:               NewNonceLedger(),
 		NonceLedgerEnforce:        cfg.EnableNonceLedger,
 		PushGossipEnabled:         cfg.EnablePushGossip,
+		LazyEpochProbeEnabled:     cfg.EnableLazyEpochProbe,
+		EpochRecencyWindow:        cfg.EpochRecencyWindow,
+		EpochProbeTimeout:         cfg.EpochProbeTimeout,
+		ProbeTimeoutPolicy:        cfg.ProbeTimeoutPolicy,
+		quarantine:                newQuarantineState(),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
