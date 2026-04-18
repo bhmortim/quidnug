@@ -210,9 +210,10 @@ func ValidateAnchorGossip(l *NonceLedger, m AnchorGossipMessage, now time.Time) 
 }
 
 // anchorKindOf returns the TransactionType string if the given
-// interface value is one of the seven anchor transaction wrappers
-// (NonceAnchor variants + guardian kinds). Returns "" + nil if it's
-// not an anchor, or an error if unmarshaling fails.
+// interface value is one of the anchor transaction wrappers
+// (NonceAnchor variants + guardian kinds, including H6 resign).
+// Returns "" + nil if it's not an anchor, or an error if
+// unmarshaling fails.
 //
 // We accept both the concrete typed structs (the common case from
 // processBlockTransactions) and the generic interface{} path used
@@ -231,6 +232,8 @@ func anchorKindOf(rawTx interface{}) (TransactionType, error) {
 	case GuardianRecoveryVetoTransaction:
 		return tx.Type, nil
 	case GuardianRecoveryCommitTransaction:
+		return tx.Type, nil
+	case GuardianResignationTransaction:
 		return tx.Type, nil
 	}
 
@@ -251,7 +254,8 @@ func anchorKindOf(rawTx interface{}) (TransactionType, error) {
 		TxTypeGuardianSetUpdate,
 		TxTypeGuardianRecoveryInit,
 		TxTypeGuardianRecoveryVeto,
-		TxTypeGuardianRecoveryCommit:
+		TxTypeGuardianRecoveryCommit,
+		TxTypeGuardianResign:
 		return probe.Type, nil
 	}
 	return "", nil
@@ -322,6 +326,13 @@ func (node *QuidnugNode) ApplyAnchorGossip(m AnchorGossipMessage) error {
 			return fmt.Errorf("anchor-gossip: GuardianRecoveryCommitTransaction decode: %w", err)
 		}
 		node.applyGuardianRecoveryCommit(tx.Commit, m.OriginBlock)
+
+	case TxTypeGuardianResign:
+		var tx GuardianResignationTransaction
+		if err := json.Unmarshal(txJSON, &tx); err != nil {
+			return fmt.Errorf("anchor-gossip: GuardianResignationTransaction decode: %w", err)
+		}
+		node.applyGuardianResignation(tx.Resignation, m.OriginBlock)
 
 	default:
 		return ErrGossipTxNotAnchor

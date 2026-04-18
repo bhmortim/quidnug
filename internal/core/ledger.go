@@ -122,6 +122,18 @@ type NonceLedger struct {
 	// opportunistically.
 	seenGossipMessages map[string]int64
 
+	// guardianResignations[subject] is the append-only list of
+	// resignations submitted against the subject's guardian set.
+	// QDP-0006 (H6). Consulted by EffectiveGuardianSet at read
+	// time; the installed guardianSets are never mutated by
+	// resignations, so the audit trail is preserved.
+	guardianResignations map[string][]GuardianResignation
+
+	// guardianResignationNonces[guardian][subject] is the highest
+	// ResignationNonce accepted for the pair. Replay protection
+	// for resignations.
+	guardianResignationNonces map[string]map[string]int64
+
 	maxNonceGap int64
 }
 
@@ -137,9 +149,11 @@ func NewNonceLedger() *NonceLedger {
 		frozenEpochs:       make(map[string]map[uint32]bool),
 		guardianSets:       make(map[string]*GuardianSet),
 		pendingRecoveries:  make(map[string]*PendingRecovery),
-		latestFingerprints: make(map[string]DomainFingerprint),
-		seenGossipMessages: make(map[string]int64),
-		maxNonceGap:        DefaultMaxNonceGap,
+		latestFingerprints:        make(map[string]DomainFingerprint),
+		seenGossipMessages:        make(map[string]int64),
+		guardianResignations:      make(map[string][]GuardianResignation),
+		guardianResignationNonces: make(map[string]map[string]int64),
+		maxNonceGap:               DefaultMaxNonceGap,
 	}
 }
 

@@ -197,6 +197,9 @@ func anchorSubjectQuid(m AnchorGossipMessage) string {
 	if tx, ok := raw.(GuardianRecoveryInitTransaction); ok {
 		return tx.Init.SubjectQuid
 	}
+	if tx, ok := raw.(GuardianResignationTransaction); ok {
+		return tx.Resignation.SubjectQuid
+	}
 	// Slow path: decode via JSON probe.
 	b, err := json.Marshal(raw)
 	if err != nil {
@@ -212,6 +215,9 @@ func anchorSubjectQuid(m AnchorGossipMessage) string {
 		Init struct {
 			SubjectQuid string `json:"subjectQuid"`
 		} `json:"init"`
+		Resignation struct {
+			SubjectQuid string `json:"subjectQuid"`
+		} `json:"resignation"`
 	}
 	if err := json.Unmarshal(b, &probe); err != nil {
 		return ""
@@ -223,6 +229,8 @@ func anchorSubjectQuid(m AnchorGossipMessage) string {
 		return probe.Update.SubjectQuid
 	case probe.Init.SubjectQuid != "":
 		return probe.Init.SubjectQuid
+	case probe.Resignation.SubjectQuid != "":
+		return probe.Resignation.SubjectQuid
 	}
 	return ""
 }

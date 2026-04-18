@@ -31,10 +31,13 @@ func (node *QuidnugNode) registerGuardianRoutes(router *mux.Router) {
 	router.HandleFunc("/guardian/recovery/init", node.SubmitGuardianRecoveryInitHandler).Methods("POST")
 	router.HandleFunc("/guardian/recovery/veto", node.SubmitGuardianRecoveryVetoHandler).Methods("POST")
 	router.HandleFunc("/guardian/recovery/commit", node.SubmitGuardianRecoveryCommitHandler).Methods("POST")
+	// QDP-0006: guardian resignation (H6).
+	router.HandleFunc("/guardian/resign", node.SubmitGuardianResignationHandler).Methods("POST")
 
 	// Query endpoints — read-only views of guardian state.
 	router.HandleFunc("/guardian/set/{quid}", node.GetGuardianSetHandler).Methods("GET")
 	router.HandleFunc("/guardian/pending-recovery/{quid}", node.GetPendingRecoveryHandler).Methods("GET")
+	router.HandleFunc("/guardian/resignations/{quid}", node.GetGuardianResignationsHandler).Methods("GET")
 }
 
 // ----- Submission handlers -------------------------------------------------

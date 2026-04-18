@@ -7,6 +7,49 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0006 guardian resignation (H6, new)
+
+- **New anchor kind** `AnchorGuardianResign` (value 8, append-only)
+  and transaction type `GUARDIAN_RESIGN`. A guardian signs a
+  `GuardianResignation` to withdraw their consent from a named
+  subject's recovery quorum. No subject cooperation required.
+- **Set-hash binding**: each resignation carries
+  `GuardianSetHash`, the sha256 of the exact installed set it
+  targets. If the subject updates the set after the resignation
+  is signed, the resignation is stale and rejected with
+  `ErrResignationSetHashMismatch`.
+- **Per-(guardian, subject) monotonic nonce**: resignations use a
+  dedicated nonce stream keyed by pair, so a guardian in
+  multiple subjects' sets manages each independently. Replays
+  rejected.
+- **EffectiveAt window**: must be `>= now − 5 min` (clock skew
+  tolerance) and `<= now + 365 days`. Future-effective
+  resignations are stored but not active until the timestamp
+  passes.
+- **Prospective only**: a resignation does NOT retroactively
+  invalidate a pending recovery's Init authorization (QDP-0006
+  §7). Recovery proceeds on the set as-it-was at Init time.
+- **EffectiveGuardianSet** accessor: returns the installed set
+  with resigned guardians' weights zeroed. All threshold-checking
+  code paths use this accessor; the raw `GuardianSetOf` remains
+  for audit / GuardianSetUpdate authorization.
+- **Weakened-set metric**: when the effective weight drops below
+  threshold, `quidnug_guardian_set_weakened_total` fires. Set is
+  still usable for recovery; the metric is operator visibility.
+- **HTTP surface** under `/api/v2/guardian/`:
+  - `POST resign` — submit a signed resignation. 202 on accept,
+    200 with `duplicate: true` on idempotent replay.
+  - `GET resignations/{quid}` — list all resignations for a
+    subject plus the weakened flag.
+- **Metrics**: `quidnug_guardian_resignations_total{subject}`,
+  `quidnug_guardian_resignations_rejected_total{reason}`,
+  `quidnug_guardian_set_weakened_total{subject}`.
+- **Push-gossip integration**: resignations are emitted as
+  anchor push gossip (H1) when sealed by a validator, so cross-
+  domain nodes learn of resignations without polling.
+- **Migration**: additive; no hard fork. Mixed-version nodes
+  that don't recognize the anchor kind simply ignore it.
+
 ### QDP-0005 push-based gossip (H1, new, shadow flag)
 
 - **Push envelopes** (`AnchorPushMessage`, `FingerprintPushMessage`):

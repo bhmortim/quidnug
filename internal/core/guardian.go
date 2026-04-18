@@ -45,6 +45,8 @@ func (k AnchorKind) guardianString() (string, bool) {
 		return "guardian_recovery_commit", true
 	case AnchorGuardianSetUpdate:
 		return "guardian_set_update", true
+	case AnchorGuardianResign:
+		return "guardian_resign", true
 	}
 	return "", false
 }

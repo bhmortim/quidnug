@@ -60,6 +60,24 @@ var (
 		Name: "quidnug_nonce_ledger_entries",
 		Help: "Number of (signer, domain, epoch) keys tracked in the nonce ledger, by tier.",
 	}, []string{"tier"})
+
+	// QDP-0006 guardian resignation (H6). Counter per subject so
+	// operator dashboards can spot when a specific high-value
+	// quid's set is being dismantled.
+	guardianResignationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_guardian_resignations_total",
+		Help: "Accepted guardian resignations, by subject quid.",
+	}, []string{"subject"})
+
+	guardianResignationsRejected = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_guardian_resignations_rejected_total",
+		Help: "Rejected guardian resignations, by validation reason.",
+	}, []string{"reason"})
+
+	guardianSetWeakened = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "quidnug_guardian_set_weakened_total",
+		Help: "Guardian sets whose effective weight dropped below threshold after a resignation.",
+	}, []string{"subject"})
 )
 
 // RecordBlockGenerated records a block generation event

@@ -224,6 +224,15 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 			}
 			node.applyGuardianRecoveryCommit(tx.Commit, block)
 			node.maybePushAnchorFromBlock(block, txIdx)
+
+		case TxTypeGuardianResign:
+			var tx GuardianResignationTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal guardian-resign transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyGuardianResignation(tx.Resignation, block)
+			node.maybePushAnchorFromBlock(block, txIdx)
 		}
 	}
 }
