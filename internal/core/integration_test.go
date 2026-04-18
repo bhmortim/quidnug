@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/config"
 )
 
 // testCluster holds references to test nodes and provides cleanup
@@ -568,7 +570,7 @@ func TestGracefulShutdownDuringBlockGeneration(t *testing.T) {
 	cancel()
 
 	// Create config for shutdown
-	cfg := &Config{
+	cfg := &config.Config{
 		ShutdownTimeout: 5 * time.Second,
 		DataDir:         t.TempDir(),
 	}

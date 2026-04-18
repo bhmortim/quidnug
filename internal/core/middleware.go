@@ -18,117 +18,15 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"golang.org/x/time/rate"
+	"github.com/quidnug/quidnug/internal/ratelimit"
 )
 
-// Defaults for IPRateLimiter eviction. Operators may override via environment.
-const (
-	DefaultRateLimiterMaxIPs  = 10_000
-	DefaultRateLimiterIdleTTL = 10 * time.Minute
-)
-
-type limiterEntry struct {
-	limiter  *rate.Limiter
-	lastSeen time.Time
-}
-
-// IPRateLimiter manages per-IP token-bucket rate limiters.
-//
-// The limiter map is bounded by maxIPs and entries unused for more than
-// idleTTL are evicted on access. Without these bounds an attacker that
-// rotates source IPs (or spoofs them via X-Forwarded-For) can trivially
-// exhaust server memory.
-type IPRateLimiter struct {
-	mu       sync.Mutex
-	limiters map[string]*limiterEntry
-	rate     rate.Limit
-	burst    int
-	maxIPs   int
-	idleTTL  time.Duration
-}
-
-// NewIPRateLimiter creates a new IP-based rate limiter with default eviction
-// policy.
-func NewIPRateLimiter(requestsPerMinute int) *IPRateLimiter {
-	return NewIPRateLimiterWithEviction(requestsPerMinute, DefaultRateLimiterMaxIPs, DefaultRateLimiterIdleTTL)
-}
-
-// NewIPRateLimiterWithEviction creates a new IP-based rate limiter with an
-// explicit eviction policy. maxIPs <= 0 disables the cap; idleTTL <= 0
-// disables idle eviction.
-func NewIPRateLimiterWithEviction(requestsPerMinute, maxIPs int, idleTTL time.Duration) *IPRateLimiter {
-	r := rate.Limit(float64(requestsPerMinute) / 60.0)
-	return &IPRateLimiter{
-		limiters: make(map[string]*limiterEntry),
-		rate:     r,
-		burst:    requestsPerMinute,
-		maxIPs:   maxIPs,
-		idleTTL:  idleTTL,
-	}
-}
-
-// GetLimiter returns the rate limiter for a given IP, creating one if needed.
-// This also performs opportunistic eviction of idle and over-capacity entries.
-func (ipl *IPRateLimiter) GetLimiter(ip string) *rate.Limiter {
-	ipl.mu.Lock()
-	defer ipl.mu.Unlock()
-
-	now := time.Now()
-
-	if entry, exists := ipl.limiters[ip]; exists {
-		entry.lastSeen = now
-		return entry.limiter
-	}
-
-	// Amortized eviction: whenever we'd grow beyond maxIPs, walk the map
-	// once and drop idle entries. If still over-budget, evict the single
-	// oldest entry.
-	if ipl.maxIPs > 0 && len(ipl.limiters) >= ipl.maxIPs {
-		ipl.evictLocked(now)
-	}
-
-	limiter := rate.NewLimiter(ipl.rate, ipl.burst)
-	ipl.limiters[ip] = &limiterEntry{limiter: limiter, lastSeen: now}
-	return limiter
-}
-
-// evictLocked drops idle entries, then (if still at capacity) the oldest one.
-// Caller must hold ipl.mu.
-func (ipl *IPRateLimiter) evictLocked(now time.Time) {
-	if ipl.idleTTL > 0 {
-		cutoff := now.Add(-ipl.idleTTL)
-		for ip, entry := range ipl.limiters {
-			if entry.lastSeen.Before(cutoff) {
-				delete(ipl.limiters, ip)
-			}
-		}
-	}
-	if ipl.maxIPs > 0 && len(ipl.limiters) >= ipl.maxIPs {
-		var oldestIP string
-		var oldestSeen time.Time
-		first := true
-		for ip, entry := range ipl.limiters {
-			if first || entry.lastSeen.Before(oldestSeen) {
-				oldestIP = ip
-				oldestSeen = entry.lastSeen
-				first = false
-			}
-		}
-		if oldestIP != "" {
-			delete(ipl.limiters, oldestIP)
-		}
-	}
-}
-
-// Size returns the current number of tracked IPs. Used in tests.
-func (ipl *IPRateLimiter) Size() int {
-	ipl.mu.Lock()
-	defer ipl.mu.Unlock()
-	return len(ipl.limiters)
-}
-
-// RateLimitMiddleware creates rate limiting middleware
-func RateLimitMiddleware(limiter *IPRateLimiter) func(http.Handler) http.Handler {
+// RateLimitMiddleware creates rate limiting middleware. The rate-
+// limiter type itself lives in internal/ratelimit (self-contained,
+// no core-type dependencies); this middleware wires it into the HTTP
+// request path and pulls the client IP through the trusted-proxy
+// gate in getClientIP.
+func RateLimitMiddleware(limiter *ratelimit.IPRateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := getClientIP(r)

@@ -14,14 +14,14 @@ import (
 // nodes compare K snapshots from trusted peers to seed their ledger
 // before they trust incoming traffic.
 type NonceSnapshot struct {
-	SchemaVersion int                   `json:"schemaVersion"`
-	BlockHeight   int64                 `json:"blockHeight"`
-	BlockHash     string                `json:"blockHash"`
-	Timestamp     int64                 `json:"timestamp"`
-	TrustDomain   string                `json:"trustDomain"`
-	Entries       []NonceSnapshotEntry  `json:"entries"`
-	ProducerQuid  string                `json:"producerQuid"`
-	Signature     string                `json:"signature"`
+	SchemaVersion int                  `json:"schemaVersion"`
+	BlockHeight   int64                `json:"blockHeight"`
+	BlockHash     string               `json:"blockHash"`
+	Timestamp     int64                `json:"timestamp"`
+	TrustDomain   string               `json:"trustDomain"`
+	Entries       []NonceSnapshotEntry `json:"entries"`
+	ProducerQuid  string               `json:"producerQuid"`
+	Signature     string               `json:"signature"`
 }
 
 // NonceSnapshotEntry is a single (signer, epoch, max-accepted-nonce)

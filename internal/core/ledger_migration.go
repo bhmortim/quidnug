@@ -66,7 +66,7 @@ func MigrateLedgerFromBlocks(blocks []Block) *NonceLedger {
 				if tx != nil {
 					applyMigrationMax(ledger, tx.SubjectID, domain, tx.Sequence)
 				}
-			// TitleTransaction has no pre-fork nonce; nothing to do.
+				// TitleTransaction has no pre-fork nonce; nothing to do.
 			}
 		}
 	}

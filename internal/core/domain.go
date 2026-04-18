@@ -158,3 +158,22 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	logger.Info("Registered new trust domain", "domain", domain.Name, "validators", len(domain.ValidatorNodes))
 	return nil
 }
+
+// MatchDomainPattern checks if a domain matches a pattern.
+// Patterns can be exact matches or wildcard patterns like "*.example.com".
+// Wildcard patterns match any subdomain but not the base domain itself.
+func MatchDomainPattern(domain, pattern string) bool {
+	if domain == "" || pattern == "" {
+		return false
+	}
+	if domain == pattern {
+		return true
+	}
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := pattern[1:]
+		if strings.HasSuffix(domain, suffix) && len(domain) > len(suffix) {
+			return true
+		}
+	}
+	return false
+}

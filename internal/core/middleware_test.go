@@ -5,16 +5,16 @@
 // These tests cover the HTTP-middleware layer introduced and hardened
 // during the audit:
 //
-//   * IPRateLimiter: per-IP token-bucket plus the memory-bound
+//   - IPRateLimiter: per-IP token-bucket plus the memory-bound
 //     eviction policy added to fend off IP-rotation DoS. Tests cover
 //     the happy path, 429 emission, per-IP independence, concurrency,
 //     and the two eviction triggers (idle-TTL and max-IPs).
-//   * BodySizeLimitMiddleware: POST body size cap.
-//   * DecodeJSONBody: strict JSON parsing (DisallowUnknownFields).
-//   * getClientIP: trusted-proxy gating for XFF / X-Real-IP (the
+//   - BodySizeLimitMiddleware: POST body size cap.
+//   - DecodeJSONBody: strict JSON parsing (DisallowUnknownFields).
+//   - getClientIP: trusted-proxy gating for XFF / X-Real-IP (the
 //     audit found this was previously spoofable).
 //
-// Eviction tests use NewIPRateLimiterWithEviction to override the
+// Eviction tests use ratelimit.NewWithEviction to override the
 // default cap/TTL so we can construct minimal, deterministic
 // scenarios without needing 10k synthetic IPs.
 package core
@@ -27,11 +27,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/ratelimit"
 )
 
 func TestIPRateLimiter(t *testing.T) {
 	t.Run("creates new limiter for unknown IP", func(t *testing.T) {
-		limiter := NewIPRateLimiter(100)
+		limiter := ratelimit.New(100)
 		l1 := limiter.GetLimiter("192.168.1.1")
 		if l1 == nil {
 			t.Error("Expected non-nil limiter")
@@ -39,7 +41,7 @@ func TestIPRateLimiter(t *testing.T) {
 	})
 
 	t.Run("returns same limiter for same IP", func(t *testing.T) {
-		limiter := NewIPRateLimiter(100)
+		limiter := ratelimit.New(100)
 		l1 := limiter.GetLimiter("192.168.1.1")
 		l2 := limiter.GetLimiter("192.168.1.1")
 		if l1 != l2 {
@@ -48,7 +50,7 @@ func TestIPRateLimiter(t *testing.T) {
 	})
 
 	t.Run("returns different limiters for different IPs", func(t *testing.T) {
-		limiter := NewIPRateLimiter(100)
+		limiter := ratelimit.New(100)
 		l1 := limiter.GetLimiter("192.168.1.1")
 		l2 := limiter.GetLimiter("192.168.1.2")
 		if l1 == l2 {
@@ -68,7 +70,7 @@ func TestIPRateLimiter(t *testing.T) {
 // what forces the cleanup. Size() inspects the result without racing
 // the active eviction path.
 func TestIPRateLimiter_EvictsByIdleTTL(t *testing.T) {
-	limiter := NewIPRateLimiterWithEviction(100, 3, 50*time.Millisecond)
+	limiter := ratelimit.NewWithEviction(100, 3, 50*time.Millisecond)
 
 	limiter.GetLimiter("1.1.1.1")
 	limiter.GetLimiter("2.2.2.2")
@@ -92,7 +94,7 @@ func TestIPRateLimiter_EvictsByIdleTTL(t *testing.T) {
 // maxIPs=2 with a long TTL, insert two IPs, then insert a third —
 // the oldest must be dropped, not a random one.
 func TestIPRateLimiter_EvictsByMaxIPs(t *testing.T) {
-	limiter := NewIPRateLimiterWithEviction(100, 2, 10*time.Second)
+	limiter := ratelimit.NewWithEviction(100, 2, 10*time.Second)
 
 	// Touch 1.1.1.1 first, then 2.2.2.2 — 1.1.1.1 is the oldest.
 	limiter.GetLimiter("1.1.1.1")
@@ -129,7 +131,7 @@ func TestIPRateLimiter_EvictsByMaxIPs(t *testing.T) {
 // subtle off-by-one errors in the eviction loop. Methodology: probe
 // Size at every addition and confirm it matches the expected count.
 func TestIPRateLimiter_SizeReportsAccurately(t *testing.T) {
-	limiter := NewIPRateLimiterWithEviction(100, 0, 0) // no eviction
+	limiter := ratelimit.NewWithEviction(100, 0, 0) // no eviction
 	for i := 1; i <= 10; i++ {
 		ip := "10.0.0." + string(rune('0'+i))
 		limiter.GetLimiter(ip)
@@ -141,7 +143,7 @@ func TestIPRateLimiter_SizeReportsAccurately(t *testing.T) {
 
 func TestRateLimitMiddleware(t *testing.T) {
 	t.Run("allows requests under limit", func(t *testing.T) {
-		limiter := NewIPRateLimiter(100)
+		limiter := ratelimit.New(100)
 		handler := RateLimitMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -158,7 +160,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 	})
 
 	t.Run("returns 429 when rate limit exceeded", func(t *testing.T) {
-		limiter := NewIPRateLimiter(10)
+		limiter := ratelimit.New(10)
 		handler := RateLimitMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -183,7 +185,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 	})
 
 	t.Run("sets X-RateLimit-Remaining header", func(t *testing.T) {
-		limiter := NewIPRateLimiter(100)
+		limiter := ratelimit.New(100)
 		handler := RateLimitMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -201,7 +203,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 	})
 
 	t.Run("rate limits per IP independently", func(t *testing.T) {
-		limiter := NewIPRateLimiter(5)
+		limiter := ratelimit.New(5)
 		handler := RateLimitMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -225,7 +227,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 }
 
 func TestRateLimitMiddlewareConcurrent(t *testing.T) {
-	limiter := NewIPRateLimiter(1000)
+	limiter := ratelimit.New(1000)
 	handler := RateLimitMiddleware(limiter)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

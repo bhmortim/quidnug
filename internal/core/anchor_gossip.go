@@ -54,18 +54,18 @@ const AnchorGossipSchemaVersion = 1
 
 // Errors from AnchorGossipMessage handling.
 var (
-	ErrGossipBadSchema          = errors.New("anchor-gossip: unknown schemaVersion")
-	ErrGossipMissingMessageID   = errors.New("anchor-gossip: missing messageId")
-	ErrGossipMissingProducer    = errors.New("anchor-gossip: missing gossipProducerQuid")
-	ErrGossipStaleTimestamp     = errors.New("anchor-gossip: timestamp outside accepted window")
-	ErrGossipNoProducerKey      = errors.New("anchor-gossip: no public key for gossipProducerQuid")
-	ErrGossipBadGossipSig       = errors.New("anchor-gossip: gossip signature verification failed")
-	ErrGossipBadBlockHash       = errors.New("anchor-gossip: originBlock.Hash does not match calculateBlockHash(originBlock)")
+	ErrGossipBadSchema           = errors.New("anchor-gossip: unknown schemaVersion")
+	ErrGossipMissingMessageID    = errors.New("anchor-gossip: missing messageId")
+	ErrGossipMissingProducer     = errors.New("anchor-gossip: missing gossipProducerQuid")
+	ErrGossipStaleTimestamp      = errors.New("anchor-gossip: timestamp outside accepted window")
+	ErrGossipNoProducerKey       = errors.New("anchor-gossip: no public key for gossipProducerQuid")
+	ErrGossipBadGossipSig        = errors.New("anchor-gossip: gossip signature verification failed")
+	ErrGossipBadBlockHash        = errors.New("anchor-gossip: originBlock.Hash does not match calculateBlockHash(originBlock)")
 	ErrGossipBlockDomainMismatch = errors.New("anchor-gossip: originBlock.TrustProof.TrustDomain does not match originDomain")
 	ErrGossipFingerprintMismatch = errors.New("anchor-gossip: fingerprint does not cover the claimed origin block")
-	ErrGossipTxIndexOutOfRange  = errors.New("anchor-gossip: anchorTxIndex is out of bounds for originBlock.Transactions")
-	ErrGossipTxNotAnchor        = errors.New("anchor-gossip: tx at anchorTxIndex is not an anchor kind")
-	ErrGossipDuplicate          = errors.New("anchor-gossip: message has already been processed (duplicate messageId)")
+	ErrGossipTxIndexOutOfRange   = errors.New("anchor-gossip: anchorTxIndex is out of bounds for originBlock.Transactions")
+	ErrGossipTxNotAnchor         = errors.New("anchor-gossip: tx at anchorTxIndex is not an anchor kind")
+	ErrGossipDuplicate           = errors.New("anchor-gossip: message has already been processed (duplicate messageId)")
 )
 
 // AnchorGossipMaxAge bounds how old the gossip producer's signature

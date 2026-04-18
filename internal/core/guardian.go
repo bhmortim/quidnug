@@ -257,11 +257,11 @@ type GuardianSetUpdateTransaction struct {
 type RecoveryState int
 
 const (
-	RecoveryIdle       RecoveryState = iota // no pending recovery
-	RecoveryPending                         // init accepted, delay elapsing
-	RecoveryCommitted                       // commit accepted → rotation in effect
-	RecoveryVetoed                          // canceled during delay
-	RecoveryReplaced                        // superseded by a later init
+	RecoveryIdle      RecoveryState = iota // no pending recovery
+	RecoveryPending                        // init accepted, delay elapsing
+	RecoveryCommitted                      // commit accepted → rotation in effect
+	RecoveryVetoed                         // canceled during delay
+	RecoveryReplaced                       // superseded by a later init
 )
 
 func (s RecoveryState) String() string {

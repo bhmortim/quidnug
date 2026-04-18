@@ -8,13 +8,13 @@
 // diverges. These tests therefore focus on determinism and on the
 // subset of inputs the migration function must tolerate:
 //
-//   * Trust / Identity / Event transactions (each with their legacy
+//   - Trust / Identity / Event transactions (each with their legacy
 //     per-type nonce field).
-//   * Both value and pointer variants (the Go decoder sometimes
+//   - Both value and pointer variants (the Go decoder sometimes
 //     emits one, sometimes the other).
-//   * Multiple blocks where a later block's lower nonce must not
+//   - Multiple blocks where a later block's lower nonce must not
 //     rewind the accepted counter.
-//   * Degenerate inputs (empty signer, zero/negative nonce) are
+//   - Degenerate inputs (empty signer, zero/negative nonce) are
 //     silently dropped rather than erroring.
 //
 // A dedicated Deterministic test runs the migration twice on the same
@@ -148,10 +148,10 @@ func TestMigrateLedgerFromBlocks_SkipsInvalidInputs(t *testing.T) {
 		{
 			TrustProof: TrustProof{TrustDomain: "d1"},
 			Transactions: []interface{}{
-				TrustTransaction{Truster: "", Trustee: "x", Nonce: 5, TrustLevel: 0.5},         // empty signer
-				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 0, TrustLevel: 0.5},      // zero nonce
-				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: -1, TrustLevel: 0.5},     // negative
-				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 4, TrustLevel: 0.5},      // valid
+				TrustTransaction{Truster: "", Trustee: "x", Nonce: 5, TrustLevel: 0.5},     // empty signer
+				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 0, TrustLevel: 0.5},  // zero nonce
+				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: -1, TrustLevel: 0.5}, // negative
+				TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 4, TrustLevel: 0.5},  // valid
 			},
 		},
 	}

@@ -7,23 +7,23 @@
 //
 // Two deliberately thin operations:
 //
-//   POST /api/v2/domain-fingerprints
-//     Submit a signed DomainFingerprint. Validator signature is
-//     verified against the ledger's recorded key for
-//     fp.ProducerQuid at the producer's current epoch. Monotonic
-//     by block height — older heights are silently accepted as
-//     valid but do not overwrite newer entries.
+//	POST /api/v2/domain-fingerprints
+//	  Submit a signed DomainFingerprint. Validator signature is
+//	  verified against the ledger's recorded key for
+//	  fp.ProducerQuid at the producer's current epoch. Monotonic
+//	  by block height — older heights are silently accepted as
+//	  valid but do not overwrite newer entries.
 //
-//   GET /api/v2/domain-fingerprints/{domain}/latest
-//     Return the latest fingerprint known to this node for the
-//     named domain, or 404 if none. Useful for peers doing lazy
-//     subscription.
+//	GET /api/v2/domain-fingerprints/{domain}/latest
+//	  Return the latest fingerprint known to this node for the
+//	  named domain, or 404 if none. Useful for peers doing lazy
+//	  subscription.
 //
-//   POST /api/v2/anchor-gossip
-//     Submit a signed AnchorGossipMessage. The full validation
-//     chain (gossip-sig, fingerprint, block integrity, tx index,
-//     dedup) runs; on success the referenced anchor is applied to
-//     the local ledger.
+//	POST /api/v2/anchor-gossip
+//	  Submit a signed AnchorGossipMessage. The full validation
+//	  chain (gossip-sig, fingerprint, block integrity, tx index,
+//	  dedup) runs; on success the referenced anchor is applied to
+//	  the local ledger.
 package core
 
 import (

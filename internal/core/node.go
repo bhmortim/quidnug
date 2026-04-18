@@ -16,6 +16,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/config"
+	"github.com/quidnug/quidnug/internal/ipfsclient"
 )
 
 // Lock ordering to prevent deadlocks:
@@ -92,7 +95,7 @@ type QuidnugNode struct {
 	EventRegistry       map[string][]EventTransaction
 
 	// IPFS client
-	IPFSClient IPFSClient
+	IPFSClient ipfsclient.IPFSClient
 
 	// HTTP server for graceful shutdown
 	Server *http.Server
@@ -144,7 +147,7 @@ type QuidnugNode struct {
 	GossipTTL       int // Default TTL for outgoing gossip messages
 
 	// QDP-0001 global nonce ledger (see ledger.go). Always allocated;
-	// enforcement is gated on Config.EnableNonceLedger. In shadow mode
+	// enforcement is gated on config.Config.EnableNonceLedger. In shadow mode
 	// the ledger is still updated from block checkpoints so an operator
 	// can flip the flag without a full ledger rebuild.
 	NonceLedger        *NonceLedger
@@ -157,7 +160,7 @@ type QuidnugNode struct {
 // It is the single public entry point called from cmd/quidnug/main.go.
 func Run() {
 	// Load configuration
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
 	// Initialize structured logger
 	initLogger(cfg.LogLevel)
@@ -252,7 +255,7 @@ func Run() {
 }
 
 // runBlockGeneration runs the block generation loop with context cancellation support
-func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *Config) {
+func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *config.Config) {
 	// Create timeout context for shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
@@ -282,30 +285,30 @@ func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *Config) {
 // NewQuidnugNode initializes a new quidnug node.
 //
 // When `cfg` is nil (typical in tests), the defaults applied here must
-// match LoadConfig's defaults — otherwise tests behave differently
+// match config.LoadConfig's defaults — otherwise tests behave differently
 // from production. A previous version only set a handful of fields,
 // which left AllowDomainRegistration=false and silently broke every
 // test that relied on RegisterTrustDomain.
-func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
+func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 	if cfg == nil {
-		cfg = &Config{
-			IPFSEnabled:             DefaultIPFSEnabled,
-			IPFSGatewayURL:          DefaultIPFSGatewayURL,
-			IPFSTimeout:             DefaultIPFSTimeout,
-			TrustCacheTTL:           DefaultTrustCacheTTL,
-			AllowDomainRegistration: DefaultAllowDomainRegistration,
-			RequireParentDomainAuth: DefaultRequireParentDomainAuth,
-			DomainGossipInterval:    DefaultDomainGossipInterval,
-			DomainGossipTTL:         DefaultDomainGossipTTL,
+		cfg = &config.Config{
+			IPFSEnabled:             config.DefaultIPFSEnabled,
+			IPFSGatewayURL:          config.DefaultIPFSGatewayURL,
+			IPFSTimeout:             config.DefaultIPFSTimeout,
+			TrustCacheTTL:           config.DefaultTrustCacheTTL,
+			AllowDomainRegistration: config.DefaultAllowDomainRegistration,
+			RequireParentDomainAuth: config.DefaultRequireParentDomainAuth,
+			DomainGossipInterval:    config.DefaultDomainGossipInterval,
+			DomainGossipTTL:         config.DefaultDomainGossipTTL,
 		}
 	}
 	// Ensure TrustCacheTTL has a valid value
 	if cfg.TrustCacheTTL <= 0 {
-		cfg.TrustCacheTTL = DefaultTrustCacheTTL
+		cfg.TrustCacheTTL = config.DefaultTrustCacheTTL
 	}
 	// Ensure DomainGossipTTL has a valid value
 	if cfg.DomainGossipTTL <= 0 {
-		cfg.DomainGossipTTL = DefaultDomainGossipTTL
+		cfg.DomainGossipTTL = config.DefaultDomainGossipTTL
 	}
 	// Generate a new ECDSA key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -338,11 +341,11 @@ func NewQuidnugNode(cfg *Config) (*QuidnugNode, error) {
 	genesisBlock.Hash = calculateBlockHash(genesisBlock)
 
 	// Initialize IPFS client based on config
-	var ipfsClient IPFSClient
+	var ipfsClient ipfsclient.IPFSClient
 	if cfg.IPFSEnabled {
-		ipfsClient = NewHTTPIPFSClient(cfg.IPFSGatewayURL, &http.Client{Timeout: cfg.IPFSTimeout})
+		ipfsClient = ipfsclient.NewHTTPIPFSClient(cfg.IPFSGatewayURL, &http.Client{Timeout: cfg.IPFSTimeout})
 	} else {
-		ipfsClient = &NoOpIPFSClient{}
+		ipfsClient = &ipfsclient.NoOpIPFSClient{}
 	}
 
 	node := &QuidnugNode{

@@ -12,9 +12,10 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/quidnug/quidnug/internal/ipfsclient"
 )
 
-// mockIPFSClient is a test helper that implements IPFSClient
+// mockIPFSClient is a test helper that implements ipfsclient.IPFSClient
 type mockIPFSClient struct {
 	available   bool
 	pinResponse string
@@ -1745,7 +1746,7 @@ func TestPinToIPFSHandler(t *testing.T) {
 		node := newTestNode()
 		node.IPFSClient = &mockIPFSClient{
 			available: true,
-			pinError:  ErrIPFSNotConfigured,
+			pinError:  ipfsclient.ErrIPFSNotConfigured,
 		}
 		router := setupTestRouter(node)
 
@@ -1762,7 +1763,7 @@ func TestPinToIPFSHandler(t *testing.T) {
 		node := newTestNode()
 		node.IPFSClient = &mockIPFSClient{
 			available: true,
-			pinError:  ErrIPFSUnavailable,
+			pinError:  ipfsclient.ErrIPFSUnavailable,
 		}
 		router := setupTestRouter(node)
 
@@ -1848,7 +1849,7 @@ func TestGetFromIPFSHandler(t *testing.T) {
 		node := newTestNode()
 		node.IPFSClient = &mockIPFSClient{
 			available: true,
-			getError:  ErrIPFSNotConfigured,
+			getError:  ipfsclient.ErrIPFSNotConfigured,
 		}
 		router := setupTestRouter(node)
 
@@ -1865,7 +1866,7 @@ func TestGetFromIPFSHandler(t *testing.T) {
 		node := newTestNode()
 		node.IPFSClient = &mockIPFSClient{
 			available: true,
-			getError:  ErrIPFSUnavailable,
+			getError:  ipfsclient.ErrIPFSUnavailable,
 		}
 		router := setupTestRouter(node)
 
@@ -1882,7 +1883,7 @@ func TestGetFromIPFSHandler(t *testing.T) {
 		node := newTestNode()
 		node.IPFSClient = &mockIPFSClient{
 			available: true,
-			getError:  ErrInvalidCID,
+			getError:  ipfsclient.ErrInvalidCID,
 		}
 		router := setupTestRouter(node)
 

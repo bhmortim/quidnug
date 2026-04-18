@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/config"
 )
 
 func TestMatchDomainPattern_ExactMatch(t *testing.T) {
@@ -149,12 +151,12 @@ func TestIsDomainSupported_MixedPatterns(t *testing.T) {
 }
 
 func TestLoadConfigSupportedDomainsFromEnv(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
 	os.Setenv("SUPPORTED_DOMAINS", `["example.com", "*.test.org"]`)
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
 	if len(cfg.SupportedDomains) != 2 {
 		t.Fatalf("Expected 2 supported domains, got %d", len(cfg.SupportedDomains))
@@ -170,22 +172,22 @@ func TestLoadConfigSupportedDomainsFromEnv(t *testing.T) {
 }
 
 func TestLoadConfigAllowDomainRegistrationFromEnv(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 	if !cfg.AllowDomainRegistration {
 		t.Error("Default AllowDomainRegistration should be true")
 	}
 
 	os.Setenv("ALLOW_DOMAIN_REGISTRATION", "false")
-	cfg = LoadConfig()
+	cfg = config.LoadConfig()
 	if cfg.AllowDomainRegistration {
 		t.Error("AllowDomainRegistration should be false when env var is 'false'")
 	}
 
 	os.Setenv("ALLOW_DOMAIN_REGISTRATION", "true")
-	cfg = LoadConfig()
+	cfg = config.LoadConfig()
 	if !cfg.AllowDomainRegistration {
 		t.Error("AllowDomainRegistration should be true when env var is 'true'")
 	}
@@ -1336,10 +1338,10 @@ func TestValidateSubdomainAuthority_ChildNotRegistered(t *testing.T) {
 }
 
 func TestLoadConfigRequireParentDomainAuthDefault(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
 	if !cfg.RequireParentDomainAuth {
 		t.Error("Default RequireParentDomainAuth should be true")
@@ -1347,17 +1349,17 @@ func TestLoadConfigRequireParentDomainAuthDefault(t *testing.T) {
 }
 
 func TestLoadConfigRequireParentDomainAuthFromEnv(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
 	os.Setenv("REQUIRE_PARENT_DOMAIN_AUTH", "false")
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 	if cfg.RequireParentDomainAuth {
 		t.Error("RequireParentDomainAuth should be false when env var is 'false'")
 	}
 
 	os.Setenv("REQUIRE_PARENT_DOMAIN_AUTH", "true")
-	cfg = LoadConfig()
+	cfg = config.LoadConfig()
 	if !cfg.RequireParentDomainAuth {
 		t.Error("RequireParentDomainAuth should be true when env var is 'true'")
 	}

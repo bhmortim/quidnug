@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/config"
 )
 
 func TestCreateDomainGossip(t *testing.T) {
@@ -591,28 +593,28 @@ func TestUpdateNodeDomainsHandler_TriggersGossip(t *testing.T) {
 }
 
 func TestLoadConfigDomainGossipIntervalFromEnv(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
-	if cfg.DomainGossipInterval != DefaultDomainGossipInterval {
-		t.Errorf("Expected default DomainGossipInterval %v, got %v", DefaultDomainGossipInterval, cfg.DomainGossipInterval)
+	if cfg.DomainGossipInterval != config.DefaultDomainGossipInterval {
+		t.Errorf("Expected default DomainGossipInterval %v, got %v", config.DefaultDomainGossipInterval, cfg.DomainGossipInterval)
 	}
 
-	if cfg.DomainGossipTTL != DefaultDomainGossipTTL {
-		t.Errorf("Expected default DomainGossipTTL %d, got %d", DefaultDomainGossipTTL, cfg.DomainGossipTTL)
+	if cfg.DomainGossipTTL != config.DefaultDomainGossipTTL {
+		t.Errorf("Expected default DomainGossipTTL %d, got %d", config.DefaultDomainGossipTTL, cfg.DomainGossipTTL)
 	}
 }
 
 func TestLoadConfigDomainGossipFromEnvOverride(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
 	t.Setenv("DOMAIN_GOSSIP_INTERVAL", "5m")
 	t.Setenv("DOMAIN_GOSSIP_TTL", "5")
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
 	if cfg.DomainGossipInterval != 5*time.Minute {
 		t.Errorf("Expected DomainGossipInterval 5m, got %v", cfg.DomainGossipInterval)

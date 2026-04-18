@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/config"
 )
 
 func TestTrustCache_BasicGetSet(t *testing.T) {
@@ -465,12 +467,12 @@ func BenchmarkComputeRelationalTrust_RepeatedQueries(b *testing.B) {
 }
 
 func TestLoadConfigTrustCacheTTLFromEnv(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
 	os.Setenv("TRUST_CACHE_TTL", "120s")
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
 	if cfg.TrustCacheTTL != 120*time.Second {
 		t.Errorf("Expected TrustCacheTTL 120s, got %v", cfg.TrustCacheTTL)
@@ -478,12 +480,12 @@ func TestLoadConfigTrustCacheTTLFromEnv(t *testing.T) {
 }
 
 func TestLoadConfigTrustCacheTTLDefault(t *testing.T) {
-	clearConfigEnvVars()
-	defer clearConfigEnvVars()
+	config.ClearConfigEnvVarsForTesting()
+	defer config.ClearConfigEnvVarsForTesting()
 
-	cfg := LoadConfig()
+	cfg := config.LoadConfig()
 
-	if cfg.TrustCacheTTL != DefaultTrustCacheTTL {
-		t.Errorf("Expected default TrustCacheTTL %v, got %v", DefaultTrustCacheTTL, cfg.TrustCacheTTL)
+	if cfg.TrustCacheTTL != config.DefaultTrustCacheTTL {
+		t.Errorf("Expected default TrustCacheTTL %v, got %v", config.DefaultTrustCacheTTL, cfg.TrustCacheTTL)
 	}
 }

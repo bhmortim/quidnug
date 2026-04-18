@@ -10,18 +10,18 @@
 //
 // Three tranches:
 //
-//   1. New-guardian consent: the network rejects a SetUpdate that
-//      lists a guardian without that guardian's on-chain signature.
-//      Also rejects the reverse error — a stray signature from a
-//      quid not in the new set.
+//  1. New-guardian consent: the network rejects a SetUpdate that
+//     lists a guardian without that guardian's on-chain signature.
+//     Also rejects the reverse error — a stray signature from a
+//     quid not in the new set.
 //
-//   2. Weighted thresholds: TotalWeight / Threshold math works when
-//      guardians have unequal weights, including the edge where a
-//      single high-weight guardian can singlehandedly meet
-//      threshold.
+//  2. Weighted thresholds: TotalWeight / Threshold math works when
+//     guardians have unequal weights, including the edge where a
+//     single high-weight guardian can singlehandedly meet
+//     threshold.
 //
-//   3. RequireGuardianRotation: a plain AnchorRotation is rejected
-//      when the subject has opted into guardian-only rotation.
+//  3. RequireGuardianRotation: a plain AnchorRotation is rejected
+//     when the subject has opted into guardian-only rotation.
 package core
 
 import (

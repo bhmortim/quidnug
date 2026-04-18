@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+
+	"github.com/quidnug/quidnug/internal/ipfsclient"
 )
 
 // ValidateTrustTransaction validates a trust transaction
@@ -272,7 +274,7 @@ func (node *QuidnugNode) ValidateEventTransaction(tx EventTransaction) bool {
 	}
 
 	// If PayloadCID provided, validate CID format
-	if hasPayloadCID && !IsValidCID(tx.PayloadCID) {
+	if hasPayloadCID && !ipfsclient.IsValidCID(tx.PayloadCID) {
 		logger.Warn("Invalid payload CID format", "payloadCid", tx.PayloadCID, "txId", tx.ID)
 		return false
 	}

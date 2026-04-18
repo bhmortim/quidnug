@@ -6,12 +6,12 @@
 // (Rotation, Invalidation, EpochCap). Tests are split into three
 // tranches:
 //
-//   1. ValidateAnchor happy paths — one per kind, all fields correct.
-//   2. ValidateAnchor rejection paths — one test per error class
-//      exported from anchor.go. This gives us a guarantee that every
-//      public error is reachable and recognized by errors.Is.
-//   3. Ledger.ApplyAnchor state-transition tests — what each kind
-//      actually does to the ledger once validation passes.
+//  1. ValidateAnchor happy paths — one per kind, all fields correct.
+//  2. ValidateAnchor rejection paths — one test per error class
+//     exported from anchor.go. This gives us a guarantee that every
+//     public error is reachable and recognized by errors.Is.
+//  3. Ledger.ApplyAnchor state-transition tests — what each kind
+//     actually does to the ledger once validation passes.
 //
 // Why the three-kind coverage matters: a common class of bug in
 // protocol code is "Rotation works, Invalidation and EpochCap don't"

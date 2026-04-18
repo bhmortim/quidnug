@@ -5,17 +5,17 @@
 // Verifies computeNonceCheckpoints (QDP-0001 §6.3) has the three
 // properties block-sealing depends on:
 //
-//   1. It is deterministic: two honest producers given the same
-//      logical transaction set must produce byte-identical
-//      checkpoints so their block hashes match. We test this by
-//      shuffling input order and comparing outputs element-by-
-//      element.
-//   2. It groups by signer (Truster) and takes the max nonce per
-//      signer — any other aggregation would allow partial-order
-//      replay windows.
-//   3. It tolerates degenerate inputs (nil, empty slice, non-trust
-//      tx types, empty signer, non-positive nonce) without panicking
-//      or emitting junk entries.
+//  1. It is deterministic: two honest producers given the same
+//     logical transaction set must produce byte-identical
+//     checkpoints so their block hashes match. We test this by
+//     shuffling input order and comparing outputs element-by-
+//     element.
+//  2. It groups by signer (Truster) and takes the max nonce per
+//     signer — any other aggregation would allow partial-order
+//     replay windows.
+//  3. It tolerates degenerate inputs (nil, empty slice, non-trust
+//     tx types, empty signer, non-positive nonce) without panicking
+//     or emitting junk entries.
 package core
 
 import "testing"
@@ -101,10 +101,10 @@ func TestComputeNonceCheckpoints_DeterministicOrder(t *testing.T) {
 
 func TestComputeNonceCheckpoints_SkipsEmptyTrusterOrZeroNonce(t *testing.T) {
 	txs := []interface{}{
-		TrustTransaction{Truster: "", Trustee: "x", Nonce: 5, TrustLevel: 0.5},    // empty truster
-		TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 0, TrustLevel: 0.5}, // zero nonce
+		TrustTransaction{Truster: "", Trustee: "x", Nonce: 5, TrustLevel: 0.5},     // empty truster
+		TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: 0, TrustLevel: 0.5},  // zero nonce
 		TrustTransaction{Truster: "aaa", Trustee: "x", Nonce: -1, TrustLevel: 0.5}, // negative
-		TrustTransaction{Truster: "aaa", Trustee: "y", Nonce: 1, TrustLevel: 0.5}, // valid
+		TrustTransaction{Truster: "aaa", Trustee: "y", Nonce: 1, TrustLevel: 0.5},  // valid
 	}
 	got := computeNonceCheckpoints(txs, "d")
 	if len(got) != 1 || got[0].MaxNonce != 1 {

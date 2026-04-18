@@ -8,15 +8,15 @@
 // cover the signer side (Produce + Sign), the verifier side, and the
 // monotonic-store semantics.
 //
-//   * Produce: fingerprint for a domain this node has sealed a block
+//   - Produce: fingerprint for a domain this node has sealed a block
 //     in succeeds; for a domain with no blocks, returns an explicit
 //     error rather than a zero-value fingerprint.
-//   * Sign+verify: round-trip through the ledger's SetSignerKey →
+//   - Sign+verify: round-trip through the ledger's SetSignerKey →
 //     GetSignerKey path, so a canonicalization bug between signer
 //     and verifier shows up here.
-//   * Verify rejections: wrong schema, missing producer key,
+//   - Verify rejections: wrong schema, missing producer key,
 //     tampered block hash, stale timestamp.
-//   * Store: monotonic on block height — older fingerprints don't
+//   - Store: monotonic on block height — older fingerprints don't
 //     overwrite newer ones, regardless of arrival order.
 package core
 

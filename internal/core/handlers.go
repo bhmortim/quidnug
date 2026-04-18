@@ -15,6 +15,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/quidnug/quidnug/internal/config"
+	"github.com/quidnug/quidnug/internal/ratelimit"
 )
 
 // registerAPIRoutes registers all API routes on the given router
@@ -74,7 +76,7 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 
 // StartServer starts the HTTP server for API endpoints
 func (node *QuidnugNode) StartServer(port string) error {
-	return node.StartServerWithConfig(port, DefaultRateLimitPerMinute, DefaultMaxBodySizeBytes)
+	return node.StartServerWithConfig(port, config.DefaultRateLimitPerMinute, config.DefaultMaxBodySizeBytes)
 }
 
 // Default HTTP server timeouts. These bound how long individual client
@@ -112,7 +114,7 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 
 	// Apply middleware chain (outermost to innermost processing order):
 	//   RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> SecurityHeaders -> RequestID -> Router
-	rateLimiter := NewIPRateLimiter(rateLimitPerMinute)
+	rateLimiter := ratelimit.New(rateLimitPerMinute)
 	handler := RequestIDMiddleware(router)
 	handler = SecurityHeadersMiddleware(handler)
 	handler = MetricsMiddleware(handler)

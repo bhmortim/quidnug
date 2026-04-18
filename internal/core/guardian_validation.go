@@ -12,11 +12,11 @@ import (
 // Validation errors for guardian anchors. Kept separate from the
 // generic nonce-ledger errors so test assertions can be precise.
 var (
-	ErrGuardianBadKind          = errors.New("guardian: wrong anchor kind for this validator")
-	ErrGuardianMissingSubject   = errors.New("guardian: missing subjectQuid")
-	ErrGuardianEmptySet         = errors.New("guardian: new set must contain at least one guardian")
-	ErrGuardianBadThreshold     = errors.New("guardian: threshold must be in (0, TotalWeight]")
-	ErrGuardianBadDelay         = errors.New("guardian: recovery delay outside [MinRecoveryDelay, MaxRecoveryDelay]")
+	ErrGuardianBadKind           = errors.New("guardian: wrong anchor kind for this validator")
+	ErrGuardianMissingSubject    = errors.New("guardian: missing subjectQuid")
+	ErrGuardianEmptySet          = errors.New("guardian: new set must contain at least one guardian")
+	ErrGuardianBadThreshold      = errors.New("guardian: threshold must be in (0, TotalWeight]")
+	ErrGuardianBadDelay          = errors.New("guardian: recovery delay outside [MinRecoveryDelay, MaxRecoveryDelay]")
 	ErrGuardianBadPrimarySig     = errors.New("guardian: primary signature is absent or invalid")
 	ErrGuardianInsufficientSigs  = errors.New("guardian: guardian signatures do not meet threshold")
 	ErrGuardianUnknownGuardian   = errors.New("guardian: signing guardian is not in the current set")

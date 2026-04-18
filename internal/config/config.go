@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"encoding/json"
@@ -419,29 +419,4 @@ func LoadConfig() *Config {
 	}
 
 	return cfg
-}
-
-// MatchDomainPattern checks if a domain matches a pattern.
-// Patterns can be exact matches or wildcard patterns like "*.example.com".
-// Wildcard patterns match any subdomain but not the base domain itself.
-func MatchDomainPattern(domain, pattern string) bool {
-	if domain == "" || pattern == "" {
-		return false
-	}
-
-	// Exact match
-	if domain == pattern {
-		return true
-	}
-
-	// Wildcard pattern: *.example.com
-	if strings.HasPrefix(pattern, "*.") {
-		suffix := pattern[1:] // ".example.com"
-		// Domain must end with the suffix and have something before it
-		if strings.HasSuffix(domain, suffix) && len(domain) > len(suffix) {
-			return true
-		}
-	}
-
-	return false
 }

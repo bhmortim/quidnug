@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/quidnug/quidnug/internal/ipfsclient"
 )
 
 func (node *QuidnugNode) PinToIPFSHandler(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +43,7 @@ func (node *QuidnugNode) PinToIPFSHandler(w http.ResponseWriter, r *http.Request
 
 	cid, err := node.IPFSClient.Pin(r.Context(), content)
 	if err != nil {
-		if errors.Is(err, ErrIPFSUnavailable) {
+		if errors.Is(err, ipfsclient.ErrIPFSUnavailable) {
 			WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", err.Error())
 			return
 		}
@@ -60,7 +61,7 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 	vars := mux.Vars(r)
 	cid := vars["cid"]
 
-	if !IsValidCID(cid) {
+	if !ipfsclient.IsValidCID(cid) {
 		WriteError(w, http.StatusBadRequest, "INVALID_CID", "Invalid CID format")
 		return
 	}
@@ -72,11 +73,11 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 
 	content, err := node.IPFSClient.Get(r.Context(), cid)
 	if err != nil {
-		if errors.Is(err, ErrIPFSUnavailable) {
+		if errors.Is(err, ipfsclient.ErrIPFSUnavailable) {
 			WriteError(w, http.StatusServiceUnavailable, "IPFS_UNAVAILABLE", err.Error())
 			return
 		}
-		if errors.Is(err, ErrInvalidCID) {
+		if errors.Is(err, ipfsclient.ErrInvalidCID) {
 			WriteError(w, http.StatusBadRequest, "INVALID_CID", err.Error())
 			return
 		}

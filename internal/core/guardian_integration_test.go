@@ -15,18 +15,18 @@
 // The tests exist in three arcs matching the expected real-world
 // usage patterns:
 //
-//   1. Install-then-recover: subject installs a guardian set, later
-//      loses key, guardians initiate recovery, delay elapses, commit
-//      finalizes → subject's epoch advances with the new key.
-//   2. Install-recover-veto: subject detects fraudulent recovery,
-//      publishes primary-key veto within the delay window, pending
-//      record transitions to Vetoed, no epoch change.
-//   3. Attacker-race: attacker with compromised key tries to rotate
-//      unilaterally. This is the scenario guardian recovery is
-//      meant to prevent — the test demonstrates that WITHOUT
-//      RequireGuardianRotation, a plain AnchorRotation from the
-//      primary key still works, confirming we haven't broken the
-//      existing rotation path.
+//  1. Install-then-recover: subject installs a guardian set, later
+//     loses key, guardians initiate recovery, delay elapses, commit
+//     finalizes → subject's epoch advances with the new key.
+//  2. Install-recover-veto: subject detects fraudulent recovery,
+//     publishes primary-key veto within the delay window, pending
+//     record transitions to Vetoed, no epoch change.
+//  3. Attacker-race: attacker with compromised key tries to rotate
+//     unilaterally. This is the scenario guardian recovery is
+//     meant to prevent — the test demonstrates that WITHOUT
+//     RequireGuardianRotation, a plain AnchorRotation from the
+//     primary key still works, confirming we haven't broken the
+//     existing rotation path.
 package core
 
 import (
@@ -66,9 +66,9 @@ func setupSubjectWithGuardians(t *testing.T) *subjectSetup {
 // key loss, through guardian-initiated recovery, through the delay
 // window, to finalized commit. Expected observable state changes:
 //
-//   * After Init: PendingRecoveryOf returns a RecoveryPending record,
+//   - After Init: PendingRecoveryOf returns a RecoveryPending record,
 //     MaturityUnix reflects ValidFrom + RecoveryDelay.
-//   * After Commit (past maturity): CurrentEpoch advanced, new key
+//   - After Commit (past maturity): CurrentEpoch advanced, new key
 //     installed, MaxAcceptedOldNonce cap applied.
 func TestGuardianRecovery_FullFlow(t *testing.T) {
 	s := setupSubjectWithGuardians(t)
@@ -93,8 +93,8 @@ func TestGuardianRecovery_FullFlow(t *testing.T) {
 	}
 
 	block1 := Block{
-		Index:        1,
-		Timestamp:    time.Now().Unix(),
+		Index:     1,
+		Timestamp: time.Now().Unix(),
 		Transactions: []interface{}{
 			GuardianRecoveryInitTransaction{
 				BaseTransaction: BaseTransaction{Type: TxTypeGuardianRecoveryInit, Timestamp: time.Now().Unix()},
@@ -141,8 +141,8 @@ func TestGuardianRecovery_FullFlow(t *testing.T) {
 		CommitterSig:       signWithGuardianKey(t, committer.priv, []byte(initHash)),
 	}
 	block2 := Block{
-		Index:        2,
-		Timestamp:    time.Now().Unix(),
+		Index:     2,
+		Timestamp: time.Now().Unix(),
 		Transactions: []interface{}{
 			GuardianRecoveryCommitTransaction{
 				BaseTransaction: BaseTransaction{Type: TxTypeGuardianRecoveryCommit, Timestamp: time.Now().Unix()},
@@ -310,12 +310,12 @@ func TestGuardianRecovery_InitBlockedByInFlight(t *testing.T) {
 
 	_, newPub := keypairHex(t)
 	first := GuardianRecoveryInit{
-		Kind:         AnchorGuardianRecoveryInit,
-		SubjectQuid:  s.subject,
-		FromEpoch:    0, ToEpoch: 1,
+		Kind:        AnchorGuardianRecoveryInit,
+		SubjectQuid: s.subject,
+		FromEpoch:   0, ToEpoch: 1,
 		NewPublicKey: newPub,
 		MinNextNonce: 1, AnchorNonce: 10,
-		ValidFrom:    time.Now().Unix(),
+		ValidFrom: time.Now().Unix(),
 	}
 	signable, _ := GuardianRecoveryInitSignableBytes(first)
 	first.GuardianSigs = []GuardianSignature{
@@ -339,12 +339,12 @@ func TestGuardianRecovery_InitBlockedByInFlight(t *testing.T) {
 	// be valid in isolation, but there's already a pending recovery.
 	_, otherPub := keypairHex(t)
 	second := GuardianRecoveryInit{
-		Kind:         AnchorGuardianRecoveryInit,
-		SubjectQuid:  s.subject,
-		FromEpoch:    0, ToEpoch: 1,
+		Kind:        AnchorGuardianRecoveryInit,
+		SubjectQuid: s.subject,
+		FromEpoch:   0, ToEpoch: 1,
 		NewPublicKey: otherPub,
 		MinNextNonce: 1, AnchorNonce: 20,
-		ValidFrom:    time.Now().Unix(),
+		ValidFrom: time.Now().Unix(),
 	}
 	signable2, _ := GuardianRecoveryInitSignableBytes(second)
 	second.GuardianSigs = []GuardianSignature{

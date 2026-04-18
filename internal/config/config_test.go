@@ -1,4 +1,4 @@
-package core
+package config
 
 import (
 	"os"
@@ -7,41 +7,8 @@ import (
 	"time"
 )
 
-// clearConfigEnvVars clears every environment variable LoadConfig
-// consults. Tests that mutate any of these MUST call this before and
-// after (usually as defer) to prevent state leakage into the rest of
-// the suite. Missing an entry here has bitten us before — see the
-// TrustCacheTTL-leak that caused TestLoadConfigTrustCacheTTLDefault
-// to fail when run after TestLoadConfigTrustCacheTTLFromEnv.
-//
-// Keep this list aligned with every os.Getenv call in config.go.
-func clearConfigEnvVars() {
-	for _, k := range []string{
-		"CONFIG_FILE",
-		"PORT",
-		"SEED_NODES",
-		"LOG_LEVEL",
-		"BLOCK_INTERVAL",
-		"RATE_LIMIT_PER_MINUTE",
-		"MAX_BODY_SIZE_BYTES",
-		"DATA_DIR",
-		"SHUTDOWN_TIMEOUT",
-		"HTTP_CLIENT_TIMEOUT",
-		"NODE_AUTH_SECRET",
-		"REQUIRE_NODE_AUTH",
-		"QUIDNUG_IPFS_ENABLED",
-		"QUIDNUG_IPFS_GATEWAY_URL",
-		"QUIDNUG_IPFS_TIMEOUT",
-		"SUPPORTED_DOMAINS",
-		"ALLOW_DOMAIN_REGISTRATION",
-		"REQUIRE_PARENT_DOMAIN_AUTH",
-		"TRUST_CACHE_TTL",
-		"DOMAIN_GOSSIP_INTERVAL",
-		"DOMAIN_GOSSIP_TTL",
-	} {
-		os.Unsetenv(k)
-	}
-}
+// ClearConfigEnvVarsForTesting is declared in testhelpers.go so it is
+// visible to other packages' test files.
 
 func TestLoadConfigDefaults(t *testing.T) {
 	// Clear any existing env vars
@@ -308,7 +275,7 @@ func TestLoadConfigInvalidMaxBodySize(t *testing.T) {
 }
 
 func TestLoadConfigFromYAMLFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	// Create a temporary YAML config file
 	tmpDir := t.TempDir()
@@ -384,7 +351,7 @@ require_node_auth: true
 }
 
 func TestLoadConfigFromJSONFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -427,7 +394,7 @@ func TestLoadConfigFromJSONFile(t *testing.T) {
 }
 
 func TestLoadConfigEnvOverridesFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	// Create a config file
 	tmpDir := t.TempDir()
@@ -448,7 +415,7 @@ data_dir: "/file/data"
 	os.Setenv("PORT", "3000")
 	os.Setenv("LOG_LEVEL", "error")
 
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
@@ -474,11 +441,11 @@ data_dir: "/file/data"
 }
 
 func TestLoadConfigMissingFileUsesDefaults(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	// Point to a non-existent config file
 	os.Setenv("CONFIG_FILE", "/nonexistent/config.yaml")
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
@@ -497,7 +464,7 @@ func TestLoadConfigMissingFileUsesDefaults(t *testing.T) {
 }
 
 func TestLoadConfigMalformedYAML(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -519,7 +486,7 @@ seed_nodes:
 }
 
 func TestLoadConfigMalformedJSON(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.json")
@@ -536,7 +503,7 @@ func TestLoadConfigMalformedJSON(t *testing.T) {
 }
 
 func TestLoadConfigInvalidDurationInFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -556,7 +523,7 @@ block_interval: "not-a-duration"
 }
 
 func TestLoadConfigPartialFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	// Create a config file with only some values set
 	tmpDir := t.TempDir()
@@ -571,7 +538,7 @@ log_level: "warn"
 	}
 
 	os.Setenv("CONFIG_FILE", configPath)
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
@@ -599,13 +566,13 @@ log_level: "warn"
 }
 
 func TestLoadConfigIPFSFromEnv(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	os.Setenv("QUIDNUG_IPFS_ENABLED", "true")
 	os.Setenv("QUIDNUG_IPFS_GATEWAY_URL", "http://custom-ipfs:5001")
 	os.Setenv("QUIDNUG_IPFS_TIMEOUT", "60s")
 
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
@@ -623,7 +590,7 @@ func TestLoadConfigIPFSFromEnv(t *testing.T) {
 }
 
 func TestLoadConfigIPFSFromFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -657,7 +624,7 @@ ipfs_timeout: "45s"
 }
 
 func TestLoadConfigIPFSEnvOverridesFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -676,7 +643,7 @@ ipfs_timeout: "30s"
 	os.Setenv("QUIDNUG_IPFS_GATEWAY_URL", "http://env-ipfs:5001")
 	os.Setenv("QUIDNUG_IPFS_TIMEOUT", "120s")
 
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
@@ -694,7 +661,7 @@ ipfs_timeout: "30s"
 }
 
 func TestLoadConfigInvalidIPFSTimeoutInFile(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -714,7 +681,7 @@ ipfs_timeout: "not-a-duration"
 }
 
 func TestLoadConfigFileWithConfigFileEnv(t *testing.T) {
-	clearConfigEnvVars()
+	ClearConfigEnvVarsForTesting()
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "custom-config.yaml")
@@ -728,7 +695,7 @@ log_level: "debug"
 	}
 
 	os.Setenv("CONFIG_FILE", configPath)
-	defer clearConfigEnvVars()
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 

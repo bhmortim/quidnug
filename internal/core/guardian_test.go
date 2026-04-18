@@ -6,17 +6,17 @@
 // surface breaks into four tranches mirroring the four new anchor
 // kinds:
 //
-//   1. GuardianSetUpdate  — install / replace authorization, shape
-//      validation (non-empty set, threshold bounds, delay range),
-//      monotonicity.
-//   2. GuardianRecoveryInit — happy path, rejection paths (no set,
-//      in-flight recovery, insufficient sigs, unknown guardian,
-//      epoch mismatch, duplicate signer).
-//   3. GuardianRecoveryVeto — primary-key fast path, guardian-
-//      threshold path, exactly-one-path enforcement, referencing a
-//      non-pending recovery.
-//   4. GuardianRecoveryCommit — maturity gate, audit-signature
-//      requirement, derived rotation advances ledger epoch.
+//  1. GuardianSetUpdate  — install / replace authorization, shape
+//     validation (non-empty set, threshold bounds, delay range),
+//     monotonicity.
+//  2. GuardianRecoveryInit — happy path, rejection paths (no set,
+//     in-flight recovery, insufficient sigs, unknown guardian,
+//     epoch mismatch, duplicate signer).
+//  3. GuardianRecoveryVeto — primary-key fast path, guardian-
+//     threshold path, exactly-one-path enforcement, referencing a
+//     non-pending recovery.
+//  4. GuardianRecoveryCommit — maturity gate, audit-signature
+//     requirement, derived rotation advances ledger epoch.
 //
 // Helpers build a test ecosystem of keypairs + test nodes to stand
 // in for the subject, guardians, and committer. Timing uses a

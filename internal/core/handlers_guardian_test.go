@@ -5,9 +5,9 @@
 // Covers the v2 guardian HTTP surface. Each submit-endpoint test
 // exercises:
 //
-//   * The happy path: valid payload is accepted (202 Accepted),
+//   - The happy path: valid payload is accepted (202 Accepted),
 //     the anchor lands in PendingTxs.
-//   * The validation-rejection path: the same handler's
+//   - The validation-rejection path: the same handler's
 //     ValidateX call rejects malformed input with 400.
 //
 // Query endpoints exercise 404-when-absent plus a 200-with-body

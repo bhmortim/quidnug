@@ -103,7 +103,6 @@ func canonicalBlockBytes(block Block) ([]byte, error) {
 	return json.Marshal(generic)
 }
 
-
 // SignData signs data with the node's private key
 func (node *QuidnugNode) SignData(data []byte) ([]byte, error) {
 	hash := sha256.Sum256(data)

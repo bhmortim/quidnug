@@ -13,21 +13,21 @@
 //
 // Test organization:
 //
-//   1. Happy path: end-to-end — a rotation anchor sealed in "domain-A"
-//      gossips to a node that only participates in "domain-B". The
-//      receiving node's global signer state (currentEpoch, signerKeys)
-//      reflects the rotation after gossip.
+//  1. Happy path: end-to-end — a rotation anchor sealed in "domain-A"
+//     gossips to a node that only participates in "domain-B". The
+//     receiving node's global signer state (currentEpoch, signerKeys)
+//     reflects the rotation after gossip.
 //
-//   2. Rejection paths, one per error in anchor_gossip.go:
-//      - Gossip signature mismatch
-//      - Fingerprint signature mismatch
-//      - Fingerprint covers a different block
-//      - Block's self-hash is wrong
-//      - AnchorTxIndex points into void / non-anchor tx
-//      - Duplicate MessageID
+//  2. Rejection paths, one per error in anchor_gossip.go:
+//     - Gossip signature mismatch
+//     - Fingerprint signature mismatch
+//     - Fingerprint covers a different block
+//     - Block's self-hash is wrong
+//     - AnchorTxIndex points into void / non-anchor tx
+//     - Duplicate MessageID
 //
-//   3. Idempotency: the same valid message applied twice is a no-op
-//      the second time; the state doesn't flip back.
+//  3. Idempotency: the same valid message applied twice is a no-op
+//     the second time; the state doesn't flip back.
 package core
 
 import (

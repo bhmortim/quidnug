@@ -34,15 +34,15 @@ type NonceCheckpoint struct {
 // Rejection reasons returned by NonceLedger.Admit. Callers compare with
 // errors.Is.
 var (
-	ErrNonceReplay        = errors.New("nonce: replayed (accepted already ≥ provided)")
-	ErrNonceReserved      = errors.New("nonce: reserved by a tentative block")
-	ErrNonceGapTooLarge   = errors.New("nonce: gap exceeds MaxNonceGap")
-	ErrNonceNotMonotonic  = errors.New("nonce: anchor-nonce must strictly increase")
-	ErrNonceEpochStale    = errors.New("nonce: transaction key-epoch is stale")
-	ErrNonceEpochUnknown  = errors.New("nonce: transaction key-epoch exceeds current")
-	ErrNonceInvalidInput  = errors.New("nonce: invalid input")
-	ErrNonceEpochFrozen   = errors.New("nonce: transaction key-epoch has been invalidated")
-	ErrNonceEpochCapped   = errors.New("nonce: transaction exceeds epoch cap")
+	ErrNonceReplay       = errors.New("nonce: replayed (accepted already ≥ provided)")
+	ErrNonceReserved     = errors.New("nonce: reserved by a tentative block")
+	ErrNonceGapTooLarge  = errors.New("nonce: gap exceeds MaxNonceGap")
+	ErrNonceNotMonotonic = errors.New("nonce: anchor-nonce must strictly increase")
+	ErrNonceEpochStale   = errors.New("nonce: transaction key-epoch is stale")
+	ErrNonceEpochUnknown = errors.New("nonce: transaction key-epoch exceeds current")
+	ErrNonceInvalidInput = errors.New("nonce: invalid input")
+	ErrNonceEpochFrozen  = errors.New("nonce: transaction key-epoch has been invalidated")
+	ErrNonceEpochCapped  = errors.New("nonce: transaction exceeds epoch cap")
 )
 
 // DefaultMaxNonceGap is the maximum advance any single transaction may
@@ -128,13 +128,13 @@ type NonceLedger struct {
 // NewNonceLedger creates an empty ledger.
 func NewNonceLedger() *NonceLedger {
 	return &NonceLedger{
-		accepted:          make(map[NonceKey]int64),
-		tentative:         make(map[NonceKey]int64),
-		currentEpoch:      make(map[string]uint32),
-		lastAnchorNonce:   make(map[string]int64),
-		signerKeys:        make(map[string]map[uint32]string),
-		epochCaps:         make(map[string]map[uint32]int64),
-		frozenEpochs:      make(map[string]map[uint32]bool),
+		accepted:           make(map[NonceKey]int64),
+		tentative:          make(map[NonceKey]int64),
+		currentEpoch:       make(map[string]uint32),
+		lastAnchorNonce:    make(map[string]int64),
+		signerKeys:         make(map[string]map[uint32]string),
+		epochCaps:          make(map[string]map[uint32]int64),
+		frozenEpochs:       make(map[string]map[uint32]bool),
 		guardianSets:       make(map[string]*GuardianSet),
 		pendingRecoveries:  make(map[string]*PendingRecovery),
 		latestFingerprints: make(map[string]DomainFingerprint),

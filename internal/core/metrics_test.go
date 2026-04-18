@@ -9,17 +9,17 @@
 // must not cause false positives.
 //
 // Helpers:
-//   * counterVecValue reads the current value of a labelled counter.
-//   * gaugeValue reads a gauge's current value.
+//   - counterVecValue reads the current value of a labelled counter.
+//   - gaugeValue reads a gauge's current value.
 //
 // Tests:
-//   * RecordBlockGenerated / RecordBlockReceived cover each of the
+//   - RecordBlockGenerated / RecordBlockReceived cover each of the
 //     four BlockAcceptance tiers to catch a mis-mapping between tier
 //     and metric label.
-//   * RecordTransactionProcessed(accepted=true) and
+//   - RecordTransactionProcessed(accepted=true) and
 //     RecordTransactionProcessed(accepted=false) are paired so a
 //     transposed true/false case is caught.
-//   * Gauges round-trip a known value through their setter and read
+//   - Gauges round-trip a known value through their setter and read
 //     it back.
 package core
 

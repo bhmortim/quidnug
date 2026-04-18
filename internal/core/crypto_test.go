@@ -7,13 +7,13 @@
 // tests. This file fills the gap with focused tests of each exported
 // helper:
 //
-//   * SignData + VerifySignature: sign-then-verify round-trip,
+//   - SignData + VerifySignature: sign-then-verify round-trip,
 //     tampered-payload rejection, wrong-key rejection, degenerate
 //     inputs (empty/garbage hex).
-//   * GetPublicKeyHex: nil-receiver and nil-PublicKey safety — the
+//   - GetPublicKeyHex: nil-receiver and nil-PublicKey safety — the
 //     defensive check added during the audit that stopped a panic
 //     on incompletely-initialized test nodes.
-//   * GetBlockSignableData: the "signatures don't sign themselves"
+//   - GetBlockSignableData: the "signatures don't sign themselves"
 //     invariant — mutating ValidatorSigs must not change the
 //     canonical bytes used for signing.
 //

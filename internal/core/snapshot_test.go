@@ -4,7 +4,7 @@
 // -----------
 // Exercises NonceSnapshot production and verification (QDP-0001 §7):
 //
-//   * ProduceSnapshot correctness: empty ledger yields empty entries
+//   - ProduceSnapshot correctness: empty ledger yields empty entries
 //     (not nil — wire compat), entries are filtered by domain, and
 //     output is deterministically sorted so two producers at the
 //     same height produce byte-identical snapshots. Determinism is
@@ -12,11 +12,11 @@
 //     protocol we haven't implemented yet; breaking it now would
 //     poison that future work.
 //
-//   * Sign/verify round-trip: snapshot signed by a real node's key
+//   - Sign/verify round-trip: snapshot signed by a real node's key
 //     passes VerifySnapshot against the ledger's recorded public
 //     key for that node.
 //
-//   * Rejection paths: tampered entries (signature mismatch), wrong
+//   - Rejection paths: tampered entries (signature mismatch), wrong
 //     schema version, unknown producer.
 //
 // Tests use the production SignData / VerifySignature helpers so any

@@ -8,11 +8,11 @@
 // interesting logic without timing flakes.
 //
 // Invariants checked:
-//   * Age-based eviction: blocks older than maxAge are removed, newer
+//   - Age-based eviction: blocks older than maxAge are removed, newer
 //     ones stay.
-//   * Empty domain keys are deleted (no phantom empty slices left
+//   - Empty domain keys are deleted (no phantom empty slices left
 //     behind to bloat the map).
-//   * Nonce reservations held by pruned blocks are released from the
+//   - Nonce reservations held by pruned blocks are released from the
 //     ledger's tentative map, but never below the accepted floor —
 //     ReleaseTentative's clamp-to-accepted behavior is verified on a
 //     scenario where accepted=10, tentative=15, and the pruned block
@@ -30,8 +30,8 @@ func TestPruneExpiredTentativeBlocks_RemovesAged(t *testing.T) {
 	domain := "test.domain.com"
 	now := time.Now().Unix()
 	node.TentativeBlocks[domain] = []Block{
-		{Index: 1, Timestamp: now - 3600, TrustProof: TrustProof{TrustDomain: domain}},   // old
-		{Index: 2, Timestamp: now - 60, TrustProof: TrustProof{TrustDomain: domain}},     // young
+		{Index: 1, Timestamp: now - 3600, TrustProof: TrustProof{TrustDomain: domain}}, // old
+		{Index: 2, Timestamp: now - 60, TrustProof: TrustProof{TrustDomain: domain}},   // young
 	}
 
 	pruned := node.pruneExpiredTentativeBlocks(30 * time.Minute)
