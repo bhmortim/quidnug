@@ -91,7 +91,7 @@ class QuidnugClient {
   async _fetchWithRetry(url, options = {}, maxRetries, baseDelayMs) {
     const retries = maxRetries !== undefined ? maxRetries : this.maxRetries;
     const baseDelay = baseDelayMs !== undefined ? baseDelayMs : this.retryBaseDelayMs;
-    
+
     let lastError;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -102,7 +102,8 @@ class QuidnugClient {
         }
         // Retry on 5xx server errors and 429 rate limit
         if (attempt < retries) {
-          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 100;
+          const backoff = baseDelay * Math.pow(2, attempt) + Math.random() * 100;
+          const delay = this._retryAfterDelay(response, backoff);
           if (this.debug) {
             console.log(`Retry ${attempt + 1}/${retries} for ${url} after ${Math.round(delay)}ms (HTTP ${response.status})`);
           }
@@ -121,6 +122,44 @@ class QuidnugClient {
       }
     }
     throw lastError;
+  }
+
+  /**
+   * Compute retry delay for a rate-limited or throttled response.
+   * Honors the RFC 7231 Retry-After header (delta-seconds or HTTP-date)
+   * when present and falls back to the caller's exponential backoff.
+   * The returned delay is capped at 60s to prevent a pathological server
+   * response from hanging the client for minutes.
+   * @private
+   */
+  _retryAfterDelay(response, fallbackMs) {
+    const MAX_DELAY_MS = 60_000;
+    try {
+      const raw = response && response.headers && typeof response.headers.get === 'function'
+        ? response.headers.get('Retry-After')
+        : null;
+      if (raw == null || raw === '') {
+        return Math.min(fallbackMs, MAX_DELAY_MS);
+      }
+      const trimmed = String(raw).trim();
+      if (/^\d+$/.test(trimmed)) {
+        const secs = parseInt(trimmed, 10);
+        if (Number.isFinite(secs) && secs >= 0) {
+          return Math.min(secs * 1000, MAX_DELAY_MS);
+        }
+      }
+      const asDate = Date.parse(trimmed);
+      if (!Number.isNaN(asDate)) {
+        const delta = asDate - Date.now();
+        if (delta > 0) {
+          return Math.min(delta, MAX_DELAY_MS);
+        }
+        return 0;
+      }
+    } catch {
+      // Fall through to backoff on any unexpected parse error.
+    }
+    return Math.min(fallbackMs, MAX_DELAY_MS);
   }
 
   /**
@@ -1168,14 +1207,33 @@ class QuidnugClient {
    * @throws {Error} With code property on API error
    */
   async _parseResponse(response) {
-    const json = await response.json();
-    
+    let json;
+    try {
+      json = await response.json();
+    } catch (err) {
+      const parseErr = new Error(`Invalid JSON in API response: ${err.message}`);
+      parseErr.code = 'INVALID_JSON';
+      parseErr.httpStatus = response.status;
+      throw parseErr;
+    }
+
+    // Defensive: fetch should never return a non-object here, but a
+    // misbehaving server or proxy could. Fail loudly instead of
+    // returning garbage up the stack.
+    if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+      const shapeErr = new Error('Invalid API response: expected a JSON object');
+      shapeErr.code = 'INVALID_RESPONSE_SHAPE';
+      shapeErr.httpStatus = response.status;
+      throw shapeErr;
+    }
+
     if (json.success) {
       return json.data;
     }
-    
+
     const error = new Error(json.error?.message || 'API request failed');
     error.code = json.error?.code || 'UNKNOWN_ERROR';
+    error.httpStatus = response.status;
     throw error;
   }
   

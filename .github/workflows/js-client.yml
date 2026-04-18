@@ -12,17 +12,21 @@ on:
       - "clients/js/**"
       - ".github/workflows/js-client.yml"
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test JS Client
+    name: Test JS Client (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: clients/js
 
     strategy:
+      fail-fast: false
       matrix:
-        node-version: ["18", "20"]
+        node-version: ["18", "20", "22"]
 
     steps:
       - name: Checkout code
@@ -37,6 +41,9 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate || true
 
       - name: Run tests
         run: npm test

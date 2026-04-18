@@ -118,3 +118,42 @@ domain_gossip_interval: "2m"
 # TTL (hop count) for gossip messages before they stop propagating
 # Environment variable: DOMAIN_GOSSIP_TTL
 domain_gossip_ttl: 3
+
+# --- Transport security ---------------------------------------------------
+#
+# TLS is enabled when BOTH of these are set to readable files. Otherwise
+# the node serves plaintext HTTP and logs a warning.
+#   Environment variables: TLS_CERT_FILE, TLS_KEY_FILE
+# tls_cert_file: "/etc/quidnug/tls/cert.pem"
+# tls_key_file:  "/etc/quidnug/tls/key.pem"
+
+# --- Reverse-proxy trust --------------------------------------------------
+#
+# Comma-separated CIDR list of proxies whose X-Forwarded-For / X-Real-IP
+# headers may be trusted for client-IP attribution. If unset, the node
+# trusts loopback and RFC1918 private ranges by default (the typical
+# sidecar deployment). Nodes exposed directly to the public internet
+# should set this to an empty string AND set TRUST_CLIENT_IP_HEADERS=false.
+#   Environment variable: TRUSTED_PROXIES
+# trusted_proxies: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+#
+# Set to "false" to completely ignore XFF / X-Real-IP.
+#   Environment variable: TRUST_CLIENT_IP_HEADERS
+# trust_client_ip_headers: true
+
+# --- Rate-limiter memory bounds -------------------------------------------
+#
+# Caps the number of per-IP rate limiters held in memory. Entries idle
+# for longer than rate_limiter_idle_ttl are evicted. This protects against
+# IP-rotation memory exhaustion.
+#   Environment variables: RATE_LIMITER_MAX_IPS, RATE_LIMITER_IDLE_TTL
+# rate_limiter_max_ips: 10000
+# rate_limiter_idle_ttl: "10m"
+
+# --- Node-auth timestamp tolerance ----------------------------------------
+#
+# Window (seconds) during which a signed node-to-node request is accepted.
+# Tightening this shrinks the replay window at the cost of clock-skew
+# sensitivity. Must be between 1 and 3600.
+#   Environment variable: NODE_AUTH_TIMESTAMP_TOLERANCE_SECONDS
+# node_auth_timestamp_tolerance_seconds: 60

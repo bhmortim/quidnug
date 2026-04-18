@@ -30,11 +30,20 @@
     "blockchain",
     "decentralized"
   ],
-  "author": "Quidnug",
-  "license": "MIT",
+  "author": "The Quidnug Authors",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/quidnug/quidnug.git"
+    "url": "https://github.com/bhmortim/quidnug.git",
+    "directory": "clients/js"
+  },
+  "bugs": {
+    "url": "https://github.com/bhmortim/quidnug/issues"
+  },
+  "homepage": "https://github.com/bhmortim/quidnug#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "engines": {
     "node": ">=18.0.0"

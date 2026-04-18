@@ -7,6 +7,37 @@
 
 **A decentralized protocol for relational trust, identity, and ownership—where trust is personal, not universal.**
 
+## Quickstart
+
+Run a local single-node Quidnug instance:
+
+```bash
+# Build and run (needs Go 1.23+)
+make build
+./bin/quidnug
+# -> node is listening on :8080
+
+# In another terminal:
+curl http://localhost:8080/api/health
+# -> {"success":true,"data":{"status":"ok",...}}
+```
+
+Or via Docker:
+
+```bash
+make docker-build
+make docker-run
+curl http://localhost:8080/api/health
+```
+
+Next steps:
+- Read [What is Quidnug?](#what-is-quidnug) below for the conceptual model.
+- See [Configuration](#configuration) for TLS, node auth, and trusted-proxy
+  setup before exposing a node to the network.
+- See [`docs/integration-guide.md`](docs/integration-guide.md) for using the
+  JavaScript client.
+- Security issues: follow [`SECURITY.md`](SECURITY.md).
+
 ## What is Quidnug?
 
 Quidnug is a cryptographic protocol for establishing and computing trust relationships between entities. Unlike traditional reputation systems that assign a single "trust score" to everyone, Quidnug computes trust *from your perspective* based on your personal network of relationships.
@@ -618,7 +649,7 @@ const maxLoanAmount = creditScore * BASE_LOAN_LIMIT;
 
 ```bash
 # Build and run
-go build -o quidnug-node ./src/core
+go build -o quidnug-node ./cmd/quidnug
 SEED_NODES='[]' LOG_LEVEL=debug ./quidnug-node
 
 # Or use Docker
@@ -760,7 +791,7 @@ go mod tidy
 make build  # Creates bin/quidnug
 
 # Or build directly
-go build -o quidnug-node ./src/core
+go build -o quidnug-node ./cmd/quidnug
 ```
 
 ### Running a Node
@@ -1062,7 +1093,8 @@ insurance.auto.state-farm.insurance.us
 
 ```
 quidnug/
-├── src/core/              # Go node implementation
+├── cmd/quidnug/           # Binary entry point
+├── internal/core/              # Go node implementation
 │   ├── node.go            # Main entry point, QuidnugNode struct
 │   ├── types.go           # Type definitions (transactions, blocks, domains)
 │   ├── config.go          # Configuration loading from environment
@@ -1105,7 +1137,7 @@ make test
 
 # Build binary
 make build
-# Or: go build -o bin/quidnug ./src/core
+# Or: go build -o bin/quidnug ./cmd/quidnug
 
 # Run
 ./bin/quidnug
@@ -1162,4 +1194,9 @@ make lint
 
 ## License
 
-[MIT License](LICENSE)
+Quidnug is licensed under the [Apache License, Version 2.0](LICENSE). See
+[`NOTICE`](NOTICE) for attribution information and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for how your contributions are licensed.
+
+Security issues: please follow [`SECURITY.md`](SECURITY.md) rather than
+opening a public issue.

@@ -259,6 +259,81 @@ describe('QuidnugClient Retry Logic', () => {
       const delay = callTimes[1] - callTimes[0];
       assert.ok(delay >= 90, `Delay ${delay}ms should be >= 90ms with 100ms base`);
     });
+
+    it('should honor Retry-After header (seconds) on 429', async () => {
+      const callTimes = [];
+      let attempt = 0;
+      mockFetch = mock.fn(async () => {
+        callTimes.push(Date.now());
+        attempt += 1;
+        if (attempt === 1) {
+          return {
+            ok: false,
+            status: 429,
+            headers: new Map([['Retry-After', '1']]),
+          };
+        }
+        return { ok: true, status: 200 };
+      });
+
+      await client._fetchWithRetry('http://localhost:8080/api/test', {}, 3, 10);
+
+      assert.strictEqual(mockFetch.mock.calls.length, 2);
+      const delay = callTimes[1] - callTimes[0];
+      assert.ok(delay >= 900, `Delay ${delay}ms should be ~1000ms per Retry-After header`);
+      assert.ok(delay < 2000, `Delay ${delay}ms should not far exceed 1s`);
+    });
+
+    it('should cap Retry-After at 60 seconds', async () => {
+      const callTimes = [];
+      let attempt = 0;
+      mockFetch = mock.fn(async () => {
+        callTimes.push(Date.now());
+        attempt += 1;
+        if (attempt === 1) {
+          return {
+            ok: false,
+            status: 429,
+            headers: new Map([['Retry-After', '600']]), // 10 minutes
+          };
+        }
+        return { ok: true, status: 200 };
+      });
+
+      // This test only asserts the cap logic path is reached; we don't
+      // actually wait 60s. We intercept the sleep by overriding setTimeout
+      // for the duration of this test.
+      const realSetTimeout = globalThis.setTimeout;
+      let observedDelay = null;
+      globalThis.setTimeout = (fn, ms) => {
+        observedDelay = ms;
+        return realSetTimeout(fn, 0);
+      };
+      try {
+        await client._fetchWithRetry('http://localhost:8080/api/test', {}, 3, 10);
+      } finally {
+        globalThis.setTimeout = realSetTimeout;
+      }
+      assert.ok(observedDelay !== null && observedDelay <= 60_000, `Expected delay <= 60_000ms, saw ${observedDelay}`);
+    });
+
+    it('should fall back to exponential backoff when Retry-After is absent', async () => {
+      const callTimes = [];
+      let attempt = 0;
+      mockFetch = mock.fn(async () => {
+        callTimes.push(Date.now());
+        attempt += 1;
+        if (attempt === 1) {
+          return { ok: false, status: 503, headers: new Map() };
+        }
+        return { ok: true, status: 200 };
+      });
+
+      await client._fetchWithRetry('http://localhost:8080/api/test', {}, 3, 50);
+      assert.strictEqual(mockFetch.mock.calls.length, 2);
+      const delay = callTimes[1] - callTimes[0];
+      assert.ok(delay >= 40, `Expected backoff ~50ms, got ${delay}ms`);
+    });
   });
 
   describe('Integration with API methods', () => {

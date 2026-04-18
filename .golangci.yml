@@ -10,6 +10,14 @@ linters:
     - staticcheck
     - unused
     - gosimple
+    - ineffassign
+    - misspell
+    - contextcheck
+    - nolintlint
+    - gocritic
+    - bodyclose
+    - rowserrcheck
+    - errorlint
 
 linters-settings:
   errcheck:
@@ -21,11 +29,26 @@ linters-settings:
       - fieldalignment
   staticcheck:
     checks: ["all"]
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+    disabled-checks:
+      - ifElseChain
+      - hugeParam
+  misspell:
+    locale: US
+  nolintlint:
+    require-explanation: true
+    require-specific: true
+    allow-unused: false
 
 issues:
   exclude-rules:
     - path: _test\.go
       linters:
         - errcheck
-  max-issues-per-linter: 50
-  max-same-issues: 10
+        - gocritic
+  max-issues-per-linter: 0
+  max-same-issues: 0
