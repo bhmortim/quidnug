@@ -7,6 +7,52 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0005 push-based gossip (H1, new, shadow flag)
+
+- **Push envelopes** (`AnchorPushMessage`, `FingerprintPushMessage`):
+  wrap the existing QDP-0003 payloads with routing metadata
+  (`TTL`, `HopCount`, `ForwardedBy`) that is explicitly excluded
+  from the producer's signature. Envelope fields can be mutated
+  per hop without breaking authenticity.
+- **Receive pipeline**: dedup → subscription filter → validate →
+  apply → forward. Dedup runs first so replay floods are cheap;
+  subscription runs before ECDSA so unsubscribed producers don't
+  cost verification. TTL is clamped server-side on receipt to
+  prevent amplification via a forged-high TTL.
+- **Subscription (implicit)**: a node is "subscribed" to an anchor
+  if its ledger has `signerKeys` for either the producer or the
+  anchor subject. A node is subscribed to a fingerprint if it has
+  any block in the domain or a previously-stored fingerprint for
+  it. No explicit registration — interest is derivable from
+  existing state.
+- **Producer-side fan-out**: validators that seal a block
+  containing an anchor (AnchorTransaction, GuardianSetUpdate,
+  GuardianRecoveryInit/Veto/Commit) originate push messages over
+  the existing `KnownNodes` mesh. Receivers decrement TTL and
+  continue fan-out up to `DomainGossipTTL` hops.
+- **Per-producer rate limit** (token-bucket, 30 msg / 60s default):
+  apply-then-choke semantics — a genuinely new message from an
+  over-cap producer is still applied locally, but forwarding is
+  suppressed. Local truth is never sacrificed to rate control.
+  LRU-evict with a 1024-bucket cap to bound memory.
+- **HTTP endpoints** under `/api/v2/`:
+  - `POST gossip/push-anchor` — receive a push-anchor envelope.
+  - `POST gossip/push-fingerprint` — receive a push-fingerprint
+    envelope.
+  Both return 202 on first accept, 200 on dedup, 400 on schema /
+  validation failure.
+- **Metrics**: `quidnug_gossip_push_received_total`,
+  `quidnug_gossip_push_forward_dropped_total`,
+  `quidnug_gossip_push_rate_limited_total`,
+  `quidnug_gossip_push_propagation_latency_seconds`.
+- **Feature flag** `EnablePushGossip` (env var `ENABLE_PUSH_GOSSIP`,
+  default **off**). Controls whether this node ORIGINATES pushes;
+  receivers always accept so the rollout can proceed
+  early-adopter → laggard without gating.
+- **Canonicalization** inherited verbatim from QDP-0003 — payload
+  signable bytes are unchanged, so a push envelope interoperates
+  with existing pull endpoints on the wire.
+
 ### QDP-0003 cross-domain anchor gossip (new)
 
 - **`DomainFingerprint`**: a signed claim by a domain validator that

@@ -152,6 +152,18 @@ type QuidnugNode struct {
 	// can flip the flag without a full ledger rebuild.
 	NonceLedger        *NonceLedger
 	NonceLedgerEnforce bool
+
+	// QDP-0005 push-based gossip (H1). When PushGossipEnabled is
+	// true the node both emits push messages on fresh anchors /
+	// fingerprints and accepts them on the /api/v2/gossip/push-*
+	// endpoints. Default false; rolls out as a shadow flag.
+	// gossipRate is the per-producer token-bucket limiter,
+	// lazily allocated on first use. gossipRateMutex protects
+	// the lazy initialization itself; the state has its own
+	// internal mutex for the hot path.
+	PushGossipEnabled bool
+	gossipRate        *gossipRateState
+	gossipRateMutex   sync.Mutex
 }
 
 // Run starts the Quidnug node's main loop: loads configuration, initializes
@@ -377,6 +389,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		GossipTTL:                 cfg.DomainGossipTTL,
 		NonceLedger:               NewNonceLedger(),
 		NonceLedgerEnforce:        cfg.EnableNonceLedger,
+		PushGossipEnabled:         cfg.EnablePushGossip,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},

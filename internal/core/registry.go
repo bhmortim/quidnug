@@ -130,7 +130,7 @@ func makeEnhancedTrustCacheKey(observer, target string, maxDepth int, includeUnv
 
 // processBlockTransactions processes transactions in a block to update registries
 func (node *QuidnugNode) processBlockTransactions(block Block) {
-	for _, txInterface := range block.Transactions {
+	for txIdx, txInterface := range block.Transactions {
 		txJson, err := json.Marshal(txInterface)
 		if err != nil {
 			logger.Error("Failed to marshal transaction in block", "blockIndex", block.Index, "error", err)
@@ -184,6 +184,10 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyAnchorFromBlock(tx.Anchor, block)
+			// QDP-0005 H1: if we sealed this block, fan the anchor
+			// out as push-gossip. Receivers decrement TTL and
+			// continue the fan-out up to DomainGossipTTL hops.
+			node.maybePushAnchorFromBlock(block, txIdx)
 
 		case TxTypeGuardianSetUpdate:
 			var tx GuardianSetUpdateTransaction
@@ -192,6 +196,7 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyGuardianSetUpdate(tx.Update, block)
+			node.maybePushAnchorFromBlock(block, txIdx)
 
 		case TxTypeGuardianRecoveryInit:
 			var tx GuardianRecoveryInitTransaction
@@ -200,6 +205,7 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyGuardianRecoveryInit(tx.Init, block)
+			node.maybePushAnchorFromBlock(block, txIdx)
 
 		case TxTypeGuardianRecoveryVeto:
 			var tx GuardianRecoveryVetoTransaction
@@ -208,6 +214,7 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyGuardianRecoveryVeto(tx.Veto, block)
+			node.maybePushAnchorFromBlock(block, txIdx)
 
 		case TxTypeGuardianRecoveryCommit:
 			var tx GuardianRecoveryCommitTransaction
@@ -216,6 +223,7 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyGuardianRecoveryCommit(tx.Commit, block)
+			node.maybePushAnchorFromBlock(block, txIdx)
 		}
 	}
 }

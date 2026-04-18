@@ -41,6 +41,15 @@ type Config struct {
 	// gap violations cause transaction admission to fail. Phase-0 →
 	// Phase-1 switch per QDP-0001 §10.
 	EnableNonceLedger bool `json:"enableNonceLedger" yaml:"enable_nonce_ledger"`
+
+	// QDP-0005 push-gossip feature flag (H1). When false (default),
+	// the node operates on pull-only gossip. When true, fresh
+	// anchors and fingerprints are fanned out on the
+	// /api/v2/gossip/push-* endpoints and the node accepts
+	// inbound pushes. Can be flipped independently of
+	// EnableNonceLedger; push gossip operates in shadow mode for
+	// the first two weeks of v2.3 before defaulting on.
+	EnablePushGossip bool `json:"enablePushGossip" yaml:"enable_push_gossip"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -416,6 +425,10 @@ func LoadConfig() *Config {
 		if ttl, err := strconv.Atoi(domainGossipTTL); err == nil && ttl > 0 {
 			cfg.DomainGossipTTL = ttl
 		}
+	}
+
+	if enablePushGossip := os.Getenv("ENABLE_PUSH_GOSSIP"); enablePushGossip != "" {
+		cfg.EnablePushGossip = enablePushGossip == "true"
 	}
 
 	return cfg

@@ -35,10 +35,15 @@ import (
 
 // registerCrossDomainRoutes mounts QDP-0003 endpoints. Called from
 // StartServerWithConfig's v2 subrouter alongside the guardian routes.
+// QDP-0005 push endpoints are always mounted so receivers can
+// process pushes from early-adopter producers during the shadow
+// rollout. The PushGossipEnabled flag only controls whether THIS
+// node ORIGINATES pushes (PushAnchor/PushFingerprint).
 func (node *QuidnugNode) registerCrossDomainRoutes(router *mux.Router) {
 	router.HandleFunc("/domain-fingerprints", node.SubmitDomainFingerprintHandler).Methods("POST")
 	router.HandleFunc("/domain-fingerprints/{domain}/latest", node.GetLatestDomainFingerprintHandler).Methods("GET")
 	router.HandleFunc("/anchor-gossip", node.SubmitAnchorGossipHandler).Methods("POST")
+	node.registerPushGossipRoutes(router)
 }
 
 // SubmitDomainFingerprintHandler accepts a signed DomainFingerprint
