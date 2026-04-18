@@ -380,10 +380,19 @@ type GuardianSetUpdate struct {
     AnchorNonce int64
     ValidFrom   int64
 
-    PrimarySignature *PrimarySignature
-    GuardianSigs     []GuardianSignature // optional; required if replacing
+    PrimarySignature    *PrimarySignature
+    NewGuardianConsents []GuardianSignature // required: consent from every guardian in NewSet
+    CurrentGuardianSigs []GuardianSignature // required when replacing: threshold of CURRENT set
 }
 ```
+
+*Implementation note (finalized wire format):* the field previously
+sketched as `GuardianSigs` was split into `NewGuardianConsents`
+(required always, covering every guardian in the proposed new set)
+and `CurrentGuardianSigs` (required only when replacing, carrying
+≥ threshold of the *current* set). The split makes the two
+authorization roles textually distinct and removes the ambiguity of
+one field serving two different semantic purposes.
 
 Additional validation:
 - Every proposed `Guardian` quid must consent by either (a) signing the

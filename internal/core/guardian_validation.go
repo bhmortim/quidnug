@@ -17,14 +17,16 @@ var (
 	ErrGuardianEmptySet         = errors.New("guardian: new set must contain at least one guardian")
 	ErrGuardianBadThreshold     = errors.New("guardian: threshold must be in (0, TotalWeight]")
 	ErrGuardianBadDelay         = errors.New("guardian: recovery delay outside [MinRecoveryDelay, MaxRecoveryDelay]")
-	ErrGuardianBadPrimarySig    = errors.New("guardian: primary signature is absent or invalid")
-	ErrGuardianInsufficientSigs = errors.New("guardian: guardian signatures do not meet threshold")
-	ErrGuardianUnknownGuardian  = errors.New("guardian: signing guardian is not in the current set")
-	ErrGuardianDuplicateSigner  = errors.New("guardian: duplicate guardian signature")
-	ErrGuardianStaleValidFrom   = errors.New("guardian: validFrom outside accepted window")
-	ErrGuardianMaturityMissing  = errors.New("guardian: commit anchor predates its pending-recovery maturity")
-	ErrGuardianCommitBadFields  = errors.New("guardian: commit anchor missing committer or signature")
-	ErrGuardianVetoAmbiguous    = errors.New("guardian: veto must populate exactly one of primary or guardian signatures")
+	ErrGuardianBadPrimarySig     = errors.New("guardian: primary signature is absent or invalid")
+	ErrGuardianInsufficientSigs  = errors.New("guardian: guardian signatures do not meet threshold")
+	ErrGuardianUnknownGuardian   = errors.New("guardian: signing guardian is not in the current set")
+	ErrGuardianDuplicateSigner   = errors.New("guardian: duplicate guardian signature")
+	ErrGuardianStaleValidFrom    = errors.New("guardian: validFrom outside accepted window")
+	ErrGuardianMaturityMissing   = errors.New("guardian: commit anchor predates its pending-recovery maturity")
+	ErrGuardianCommitBadFields   = errors.New("guardian: commit anchor missing committer or signature")
+	ErrGuardianVetoAmbiguous     = errors.New("guardian: veto must populate exactly one of primary or guardian signatures")
+	ErrGuardianMissingConsent    = errors.New("guardian: every guardian in the new set must consent on-chain")
+	ErrGuardianRotationForbidden = errors.New("guardian: plain AnchorRotation forbidden for subjects with RequireGuardianRotation")
 )
 
 // The windowing rules are shared with regular anchors so the same 5-min
@@ -60,10 +62,15 @@ func GuardianRecoveryVetoSignableBytes(v GuardianRecoveryVeto) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-// GuardianSetUpdateSignableBytes — same pattern for set update.
+// GuardianSetUpdateSignableBytes — same pattern for set update. All
+// three signature fields are cleared so the canonical bytes the
+// subject, the new guardians, and the current guardians all sign are
+// byte-identical. Nobody's signature is allowed to alter what others
+// are signing.
 func GuardianSetUpdateSignableBytes(u GuardianSetUpdate) ([]byte, error) {
 	u.PrimarySignature = nil
-	u.GuardianSigs = nil
+	u.NewGuardianConsents = nil
+	u.CurrentGuardianSigs = nil
 	return json.Marshal(u)
 }
 
@@ -72,9 +79,15 @@ func GuardianSetUpdateSignableBytes(u GuardianSetUpdate) ([]byte, error) {
 // ValidateGuardianSetUpdate performs all structural, authorization,
 // and temporal checks for an AnchorGuardianSetUpdate. See QDP-0002
 // §6.4.4 for the authorization rules:
-//   - First install (no current set) → primary-only signature.
-//   - Replace existing set → primary + threshold guardians of the
-//     CURRENT set.
+//
+//   - Always: primary-key signature + consent from every guardian in
+//     the new set.
+//   - When replacing an existing set: also a threshold of the
+//     CURRENT set's guardians.
+//
+// The three layers are enforced in the order above; the failure mode
+// returned is the first unmet condition, so test assertions can be
+// specific without having to construct worst-case anchors.
 func ValidateGuardianSetUpdate(l *NonceLedger, u GuardianSetUpdate, now time.Time) error {
 	if u.Kind != AnchorGuardianSetUpdate {
 		return ErrGuardianBadKind
@@ -95,9 +108,7 @@ func ValidateGuardianSetUpdate(l *NonceLedger, u GuardianSetUpdate, now time.Tim
 		return ErrNonceNotMonotonic
 	}
 
-	// Primary signature is always required. It authorizes the subject's
-	// intent; the guardian co-signing (if needed) authorizes the
-	// replacement.
+	// Layer 1: primary signature.
 	if u.PrimarySignature == nil {
 		return ErrGuardianBadPrimarySig
 	}
@@ -113,10 +124,14 @@ func ValidateGuardianSetUpdate(l *NonceLedger, u GuardianSetUpdate, now time.Tim
 		return ErrGuardianBadPrimarySig
 	}
 
-	// If a current set exists, require threshold-of-current guardians.
-	current := l.GuardianSetOf(u.SubjectQuid)
-	if !current.Empty() {
-		if err := verifyGuardianThreshold(l, current, signable, u.GuardianSigs); err != nil {
+	// Layer 2: every guardian in the new set must have consented.
+	if err := verifyNewGuardianConsents(l, u.NewSet, signable, u.NewGuardianConsents); err != nil {
+		return err
+	}
+
+	// Layer 3: if a current set exists, require threshold-of-current.
+	if current := l.GuardianSetOf(u.SubjectQuid); !current.Empty() {
+		if err := verifyGuardianThreshold(l, current, signable, u.CurrentGuardianSigs); err != nil {
 			return err
 		}
 	}
@@ -336,6 +351,52 @@ func validateGuardianSetShape(set GuardianSet) error {
 			return ErrGuardianDuplicateSigner
 		}
 		seen[g.Quid] = struct{}{}
+	}
+	return nil
+}
+
+// verifyNewGuardianConsents confirms that every guardian listed in
+// the proposed NewSet has signed the update. This is the
+// "no unwitting guardian" rule from QDP-0002 §6.4.4: a guardian who
+// hasn't explicitly consented cannot later be held responsible for
+// authorizing a recovery.
+//
+// Compared to verifyGuardianThreshold this is STRICTER in one way
+// (every guardian must sign, not just threshold-many) and LAXER in
+// another (we don't compare against the set's weighted Threshold —
+// consent is a yes/no predicate per guardian, not a weighted sum).
+func verifyNewGuardianConsents(l *NonceLedger, set GuardianSet, signable []byte, consents []GuardianSignature) error {
+	required := make(map[string]uint32, len(set.Guardians))
+	for _, g := range set.Guardians {
+		required[g.Quid] = uint32(g.Epoch)
+	}
+	seen := make(map[string]struct{}, len(consents))
+
+	for _, c := range consents {
+		if _, dup := seen[c.GuardianQuid]; dup {
+			return ErrGuardianDuplicateSigner
+		}
+		seen[c.GuardianQuid] = struct{}{}
+
+		wantEpoch, expected := required[c.GuardianQuid]
+		if !expected {
+			return ErrGuardianUnknownGuardian
+		}
+		if uint32(c.KeyEpoch) != wantEpoch {
+			return ErrGuardianUnknownGuardian
+		}
+		key, known := l.GetSignerKey(c.GuardianQuid, c.KeyEpoch)
+		if !known {
+			return ErrAnchorSignerKeyUnknown
+		}
+		if !VerifySignature(key, signable, c.Signature) {
+			return ErrAnchorBadSignature
+		}
+	}
+
+	// Every guardian in the new set must have consented.
+	if len(seen) != len(required) {
+		return ErrGuardianMissingConsent
 	}
 	return nil
 }

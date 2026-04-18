@@ -90,12 +90,24 @@ func (g GuardianRef) EffectiveWeight() uint16 {
 
 // GuardianSet is a subject quid's declared recovery authority. Stored
 // in the ledger keyed by subject quid.
+//
+// RequireGuardianRotation, when true, forbids a plain AnchorRotation
+// on this subject — the only permitted rotation path becomes the
+// time-locked guardian-recovery flow. Useful for high-value quids
+// (validators, institutional accounts) that want to trade the
+// convenience of self-rotation for guaranteed multi-party approval
+// even when the primary key is uncompromised.
+//
+// We deliberately do NOT carry a MaxConcurrentRecoveries field: the
+// implementation enforces at most one Pending record per subject,
+// which is the sensible operational default per QDP-0002. Operators
+// who want queueing of multiple parallel recoveries can submit the
+// second Init after the first is Committed or Vetoed.
 type GuardianSet struct {
 	Guardians               []GuardianRef `json:"guardians"`
 	Threshold               uint16        `json:"threshold"`
 	RecoveryDelay           time.Duration `json:"recoveryDelay"` // serialized as nanoseconds
 	UpdatedAtBlock          int64         `json:"updatedAtBlock,omitempty"`
-	MaxConcurrentRecoveries uint8         `json:"maxConcurrentRecoveries,omitempty"`
 	RequireGuardianRotation bool          `json:"requireGuardianRotation,omitempty"`
 }
 
@@ -186,19 +198,29 @@ type GuardianRecoveryCommit struct {
 
 // GuardianSetUpdate installs or replaces a GuardianSet.
 //
-//   - First install (no current set): primary-only signature.
-//   - Replace existing set: primary + ≥ Threshold guardians of the
-//     CURRENT set (not the new one — mutation requires existing
-//     authority, otherwise an attacker could hijack the recovery
-//     authority through a unilateral update).
+// Authorization has three layers (QDP-0002 §6.4.4):
+//
+//   - PrimarySignature (always): subject authorizes the change.
+//   - NewGuardianConsents (always): every guardian in NewSet must
+//     sign the update. A guardian who doesn't know they are a
+//     guardian cannot perform the role; consent must be on-chain
+//     and explicit. The network must reject updates that conscript
+//     unwitting quids.
+//   - CurrentGuardianSigs (only when a prior set exists): threshold
+//     of the CURRENT guardians must authorize the replacement.
+//     Without this, an attacker who has the primary key could swap
+//     in colluder guardians and then drive a recovery to their own
+//     key — which is exactly what guardians are meant to prevent.
 type GuardianSetUpdate struct {
-	Kind             AnchorKind          `json:"kind"`
-	SubjectQuid      string              `json:"subjectQuid"`
-	NewSet           GuardianSet         `json:"newSet"`
-	AnchorNonce      int64               `json:"anchorNonce"`
-	ValidFrom        int64               `json:"validFrom"`
-	PrimarySignature *PrimarySignature   `json:"primarySignature"`
-	GuardianSigs     []GuardianSignature `json:"guardianSigs,omitempty"` // required when replacing
+	Kind        AnchorKind  `json:"kind"`
+	SubjectQuid string      `json:"subjectQuid"`
+	NewSet      GuardianSet `json:"newSet"`
+	AnchorNonce int64       `json:"anchorNonce"`
+	ValidFrom   int64       `json:"validFrom"`
+
+	PrimarySignature    *PrimarySignature   `json:"primarySignature"`
+	NewGuardianConsents []GuardianSignature `json:"newGuardianConsents"`
+	CurrentGuardianSigs []GuardianSignature `json:"currentGuardianSigs,omitempty"`
 }
 
 // ----- Transaction wrappers ------------------------------------------------

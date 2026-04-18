@@ -118,6 +118,15 @@ func ValidateAnchor(l *NonceLedger, a NonceAnchor, now time.Time) error {
 		if _, err := decodeP256PublicKey(a.NewPublicKey); err != nil {
 			return fmt.Errorf("%w: %v", ErrAnchorBadNewKey, err)
 		}
+		// QDP-0002: a subject may have opted out of unilateral
+		// rotation by setting RequireGuardianRotation on its
+		// GuardianSet. In that case the only permitted rotation path
+		// is GuardianRecoveryInit / Commit.
+		if l != nil {
+			if set := l.GuardianSetOf(a.SignerQuid); set != nil && set.RequireGuardianRotation {
+				return ErrGuardianRotationForbidden
+			}
+		}
 	case AnchorInvalidation, AnchorEpochCap:
 		if a.ToEpoch != a.FromEpoch {
 			return ErrAnchorBadEpochProgression

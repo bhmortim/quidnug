@@ -90,6 +90,22 @@ func buildSet(guardians []guardian, threshold uint16, delay time.Duration) *Guar
 	}
 }
 
+// consentsFromAll returns a full NewGuardianConsents slice — every
+// guardian signs the provided signable bytes. Matches what a compliant
+// installer would collect before submitting a GuardianSetUpdate.
+func consentsFromAll(t *testing.T, guardians []guardian, signable []byte) []GuardianSignature {
+	t.Helper()
+	out := make([]GuardianSignature, len(guardians))
+	for i, g := range guardians {
+		out[i] = GuardianSignature{
+			GuardianQuid: g.quid,
+			KeyEpoch:     0,
+			Signature:    signWithGuardianKey(t, g.priv, signable),
+		}
+	}
+	return out
+}
+
 // ----- GuardianSetUpdate ---------------------------------------------------
 
 func TestValidateGuardianSetUpdate_FirstInstall(t *testing.T) {
@@ -116,6 +132,8 @@ func TestValidateGuardianSetUpdate_FirstInstall(t *testing.T) {
 		KeyEpoch:  0,
 		Signature: signWithGuardianKey(t, subjectPriv, signable),
 	}
+	// Every guardian in the new set must consent on-chain.
+	u.NewGuardianConsents = consentsFromAll(t, gs, signable)
 
 	if err := ValidateGuardianSetUpdate(l, u, time.Now()); err != nil {
 		t.Fatalf("first install: %v", err)
@@ -168,14 +186,18 @@ func TestValidateGuardianSetUpdate_ReplaceRequiresGuardianThreshold(t *testing.T
 		KeyEpoch:  0,
 		Signature: signWithGuardianKey(t, subjectPriv, signable),
 	}
+	// New-set consent is always required. Populate it up front so the
+	// first assertion below isolates the replace-authorization
+	// (CurrentGuardianSigs) check, not consent.
+	u.NewGuardianConsents = consentsFromAll(t, newGs, signable)
 
-	// Missing guardian sigs on replace → reject.
+	// Missing current-guardian sigs on replace → reject.
 	if err := ValidateGuardianSetUpdate(l, u, time.Now()); !errors.Is(err, ErrGuardianInsufficientSigs) {
 		t.Fatalf("want ErrGuardianInsufficientSigs, got %v", err)
 	}
 
 	// Now supply 2-of-3 existing guardian sigs → accepted.
-	u.GuardianSigs = []GuardianSignature{
+	u.CurrentGuardianSigs = []GuardianSignature{
 		{GuardianQuid: gs[0].quid, KeyEpoch: 0, Signature: signWithGuardianKey(t, gs[0].priv, signable)},
 		{GuardianQuid: gs[1].quid, KeyEpoch: 0, Signature: signWithGuardianKey(t, gs[1].priv, signable)},
 	}

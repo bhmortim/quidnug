@@ -58,6 +58,7 @@ func setupTestRouter(node *QuidnugNode) *mux.Router {
 	router := mux.NewRouter()
 	node.registerAPIRoutes(router.PathPrefix("/api/v1").Subrouter())
 	node.registerAPIRoutes(router.PathPrefix("/api").Subrouter())
+	node.registerGuardianRoutes(router.PathPrefix("/api/v2").Subrouter())
 	return router
 }
 

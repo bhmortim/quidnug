@@ -275,6 +275,8 @@ func TestGuardianRecovery_SetInstallViaBlock(t *testing.T) {
 		KeyEpoch:  0,
 		Signature: hexEncode(sig),
 	}
+	// Consent from every new guardian — required for install.
+	update.NewGuardianConsents = consentsFromAll(t, gs, signable)
 
 	node.processBlockTransactions(Block{
 		Index:      7,

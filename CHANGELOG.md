@@ -7,6 +7,40 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0002 guardian-based recovery (new)
+
+- **Guardian set installation** (`AnchorGuardianSetUpdate`) with full
+  three-layer authorization per QDP-0002 §6.4.4:
+  - **Always:** primary-key signature.
+  - **Always:** consent from every guardian in the new set (no
+    "unwitting guardians" — a guardian who hasn't signed the
+    installation cannot later be held responsible for authorizing a
+    recovery).
+  - **On replace:** threshold-of-current guardians also sign, so an
+    attacker with the primary key cannot swap in colluder guardians.
+- **Time-locked recovery** (`AnchorGuardianRecoveryInit` →
+  `AnchorGuardianRecoveryCommit`): guardians jointly propose a new
+  key, a `RecoveryDelay` elapses, then any committer publishes the
+  finalization. Maturity + audit-signature enforced server-side.
+- **Primary-key veto** (`AnchorGuardianRecoveryVeto`): a single
+  signature from the subject's current key cancels a pending
+  recovery. Guardian-threshold veto also supported (the
+  "coerced-guardian disavows" path). Exactly one of the two
+  authorization paths must be present.
+- **RequireGuardianRotation flag**: subjects that opt in have their
+  plain `AnchorRotation` rejected — the only permitted rotation path
+  becomes guardian recovery. Useful for high-value quids that want
+  multi-party approval even when their primary key is uncompromised.
+- **Weighted guardians**: each `GuardianRef` may declare a weight
+  (default 1). Thresholds are weighted sums.
+- **HTTP endpoints under `/api/v2/guardian/`**:
+  - `POST set-update` — submit a signed `GuardianSetUpdate`.
+  - `POST recovery/init` — submit a signed `GuardianRecoveryInit`.
+  - `POST recovery/veto` — submit a signed veto.
+  - `POST recovery/commit` — submit a mature-delay commit.
+  - `GET set/{quid}` — query the installed guardian set.
+  - `GET pending-recovery/{quid}` — query in-flight recovery state.
+
 ### Licensing
 
 - **BREAKING (legal):** Relicensed from AGPL-3.0 to Apache-2.0. Downstream
