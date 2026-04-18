@@ -113,6 +113,32 @@ func (node *QuidnugNode) SignSnapshot(snap NonceSnapshot) (NonceSnapshot, error)
 	return snap, nil
 }
 
+// StoreLatestSnapshot records a snapshot as the ledger's latest
+// known for its domain. Monotonic on BlockHeight — incoming
+// snapshots below the stored height are silently ignored. Does
+// NOT verify the signature; callers must call VerifySnapshot
+// first.
+func (l *NonceLedger) StoreLatestSnapshot(s NonceSnapshot) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.latestSnapshots == nil {
+		l.latestSnapshots = make(map[string]NonceSnapshot)
+	}
+	if cur, ok := l.latestSnapshots[s.TrustDomain]; ok && cur.BlockHeight >= s.BlockHeight {
+		return
+	}
+	l.latestSnapshots[s.TrustDomain] = s
+}
+
+// GetLatestSnapshot returns the stored latest snapshot for a
+// domain, or the zero value + false if none.
+func (l *NonceLedger) GetLatestSnapshot(domain string) (NonceSnapshot, bool) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	s, ok := l.latestSnapshots[domain]
+	return s, ok
+}
+
 // VerifySnapshot returns nil if the snapshot's signature is valid for
 // its declared ProducerQuid, using the ledger to resolve the producer's
 // current public key. Does not validate the snapshot's *contents* —

@@ -7,6 +7,47 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0008 K-of-K snapshot bootstrap (H3, new, shadow flag)
+
+- **BootstrapFromPeers**: fetches latest `NonceSnapshot` from
+  up to 2K peers for a named domain, groups responses by
+  `BlockHash`, requires the largest group to have >= K
+  agreeing peers. Any disagreement fails closed (QuorumMissed).
+- **Height tolerance**: peers in the winning group may differ
+  by at most `HeightTolerance` (default 4) blocks. Larger
+  spread is evidence of real divergence, rejected.
+- **Stale tolerance**: snapshots older than `StaleTolerance`
+  (default 30d) are excluded from the quorum count.
+- **Signature validation per peer**: peers whose snapshot
+  signature fails against the ledger's known public key for
+  the producer are dropped from the quorum count, not treated
+  as votes.
+- **Trust list**: `SeedBootstrapTrustList` seeds operator-
+  asserted root-trust (`BootstrapTrustEntry{Quid, PublicKey}`)
+  into the ledger's epoch-0 signer keys before bootstrap, so
+  snapshot signatures have something to verify against. Requires
+  at least K entries.
+- **Apply + shadow-verify**: `ApplyBootstrapSnapshot` seeds the
+  ledger's `accepted` / `tentative` maps from the consensus
+  snapshot. The session then enters shadow-verify for the first
+  N blocks (default 64). `ShadowVerifyStep` catches a seed that
+  is inconsistent with live chain state (halts the node with
+  `ErrBootstrapDivergence`).
+- **Operator override** `BootstrapTrustedPeer`: when set, a
+  K-of-K failure that contains the trusted peer in the responses
+  is accepted with a warning.
+- **HTTP endpoints** under `/api/v2/`:
+  - `GET nonce-snapshots/{domain}/latest` — serve stored
+    snapshot.
+  - `POST nonce-snapshots` — accept a snapshot; validates sig
+    and stores monotonically.
+  - `GET bootstrap/status` — operator visibility into current /
+    last session.
+- **Metrics** on session outcomes + shadow divergence.
+- **Migration**: additive, flag-gated `EnableKofKBootstrap`.
+  Pre-H3 peers that don't serve the endpoint are simply not
+  counted toward quorum.
+
 ### QDP-0007 lazy epoch propagation (H4, new, shadow flag)
 
 - **Stale-signer quarantine.** When `EnableLazyEpochProbe` is on,

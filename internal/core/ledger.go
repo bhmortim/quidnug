@@ -142,6 +142,15 @@ type NonceLedger struct {
 	// which is treated as stale for quarantine purposes.
 	lastEpochRefresh map[string]int64
 
+	// latestSnapshots[domain] is the most recent signed snapshot
+	// this node has produced or received for a domain. Served
+	// via GET /api/v2/nonce-snapshots/{domain}/latest; consumed
+	// by bootstrapping clients (QDP-0008 / H3). Replaced on
+	// each new snapshot for the same domain; no history is
+	// retained at this layer (historical snapshots live in
+	// blocks / storage).
+	latestSnapshots map[string]NonceSnapshot
+
 	maxNonceGap int64
 }
 
@@ -162,6 +171,7 @@ func NewNonceLedger() *NonceLedger {
 		guardianResignations:      make(map[string][]GuardianResignation),
 		guardianResignationNonces: make(map[string]map[string]int64),
 		lastEpochRefresh:          make(map[string]int64),
+		latestSnapshots:           make(map[string]NonceSnapshot),
 		maxNonceGap:               DefaultMaxNonceGap,
 	}
 }

@@ -175,6 +175,11 @@ type QuidnugNode struct {
 	EpochProbeTimeout     time.Duration
 	ProbeTimeoutPolicy    string
 	quarantine            *quarantineState
+
+	// QDP-0008 snapshot K-of-K bootstrap (H3). Registry of
+	// in-flight and completed bootstrap sessions. Lazily
+	// allocated on first bootstrap call.
+	bootstrap *bootstrapRegistry
 }
 
 // Run starts the Quidnug node's main loop: loads configuration, initializes
