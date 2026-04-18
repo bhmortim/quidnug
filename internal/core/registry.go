@@ -184,6 +184,38 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.applyAnchorFromBlock(tx.Anchor, block)
+
+		case TxTypeGuardianSetUpdate:
+			var tx GuardianSetUpdateTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal guardian-set-update transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyGuardianSetUpdate(tx.Update, block)
+
+		case TxTypeGuardianRecoveryInit:
+			var tx GuardianRecoveryInitTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal guardian-recovery-init transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyGuardianRecoveryInit(tx.Init, block)
+
+		case TxTypeGuardianRecoveryVeto:
+			var tx GuardianRecoveryVetoTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal guardian-recovery-veto transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyGuardianRecoveryVeto(tx.Veto, block)
+
+		case TxTypeGuardianRecoveryCommit:
+			var tx GuardianRecoveryCommitTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal guardian-recovery-commit transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.applyGuardianRecoveryCommit(tx.Commit, block)
 		}
 	}
 }

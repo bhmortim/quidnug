@@ -97,20 +97,33 @@ type NonceLedger struct {
 	// of the cap.
 	frozenEpochs map[string]map[uint32]bool
 
+	// guardianSets[subject] is the declared guardian set for a
+	// subject's recovery authority. Installed by AnchorGuardianSetUpdate
+	// (QDP-0002 §6.4.4).
+	guardianSets map[string]*GuardianSet
+
+	// pendingRecoveries[subject] tracks an in-flight guardian recovery
+	// (Init → delay → Commit/Veto). Terminal states are retained for
+	// traceability; a new Init transitions the previous record to
+	// RecoveryReplaced.
+	pendingRecoveries map[string]*PendingRecovery
+
 	maxNonceGap int64
 }
 
 // NewNonceLedger creates an empty ledger.
 func NewNonceLedger() *NonceLedger {
 	return &NonceLedger{
-		accepted:        make(map[NonceKey]int64),
-		tentative:       make(map[NonceKey]int64),
-		currentEpoch:    make(map[string]uint32),
-		lastAnchorNonce: make(map[string]int64),
-		signerKeys:      make(map[string]map[uint32]string),
-		epochCaps:       make(map[string]map[uint32]int64),
-		frozenEpochs:    make(map[string]map[uint32]bool),
-		maxNonceGap:     DefaultMaxNonceGap,
+		accepted:          make(map[NonceKey]int64),
+		tentative:         make(map[NonceKey]int64),
+		currentEpoch:      make(map[string]uint32),
+		lastAnchorNonce:   make(map[string]int64),
+		signerKeys:        make(map[string]map[uint32]string),
+		epochCaps:         make(map[string]map[uint32]int64),
+		frozenEpochs:      make(map[string]map[uint32]bool),
+		guardianSets:      make(map[string]*GuardianSet),
+		pendingRecoveries: make(map[string]*PendingRecovery),
+		maxNonceGap:       DefaultMaxNonceGap,
 	}
 }
 

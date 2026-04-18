@@ -38,9 +38,11 @@ func (k AnchorKind) String() string {
 		return "invalidation"
 	case AnchorEpochCap:
 		return "epoch_cap"
-	default:
-		return fmt.Sprintf("unknown(%d)", int(k))
 	}
+	if s, ok := k.guardianString(); ok {
+		return s
+	}
+	return fmt.Sprintf("unknown(%d)", int(k))
 }
 
 // NonceAnchor is a standalone signed message that updates the nonce-
