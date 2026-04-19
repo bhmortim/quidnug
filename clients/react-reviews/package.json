@@ -1,0 +1,32 @@
+{
+  "name": "@quidnug/react-reviews",
+  "version": "2.0.0",
+  "description": "React hooks + components for Quidnug trust-weighted reviews.",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "files": ["src", "README.md"],
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "peerDependencies": {
+    "@quidnug/client": "^2.0.0",
+    "@quidnug/web-components": "^2.0.0",
+    "react": ">=18"
+  },
+  "keywords": [
+    "quidnug",
+    "reviews",
+    "react",
+    "trust",
+    "ratings"
+  ],
+  "author": "The Quidnug Authors",
+  "license": "Apache-2.0"
+}

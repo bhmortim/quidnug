@@ -1,0 +1,40 @@
+{
+  "name": "@quidnug/web-components",
+  "version": "2.0.0",
+  "description": "Framework-agnostic web components for Quidnug trust-weighted reviews. Drop <quidnug-review> onto any page.",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "quidnug",
+    "reviews",
+    "web-components",
+    "custom-elements",
+    "trust",
+    "ratings"
+  ],
+  "author": "The Quidnug Authors",
+  "license": "Apache-2.0",
+  "peerDependencies": {
+    "@quidnug/client": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
