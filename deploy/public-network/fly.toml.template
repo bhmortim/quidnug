@@ -1,0 +1,78 @@
+# Fly.io config for a Quidnug seed node.
+#
+# Substitute the variables via deploy-node.sh, which emits
+# fly.<name>.toml. Do not edit this template in place on a per-node basis.
+#
+# Vars:
+#   ${NODE_NAME}    e.g. quidnug-seed-1
+#   ${NODE_REGION}  e.g. iad, lhr, sin
+
+app          = "${NODE_NAME}"
+primary_region = "${NODE_REGION}"
+
+kill_signal    = "SIGTERM"
+kill_timeout   = 30
+
+[build]
+  image = "ghcr.io/bhmortim/quidnug:latest"
+
+[env]
+  PORT                   = "8080"
+  LOG_LEVEL              = "info"
+  DATA_DIR               = "/data"
+  NODE_NAME              = "${NODE_NAME}"
+  REQUIRE_NODE_AUTH      = "true"
+  RATE_LIMIT_PER_MINUTE  = "600"
+  # Peering is limited to the public network namespace. Other app
+  # domains are still accepted for transactions, but gossip of blocks
+  # is scoped here.
+  SUPPORTED_DOMAINS      = "network.quidnug.com,examples.public.quidnug.com,*"
+  ENABLE_NONCE_LEDGER    = "true"
+  ENABLE_PUSH_GOSSIP     = "true"
+  ENABLE_KOFK_BOOTSTRAP  = "true"
+
+# Secrets (set via `fly secrets set`):
+#   NODE_KEY                base64 of the private key JSON
+#   NODE_AUTH_SECRET        32-byte hex, shared across seeds
+#   GRAFANA_REMOTE_WRITE_URL  remote-write endpoint
+#   GRAFANA_REMOTE_WRITE_TOKEN  Grafana API token
+
+[[services]]
+  protocol       = "tcp"
+  internal_port  = 8080
+  auto_stop_machines  = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port     = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port     = 443
+    handlers = ["tls", "http"]
+
+  [[services.http_checks]]
+    interval       = "10s"
+    grace_period   = "20s"
+    method         = "get"
+    path           = "/api/health"
+    protocol       = "http"
+    timeout        = "5s"
+
+[[mounts]]
+  source      = "quidnug_data"
+  destination = "/data"
+
+[metrics]
+  port = 8080
+  path = "/metrics"
+
+[processes]
+  app = "/app/quidnug"
+
+[[vm]]
+  size    = "shared-cpu-1x"
+  memory  = "512mb"
+  cpus    = 1

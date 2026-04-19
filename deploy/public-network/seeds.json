@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "network": "public.quidnug.com",
+  "description": "Authoritative seed-node identity list for the public Quidnug network. Mirrored at https://quidnug.com/network/seeds.json.",
+  "reservedDomainRoot": "network.quidnug.com",
+  "updated": "2026-04-19T00:00:00Z",
+  "seeds": [
+    {
+      "name": "quidnug-seed-1",
+      "region": "iad",
+      "endpoint": "https://node-1.quidnug.com",
+      "quidId": "PENDING",
+      "publicKey": "PENDING",
+      "status": "pending-deploy",
+      "attestedBy": "quidnug.com",
+      "guardians": { "m": 3, "n": 5, "installed": false }
+    },
+    {
+      "name": "quidnug-seed-2",
+      "region": "lhr",
+      "endpoint": "https://node-2.quidnug.com",
+      "quidId": "PENDING",
+      "publicKey": "PENDING",
+      "status": "pending-deploy",
+      "attestedBy": "quidnug.com",
+      "guardians": { "m": 3, "n": 5, "installed": false }
+    },
+    {
+      "name": "quidnug-seed-3",
+      "region": "sin",
+      "endpoint": "https://node-3.quidnug.com",
+      "quidId": "PENDING",
+      "publicKey": "PENDING",
+      "status": "pending-deploy",
+      "attestedBy": "quidnug.com",
+      "guardians": { "m": 3, "n": 5, "installed": false }
+    }
+  ],
+  "notes": [
+    "After first deploy, run `./emit-seeds-json.sh` to fill quidId and publicKey from the live /api/info endpoints and commit the result.",
+    "Each seed's guardian quorum MUST be installed before the node starts accepting external peering requests."
+  ]
+}
