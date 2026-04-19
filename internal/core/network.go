@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -369,6 +370,10 @@ func (node *QuidnugNode) findNodesForExactDomain(domainName string) []Node {
 		}
 	}
 
+	sort.Slice(domainManagers, func(i, j int) bool {
+		return domainManagers[i].ID < domainManagers[j].ID
+	})
+
 	return domainManagers
 }
 
@@ -391,9 +396,15 @@ func (node *QuidnugNode) findNodesForSubdomains(domainName string) []Node {
 	node.DomainRegistryMutex.RUnlock()
 
 	// Convert node IDs to Node objects
+	sortedIDs := make([]string, 0, len(nodeIDs))
+	for id := range nodeIDs {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sort.Strings(sortedIDs)
+
 	var subdomainNodes []Node
 	node.KnownNodesMutex.RLock()
-	for nodeID := range nodeIDs {
+	for _, nodeID := range sortedIDs {
 		if knownNode, exists := node.KnownNodes[nodeID]; exists {
 			subdomainNodes = append(subdomainNodes, knownNode)
 		}
