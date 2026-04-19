@@ -31,3 +31,6 @@ clients/dotnet/tests/bin/
 clients/dotnet/tests/obj/
 clients/dotnet/examples/*/bin/
 clients/dotnet/examples/*/obj/
+tests/interop/produce-dotnet/bin/
+tests/interop/produce-dotnet/obj/
+tests/interop/produce-rs/target/

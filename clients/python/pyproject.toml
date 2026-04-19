@@ -40,7 +40,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "ruff", "mypy"]
+dev = ["pytest>=7", "pytest-cov", "pytest-asyncio", "ruff", "mypy"]
+async = ["httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://github.com/bhmortim/quidnug"

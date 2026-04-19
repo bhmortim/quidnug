@@ -32,6 +32,34 @@ reason: typed structs and maps produce different field
 orderings after deserialization; rount-tripping normalizes to
 the map-based ordering.
 
+### UTF-8 encoding rule (**critical cross-language gotcha**)
+
+The serialized JSON bytes MUST contain raw UTF-8 for all non-ASCII
+characters — **not** `\uXXXX` JSON escapes.
+
+- Go's `encoding/json` does this by default.
+- Rust's `serde_json` does this by default.
+- JavaScript's `JSON.stringify` does this by default.
+- **Python's `json.dumps` does NOT** — you must pass
+  `ensure_ascii=False`.
+- **Java's Jackson does NOT when using its default string-writer path**
+  — the SDK uses `writeValueAsString` which emits raw UTF-8 directly.
+- **.NET's `System.Text.Json` does NOT** by default — but the SDK
+  configures `JsonSerializerOptions` so it emits UTF-8.
+
+The Quidnug SDKs for every language handle this correctly. If you
+hand-roll a canonicalizer, the cross-SDK interop harness at
+`tests/interop/` will catch any UTF-8 divergence in the first
+transaction that contains non-ASCII input.
+
+### Key sorting rule
+
+The second serialization MUST alphabetize map keys at every depth.
+Go's `encoding/json` alphabetizes `map[string]interface{}` keys by
+default, which is why the round-trip-through-map pattern produces
+sorted output "for free" in Go. Every other language must do this
+explicitly — recursively sort keys before the second marshal.
+
 ## Per-type signable bytes
 
 ### TRUST transaction

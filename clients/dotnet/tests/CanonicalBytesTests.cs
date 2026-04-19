@@ -44,4 +44,23 @@ public class CanonicalBytesTests
         string s = Encoding.UTF8.GetString(CanonicalBytes.Of(outer));
         Assert.Equal("{\"nested\":{\"a\":2,\"z\":1},\"outer\":\"x\"}", s);
     }
+
+    /// <summary>
+    /// Interop lock: the .NET output for this transaction MUST equal
+    /// the reference string that Python / Go / Rust also produce.
+    /// If this diverges, a .NET-signed tx will not verify on a
+    /// Go-reference node.
+    /// </summary>
+    [Fact]
+    public void Utf8InteropLock()
+    {
+        var tx = new Dictionary<string, object?>
+        {
+            ["message"] = "hello 世界 🌍",
+            ["a"] = 1,
+        };
+        string actual = Encoding.UTF8.GetString(CanonicalBytes.Of(tx));
+        string expected = "{\"a\":1,\"message\":\"hello 世界 🌍\"}";
+        Assert.Equal(expected, actual);
+    }
 }

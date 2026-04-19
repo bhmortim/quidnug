@@ -1,0 +1,109 @@
+{
+  "cases": [
+    {
+      "canonicalBytesHex": "7b226e6f6e6365223a312c227369676e657251756964223a2261343663663565333636316437343333222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274727573744c6576656c223a302e392c2274727573746565223a2261626330313233343536373839646566222c2274727573746572223a2261343663663565333636316437343333222c2274797065223a225452555354227d",
+      "excludeFields": [
+        "signature",
+        "txId"
+      ],
+      "name": "trust-basic",
+      "signatureHex": "3046022100c37bae07c1529dde9954754b49975300c6882623531d0c9126b1b123f0a14a3b022100dac3e05d9f20f74794761b60dd5945a50ad07cf453f92ad902059a279ecb971a",
+      "tx": {
+        "nonce": 1,
+        "signerQuid": "a46cf5e3661d7433",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "trustLevel": 0.9,
+        "trustee": "abc0123456789def",
+        "truster": "a46cf5e3661d7433",
+        "type": "TRUST"
+      }
+    },
+    {
+      "canonicalBytesHex": "7b2261747472696275746573223a7b22726f6c65223a2261646d696e222c2274696572223a337d2c22646566696e657251756964223a2261343663663565333636316437343333222c22686f6d65446f6d61696e223a22696e7465726f702e686f6d65222c226e616d65223a22416c696365222c22736368656d6156657273696f6e223a22312e30222c227369676e657251756964223a2261343663663565333636316437343333222c227375626a65637451756964223a2261343663663565333636316437343333222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224944454e54495459222c227570646174654e6f6e6365223a317d",
+      "excludeFields": [
+        "signature",
+        "txId"
+      ],
+      "name": "identity-with-attrs",
+      "signatureHex": "304402206446127471c12bf82f5b2abe9635bd54c440ce53d116ced5358fdcdbb8c61ef502203d11daf89b38a287e5a165fae973f880e407ab87515806f916106948e930d795",
+      "tx": {
+        "attributes": {
+          "role": "admin",
+          "tier": 3
+        },
+        "definerQuid": "a46cf5e3661d7433",
+        "homeDomain": "interop.home",
+        "name": "Alice",
+        "schemaVersion": "1.0",
+        "signerQuid": "a46cf5e3661d7433",
+        "subjectQuid": "a46cf5e3661d7433",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "type": "IDENTITY",
+        "updateNonce": 1
+      }
+    },
+    {
+      "canonicalBytesHex": "7b226576656e7454797065223a224e4f5445222c227061796c6f6164223a7b226d657373616765223a2268656c6c6f20e4b896e7958c20f09f8c8d222c226e6573746564223a7b2261223a2278222c226d223a5b312c322c335d2c227a223a317d7d2c2273657175656e6365223a312c227375626a6563744964223a2261343663663565333636316437343333222c227375626a65637454797065223a2251554944222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224556454e54227d",
+      "excludeFields": [
+        "signature",
+        "txId",
+        "publicKey"
+      ],
+      "name": "event-unicode-nested",
+      "signatureHex": "3044022065c3836eea717d0a1db95ef1b20b0cb48d5dff7bff7463f5521f60f2fb37cf6e02203a6b5e40a791f6ca4305beaea54c32c7ecbbdda762600673410cac851dda10c4",
+      "tx": {
+        "eventType": "NOTE",
+        "payload": {
+          "message": "hello 世界 🌍",
+          "nested": {
+            "a": "x",
+            "m": [
+              1,
+              2,
+              3
+            ],
+            "z": 1
+          }
+        },
+        "sequence": 1,
+        "subjectId": "a46cf5e3661d7433",
+        "subjectType": "QUID",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "type": "EVENT"
+      }
+    },
+    {
+      "canonicalBytesHex": "7b226576656e7454797065223a224d454153555245222c227061796c6f6164223a7b22636f756e74223a302c226e3634223a393030373139393235343734303939312c22776569676874223a302e357d2c2273657175656e6365223a34322c227375626a6563744964223a2261343663663565333636316437343333222c227375626a65637454797065223a2251554944222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224556454e54227d",
+      "excludeFields": [
+        "signature",
+        "txId",
+        "publicKey"
+      ],
+      "name": "numerical-edge",
+      "signatureHex": "304402203ddcccb08f25766dc4404a2f8ae39e969535d69c593c70a0f5fe15f34d17664e0220259be95e8f0cf6f08bce943020b5794d02564fe4813b60a87965261019492902",
+      "tx": {
+        "eventType": "MEASURE",
+        "payload": {
+          "count": 0,
+          "n64": 9007199254740991,
+          "weight": 0.5
+        },
+        "sequence": 42,
+        "subjectId": "a46cf5e3661d7433",
+        "subjectType": "QUID",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "type": "EVENT"
+      }
+    }
+  ],
+  "quid": {
+    "id": "a46cf5e3661d7433",
+    "publicKeyHex": "04dea524018651868c7b2ffb04c487a29add14ce2f9e82f1d49e1a4b0ddd553b493238cdfbd4a1339c021d786c5309097a3e36b1fd0b2037f46db5addbf9ea8763"
+  },
+  "sdk": "rust",
+  "version": "2.0.0"
+}

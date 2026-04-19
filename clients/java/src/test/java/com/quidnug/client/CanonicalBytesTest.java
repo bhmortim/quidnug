@@ -44,4 +44,26 @@ class CanonicalBytesTest {
         String out = new String(CanonicalBytes.of(outer), StandardCharsets.UTF_8);
         assertEquals("{\"nested\":{\"a\":2,\"z\":1},\"outer\":\"x\"}", out);
     }
+
+    /**
+     * Interop lock: the Java output for this transaction MUST equal
+     * the reference string that Python / Go / Rust also produce.
+     * If this diverges, a Java-signed tx will not verify on a
+     * Go-reference node.
+     *
+     * The key gotcha: Jackson's writeValueAsString emits raw UTF-8
+     * for non-ASCII by default, matching Go. If Jackson is ever
+     * reconfigured to escape non-ASCII, this test will fail before
+     * the bug reaches production.
+     */
+    @Test
+    void utf8InteropLock() {
+        Map<String, Object> tx = new LinkedHashMap<>();
+        tx.put("message", "hello 世界 🌍");
+        tx.put("a", 1);
+        String actual = new String(CanonicalBytes.of(tx), StandardCharsets.UTF_8);
+        String expected = "{\"a\":1,\"message\":\"hello 世界 🌍\"}";
+        assertEquals(expected, actual,
+            "UTF-8 interop broken: Java must emit raw UTF-8, not escaped unicode");
+    }
 }

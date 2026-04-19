@@ -1,0 +1,109 @@
+{
+  "sdk": "python",
+  "version": "2.0.0",
+  "quid": {
+    "id": "365b5c41eac324fb",
+    "publicKeyHex": "0448e0b2d76d5ab9065aa4db0024698f3a64550aa55759e2af566321c17b713817349fd068acb95fb49105e3d217bdb27925f350553873d8cc74fe9bcc03a056e6"
+  },
+  "cases": [
+    {
+      "name": "trust-basic",
+      "tx": {
+        "type": "TRUST",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "signerQuid": "365b5c41eac324fb",
+        "truster": "365b5c41eac324fb",
+        "trustee": "abc0123456789def",
+        "trustLevel": 0.9,
+        "nonce": 1
+      },
+      "excludeFields": [
+        "signature",
+        "txId"
+      ],
+      "canonicalBytesHex": "7b226e6f6e6365223a312c227369676e657251756964223a2233363562356334316561633332346662222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274727573744c6576656c223a302e392c2274727573746565223a2261626330313233343536373839646566222c2274727573746572223a2233363562356334316561633332346662222c2274797065223a225452555354227d",
+      "signatureHex": "3045022072a5c09233a75cdab567a009814d37d75b7574316d3c5600d813170ec5d043b7022100d8dff0a26946553735de9c621c27318f6034d0fab221d361224886ffe1544995"
+    },
+    {
+      "name": "identity-with-attrs",
+      "tx": {
+        "type": "IDENTITY",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "signerQuid": "365b5c41eac324fb",
+        "definerQuid": "365b5c41eac324fb",
+        "subjectQuid": "365b5c41eac324fb",
+        "updateNonce": 1,
+        "schemaVersion": "1.0",
+        "name": "Alice",
+        "homeDomain": "interop.home",
+        "attributes": {
+          "role": "admin",
+          "tier": 3
+        }
+      },
+      "excludeFields": [
+        "signature",
+        "txId"
+      ],
+      "canonicalBytesHex": "7b2261747472696275746573223a7b22726f6c65223a2261646d696e222c2274696572223a337d2c22646566696e657251756964223a2233363562356334316561633332346662222c22686f6d65446f6d61696e223a22696e7465726f702e686f6d65222c226e616d65223a22416c696365222c22736368656d6156657273696f6e223a22312e30222c227369676e657251756964223a2233363562356334316561633332346662222c227375626a65637451756964223a2233363562356334316561633332346662222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224944454e54495459222c227570646174654e6f6e6365223a317d",
+      "signatureHex": "304402206382640797c8dcbc6c9f771fae0645bbd92aa8e5a2e740fdc36901bf61dca0df022016a7e0dda025132e6292433d727db4447d5d28e7773a547a39b7ee1e487f8fd9"
+    },
+    {
+      "name": "event-unicode-nested",
+      "tx": {
+        "type": "EVENT",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "subjectId": "365b5c41eac324fb",
+        "subjectType": "QUID",
+        "eventType": "NOTE",
+        "sequence": 1,
+        "payload": {
+          "message": "hello \u4e16\u754c \ud83c\udf0d",
+          "nested": {
+            "z": 1,
+            "a": "x",
+            "m": [
+              1,
+              2,
+              3
+            ]
+          }
+        }
+      },
+      "excludeFields": [
+        "signature",
+        "txId",
+        "publicKey"
+      ],
+      "canonicalBytesHex": "7b226576656e7454797065223a224e4f5445222c227061796c6f6164223a7b226d657373616765223a2268656c6c6f20e4b896e7958c20f09f8c8d222c226e6573746564223a7b2261223a2278222c226d223a5b312c322c335d2c227a223a317d7d2c2273657175656e6365223a312c227375626a6563744964223a2233363562356334316561633332346662222c227375626a65637454797065223a2251554944222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224556454e54227d",
+      "signatureHex": "3046022100a1ac9aed0c20eb8ebf66aa1c58c5088edf5e8b534da215ee73c30ceb9df324c0022100ddca44f6e50403ccd20baff504f2c5a07d6b6d10f6cf7a054f02c4ea83904611"
+    },
+    {
+      "name": "numerical-edge",
+      "tx": {
+        "type": "EVENT",
+        "timestamp": 1700000000,
+        "trustDomain": "interop.test",
+        "subjectId": "365b5c41eac324fb",
+        "subjectType": "QUID",
+        "eventType": "MEASURE",
+        "sequence": 42,
+        "payload": {
+          "count": 0,
+          "weight": 0.5,
+          "n64": 9007199254740991
+        }
+      },
+      "excludeFields": [
+        "signature",
+        "txId",
+        "publicKey"
+      ],
+      "canonicalBytesHex": "7b226576656e7454797065223a224d454153555245222c227061796c6f6164223a7b22636f756e74223a302c226e3634223a393030373139393235343734303939312c22776569676874223a302e357d2c2273657175656e6365223a34322c227375626a6563744964223a2233363562356334316561633332346662222c227375626a65637454797065223a2251554944222c2274696d657374616d70223a313730303030303030302c227472757374446f6d61696e223a22696e7465726f702e74657374222c2274797065223a224556454e54227d",
+      "signatureHex": "30440220608936397696f65afdd4df50b4174d30fcd8ceedf4d8a823d018f0ce035352f90220183dce9973bb0b0a1ec6e271b5e7f1728fab8947e7b52b08c56c9f0a9dcc6523"
+    }
+  ]
+}

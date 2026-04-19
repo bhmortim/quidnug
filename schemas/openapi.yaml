@@ -1,0 +1,882 @@
+openapi: 3.1.0
+info:
+  title: Quidnug node API
+  version: "2.0.0"
+  description: |
+    The public HTTP API served by a Quidnug protocol node.
+
+    Covers the full v2 protocol surface (QDPs 0001–0010):
+    identity, trust, titles, event streams, anchors, guardian sets
+    + recovery, cross-domain gossip, K-of-K bootstrap, fork-block
+    activation, and compact Merkle inclusion proofs.
+
+    Every SDK (`clients/python/`, `pkg/client/`, `@quidnug/client`,
+    `quidnug` crate, `com.quidnug:quidnug-client`,
+    `Quidnug.Client`, `Quidnug` Swift package) wraps exactly this
+    surface and produces byte-identical canonical-signable bytes.
+
+    **Authentication:** optional. Pass
+    `Authorization: Bearer <token>` when the node requires it.
+
+    **Envelope:** every response uses `{success, data?, error?}`.
+    4xx / 5xx may still return JSON envelopes with an `error.code`.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Quidnug maintainers
+    url: https://github.com/bhmortim/quidnug/issues
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev node (from `deploy/compose/`).
+  - url: https://{host}/api
+    description: Production node.
+    variables:
+      host:
+        default: quidnug.example.com
+
+tags:
+  - name: Health
+    description: Node liveness, info, and peer list.
+  - name: Identity
+    description: Quid identity lifecycle.
+  - name: Trust
+    description: Trust edges and relational-trust queries.
+  - name: Title
+    description: Ownership records.
+  - name: Events
+    description: Append-only event streams per subject.
+  - name: Guardians
+    description: Guardian sets + recovery (QDP-0002, QDP-0006).
+  - name: Gossip
+    description: Cross-domain fingerprints + anchor messages (QDP-0003, QDP-0005).
+  - name: Bootstrap
+    description: K-of-K nonce snapshots (QDP-0008).
+  - name: ForkBlock
+    description: Signed fork-activation blocks (QDP-0009).
+  - name: Registry
+    description: Paginated listings of trust / identity / title state.
+  - name: IPFS
+    description: Large-payload storage pinning.
+
+security:
+  - bearerAuth: []
+  - {}
+
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/info:
+    get:
+      tags: [Health]
+      summary: Node identity, version, capabilities
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/nodes:
+    get:
+      tags: [Health]
+      summary: List known peers
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/transactions/trust:
+    post:
+      tags: [Trust]
+      summary: Submit a signed TRUST transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrustTransaction"
+      responses:
+        "200":
+          $ref: "#/components/responses/TxReceipt"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /api/transactions/identity:
+    post:
+      tags: [Identity]
+      summary: Submit a signed IDENTITY transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdentityTransaction"
+      responses:
+        "200":
+          $ref: "#/components/responses/TxReceipt"
+
+  /api/transactions/title:
+    post:
+      tags: [Title]
+      summary: Submit a signed TITLE transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TitleTransaction"
+      responses:
+        "200":
+          $ref: "#/components/responses/TxReceipt"
+
+  /api/identity/{quidId}:
+    get:
+      tags: [Identity]
+      summary: Fetch identity record
+      parameters:
+        - $ref: "#/components/parameters/QuidId"
+        - $ref: "#/components/parameters/Domain"
+      responses:
+        "200":
+          description: Identity record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdentityEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/title/{assetId}:
+    get:
+      tags: [Title]
+      summary: Fetch title record
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Domain"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/trust/{observer}/{target}:
+    get:
+      tags: [Trust]
+      summary: Relational-trust query
+      parameters:
+        - name: observer
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: target
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Domain"
+        - name: maxDepth
+          in: query
+          schema:
+            type: integer
+            default: 5
+      responses:
+        "200":
+          description: Computed trust result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustResultEnvelope"
+
+  /api/trust/query:
+    post:
+      tags: [Trust]
+      summary: Structured relational-trust query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelationalTrustQuery"
+      responses:
+        "200":
+          description: Computed trust result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustResultEnvelope"
+
+  /api/trust/edges/{quidId}:
+    get:
+      tags: [Trust]
+      summary: Direct outbound trust edges for a quid
+      parameters:
+        - $ref: "#/components/parameters/QuidId"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/events:
+    post:
+      tags: [Events]
+      summary: Emit a signed EVENT transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventTransaction"
+      responses:
+        "200":
+          description: Event receipt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventReceiptEnvelope"
+
+  /api/streams/{subjectId}:
+    get:
+      tags: [Events]
+      summary: Stream metadata for a subject
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Domain"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/streams/{subjectId}/events:
+    get:
+      tags: [Events]
+      summary: Paginated events on a subject's stream
+      parameters:
+        - name: subjectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Domain"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/set-update:
+    post:
+      tags: [Guardians]
+      summary: Install or rotate a guardian set (QDP-0002)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GuardianSetUpdate"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/recovery/init:
+    post:
+      tags: [Guardians]
+      summary: Start delayed recovery (QDP-0002)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/recovery/veto:
+    post:
+      tags: [Guardians]
+      summary: Abort a pending recovery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/recovery/commit:
+    post:
+      tags: [Guardians]
+      summary: Commit a recovery after delay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/resign:
+    post:
+      tags: [Guardians]
+      summary: Guardian resignation (QDP-0006)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/guardian/set/{quid}:
+    get:
+      tags: [Guardians]
+      summary: Fetch current guardian set
+      parameters:
+        - name: quid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/domain-fingerprints:
+    post:
+      tags: [Gossip]
+      summary: Publish a signed domain fingerprint (QDP-0003)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainFingerprint"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/domain-fingerprints/{domain}/latest:
+    get:
+      tags: [Gossip]
+      summary: Latest fingerprint for a domain
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/anchor-gossip:
+    post:
+      tags: [Gossip]
+      summary: Deliver cross-domain anchor gossip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/nonce-snapshots:
+    post:
+      tags: [Bootstrap]
+      summary: Publish a K-of-K bootstrap snapshot (QDP-0008)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/nonce-snapshots/{domain}/latest:
+    get:
+      tags: [Bootstrap]
+      summary: Latest snapshot for a domain
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/bootstrap/status:
+    get:
+      tags: [Bootstrap]
+      summary: Bootstrap status of this node
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/fork-block:
+    post:
+      tags: [ForkBlock]
+      summary: Submit a signed fork-activation block (QDP-0009)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/fork-block/status:
+    get:
+      tags: [ForkBlock]
+      summary: Fork-activation status across features
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/blocks:
+    get:
+      tags: [Registry]
+      summary: Paginated blocks
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/registry/trust:
+    get:
+      tags: [Registry]
+      summary: Paginated trust registry
+      parameters:
+        - name: truster
+          in: query
+          schema:
+            type: string
+        - name: trustee
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/ipfs/pin:
+    post:
+      tags: [IPFS]
+      summary: Pin raw content to IPFS
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Pinned content descriptor
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { const: true }
+                  data:
+                    type: object
+                    required: [cid]
+                    properties:
+                      cid: { type: string }
+
+  /api/ipfs/{cid}:
+    get:
+      tags: [IPFS]
+      summary: Fetch content by CID
+      parameters:
+        - name: cid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Raw bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  parameters:
+    QuidId:
+      name: quidId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{16}$"
+      description: 16-char hex quid ID.
+    Domain:
+      name: domain
+      in: query
+      schema:
+        type: string
+      description: Trust domain.
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        default: 0
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Optional bearer token when the node requires auth.
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          nullable: true
+        error:
+          nullable: true
+          type: object
+          properties:
+            code:
+              type: string
+              example: NONCE_REPLAY
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+      required: [success]
+
+    TrustTransaction:
+      type: object
+      required: [type, timestamp, trustDomain, signerQuid, truster, trustee, trustLevel, nonce, signature]
+      properties:
+        type: { const: TRUST }
+        timestamp: { type: integer, format: int64 }
+        trustDomain: { type: string }
+        signerQuid: { type: string }
+        truster: { type: string }
+        trustee: { type: string }
+        trustLevel:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        nonce: { type: integer, format: int64 }
+        validUntil: { type: integer, format: int64 }
+        description: { type: string }
+        signature:
+          type: string
+          description: Hex-encoded DER ECDSA P-256 signature.
+
+    IdentityTransaction:
+      type: object
+      required: [type, timestamp, trustDomain, signerQuid, definerQuid, subjectQuid, updateNonce, signature]
+      properties:
+        type: { const: IDENTITY }
+        timestamp: { type: integer, format: int64 }
+        trustDomain: { type: string }
+        signerQuid: { type: string }
+        definerQuid: { type: string }
+        subjectQuid: { type: string }
+        updateNonce: { type: integer, format: int64 }
+        schemaVersion: { type: string, default: "1.0" }
+        name: { type: string }
+        description: { type: string }
+        attributes:
+          type: object
+          additionalProperties: true
+        homeDomain: { type: string }
+        signature: { type: string }
+
+    OwnershipStake:
+      type: object
+      required: [ownerId, percentage]
+      properties:
+        ownerId: { type: string }
+        percentage:
+          type: number
+          minimum: 0
+          maximum: 100
+        stakeType: { type: string }
+
+    TitleTransaction:
+      type: object
+      required: [type, timestamp, trustDomain, signerQuid, issuerQuid, assetQuid, ownershipMap, signature]
+      properties:
+        type: { const: TITLE }
+        timestamp: { type: integer, format: int64 }
+        trustDomain: { type: string }
+        signerQuid: { type: string }
+        issuerQuid: { type: string }
+        assetQuid: { type: string }
+        ownershipMap:
+          type: array
+          items:
+            $ref: "#/components/schemas/OwnershipStake"
+        transferSigs:
+          type: object
+          additionalProperties:
+            type: string
+        titleType: { type: string }
+        signature: { type: string }
+
+    EventTransaction:
+      type: object
+      required: [type, timestamp, trustDomain, subjectId, subjectType, eventType, sequence, signature, publicKey]
+      properties:
+        type: { const: EVENT }
+        timestamp: { type: integer, format: int64 }
+        trustDomain: { type: string }
+        subjectId: { type: string }
+        subjectType:
+          type: string
+          enum: [QUID, TITLE]
+        eventType: { type: string }
+        sequence: { type: integer, format: int64 }
+        payload:
+          type: object
+          additionalProperties: true
+        payloadCid: { type: string }
+        signature: { type: string }
+        publicKey: { type: string }
+
+    RelationalTrustQuery:
+      type: object
+      required: [observer, target]
+      properties:
+        observer: { type: string }
+        target: { type: string }
+        domain: { type: string, default: default }
+        maxDepth: { type: integer, default: 5 }
+
+    TrustResult:
+      type: object
+      required: [observer, target, trustLevel, domain]
+      properties:
+        observer: { type: string }
+        target: { type: string }
+        trustLevel:
+          type: number
+          minimum: 0
+          maximum: 1
+        trustPath:
+          type: array
+          items: { type: string }
+        pathDepth: { type: integer }
+        domain: { type: string }
+
+    TrustResultEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          $ref: "#/components/schemas/TrustResult"
+
+    EventReceipt:
+      type: object
+      properties:
+        id: { type: string, description: "Transaction ID." }
+        sequence: { type: integer, format: int64 }
+
+    EventReceiptEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          $ref: "#/components/schemas/EventReceipt"
+
+    IdentityRecord:
+      type: object
+      required: [quidId, updateNonce]
+      properties:
+        quidId: { type: string }
+        creator: { type: string }
+        updateNonce: { type: integer, format: int64 }
+        signature: { type: string }
+        name: { type: string }
+        description: { type: string }
+        attributes:
+          type: object
+          additionalProperties: true
+        homeDomain: { type: string }
+        publicKey: { type: string }
+
+    IdentityEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { const: true }
+        data:
+          $ref: "#/components/schemas/IdentityRecord"
+
+    DomainFingerprint:
+      type: object
+      required: [domain, blockHeight, blockHash, producerQuid, timestamp]
+      properties:
+        domain: { type: string }
+        blockHeight: { type: integer, format: int64 }
+        blockHash: { type: string }
+        producerQuid: { type: string }
+        timestamp: { type: integer, format: int64 }
+        signature: { type: string }
+        schemaVersion: { type: integer, default: 1 }
+
+    GuardianRef:
+      type: object
+      required: [quid]
+      properties:
+        quid: { type: string }
+        weight: { type: integer, default: 1 }
+        epoch: { type: integer, default: 0 }
+
+    GuardianSet:
+      type: object
+      required: [subjectQuid, guardians, threshold, recoveryDelaySeconds]
+      properties:
+        subjectQuid: { type: string }
+        guardians:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuardianRef"
+        threshold: { type: integer }
+        recoveryDelaySeconds: { type: integer, format: int64 }
+        requireGuardianRotation: { type: boolean }
+
+    GuardianSetUpdate:
+      type: object
+      required: [subjectQuid, newSet, anchorNonce, validFrom]
+      properties:
+        subjectQuid: { type: string }
+        newSet:
+          $ref: "#/components/schemas/GuardianSet"
+        anchorNonce: { type: integer, format: int64 }
+        validFrom: { type: integer, format: int64 }
+        primarySignature: { type: object }
+        newGuardianConsents:
+          type: array
+          items: { type: object }
+        currentGuardianSigs:
+          type: array
+          items: { type: object }
+
+  responses:
+    GenericSuccess:
+      description: Success envelope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+
+    TxReceipt:
+      description: Transaction submission receipt
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [success, data]
+            properties:
+              success: { const: true }
+              data:
+                type: object
+                properties:
+                  txId: { type: string }
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+          example:
+            success: false
+            error:
+              code: NOT_FOUND
+              message: "not found"
+
+    ValidationError:
+      description: Local precondition failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+
+    ConflictError:
+      description: Node logically rejected the transaction
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+          example:
+            success: false
+            error:
+              code: NONCE_REPLAY
+              message: "nonce already used"
+
+    Unavailable:
+      description: Node unavailable / feature not active
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Envelope"
+          example:
+            success: false
+            error:
+              code: BOOTSTRAPPING
+              message: "not ready"

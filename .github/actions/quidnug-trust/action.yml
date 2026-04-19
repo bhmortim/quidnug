@@ -1,0 +1,137 @@
+name: Quidnug Trust Check
+description: |
+  Query Quidnug relational trust in CI. Fails the workflow if the
+  computed trust from `observer` to `target` is below the
+  threshold — useful as a branch-protection gate for signatures
+  on commits, reviews, releases, or deployment approvals.
+
+author: The Quidnug Authors
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  node:
+    description: "Quidnug node URL (e.g. https://node.example.com)"
+    required: true
+  observer:
+    description: "Observer quid ID (who is asking about trust)"
+    required: true
+  target:
+    description: "Target quid ID (who we want to know about)"
+    required: true
+  domain:
+    description: "Trust domain to query in"
+    required: true
+  threshold:
+    description: |
+      Minimum acceptable trust level in [0, 1]. Defaults to 0.7.
+      Fails the step if computed trust is below this value.
+    required: false
+    default: "0.7"
+  max-depth:
+    description: "Maximum path depth to explore"
+    required: false
+    default: "5"
+  auth-token:
+    description: "Optional bearer token sent as Authorization: Bearer"
+    required: false
+  fail-on-no-path:
+    description: |
+      If 'true' (default), a missing trust path fails the step.
+      If 'false', treats no path as trust=0.0 and only fails if
+      threshold > 0.
+    required: false
+    default: "true"
+
+outputs:
+  trust-level:
+    description: "Computed relational trust in [0, 1]"
+    value: ${{ steps.query.outputs.trust-level }}
+  path:
+    description: "The best trust path, comma-separated quid IDs"
+    value: ${{ steps.query.outputs.path }}
+  path-depth:
+    description: "Number of hops in the best path"
+    value: ${{ steps.query.outputs.path-depth }}
+  passed:
+    description: "'true' if trust >= threshold"
+    value: ${{ steps.query.outputs.passed }}
+
+runs:
+  using: composite
+  steps:
+    - name: Query Quidnug trust
+      id: query
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        NODE="${{ inputs.node }}"
+        OBSERVER="${{ inputs.observer }}"
+        TARGET="${{ inputs.target }}"
+        DOMAIN="${{ inputs.domain }}"
+        THRESHOLD="${{ inputs.threshold }}"
+        MAX_DEPTH="${{ inputs.max-depth }}"
+        FAIL_ON_NO_PATH="${{ inputs.fail-on-no-path }}"
+        TOKEN="${{ inputs.auth-token }}"
+
+        echo "::group::Querying ${NODE}"
+        echo "observer: ${OBSERVER}"
+        echo "target:   ${TARGET}"
+        echo "domain:   ${DOMAIN}"
+        echo "threshold: ${THRESHOLD}"
+
+        URL="${NODE%/}/api/trust/${OBSERVER}/${TARGET}?domain=${DOMAIN}&maxDepth=${MAX_DEPTH}"
+        HDR_ARGS=()
+        if [ -n "${TOKEN}" ]; then
+            HDR_ARGS+=(-H "Authorization: Bearer ${TOKEN}")
+        fi
+
+        RESP=$(curl -sS -w "\n%{http_code}" "${HDR_ARGS[@]}" "${URL}")
+        BODY=$(echo "${RESP}" | head -n -1)
+        CODE=$(echo "${RESP}" | tail -n 1)
+
+        if [ "${CODE}" != "200" ]; then
+            echo "HTTP ${CODE}: ${BODY}"
+            exit 1
+        fi
+
+        SUCCESS=$(echo "${BODY}" | jq -r '.success // false')
+        if [ "${SUCCESS}" != "true" ]; then
+            CODE_FIELD=$(echo "${BODY}" | jq -r '.error.code // "UNKNOWN"')
+            MSG=$(echo "${BODY}" | jq -r '.error.message // ""')
+            if [ "${CODE_FIELD}" = "NOT_FOUND" ] && [ "${FAIL_ON_NO_PATH}" != "true" ]; then
+                echo "No trust path found — treating as trust=0.0 per fail-on-no-path=false"
+                TRUST=0.0
+                PATH_STR=""
+                DEPTH=0
+            else
+                echo "::error::${CODE_FIELD}: ${MSG}"
+                exit 1
+            fi
+        else
+            DATA=$(echo "${BODY}" | jq '.data')
+            TRUST=$(echo "${DATA}" | jq -r '.trustLevel')
+            PATH_STR=$(echo "${DATA}" | jq -r '.trustPath // [] | join(",")')
+            DEPTH=$(echo "${DATA}" | jq -r '.pathDepth // 0')
+        fi
+
+        echo "trust:   ${TRUST}"
+        echo "path:    ${PATH_STR}"
+        echo "depth:   ${DEPTH}"
+
+        # jq does not guarantee decimal formatting, so compare via awk
+        PASSED=$(awk -v t="${TRUST}" -v th="${THRESHOLD}" 'BEGIN { print (t >= th) ? "true" : "false" }')
+        echo "passed:  ${PASSED}"
+
+        echo "trust-level=${TRUST}" >> "${GITHUB_OUTPUT}"
+        echo "path=${PATH_STR}" >> "${GITHUB_OUTPUT}"
+        echo "path-depth=${DEPTH}" >> "${GITHUB_OUTPUT}"
+        echo "passed=${PASSED}" >> "${GITHUB_OUTPUT}"
+        echo "::endgroup::"
+
+        if [ "${PASSED}" != "true" ]; then
+            echo "::error::Trust ${TRUST} is below threshold ${THRESHOLD}"
+            exit 1
+        fi

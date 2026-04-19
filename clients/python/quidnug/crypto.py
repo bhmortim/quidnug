@@ -46,10 +46,20 @@ def canonical_bytes(obj: Any, exclude_fields: Iterable[str] = ()) -> bytes:
 
     # Round-trip: marshal → unmarshal to generic → marshal again. The
     # second marshal sorts keys, matching Go's map[string]interface{}
-    # re-serialization (encoding/json alphabetizes map keys).
-    first = json.dumps(payload, default=_json_default, separators=(",", ":"), sort_keys=False)
+    # re-serialization (encoding/json alphabetizes map keys). We pass
+    # ensure_ascii=False so non-ASCII characters round-trip as their
+    # raw UTF-8 bytes — matching Go's encoding/json default. Without
+    # this, Python would emit \uXXXX escapes and Go verifiers would
+    # reject the signature.
+    first = json.dumps(
+        payload, default=_json_default, separators=(",", ":"),
+        sort_keys=False, ensure_ascii=False,
+    )
     generic = json.loads(first)
-    return json.dumps(generic, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return json.dumps(
+        generic, separators=(",", ":"), sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
 
 
 def _json_default(o: Any) -> Any:
