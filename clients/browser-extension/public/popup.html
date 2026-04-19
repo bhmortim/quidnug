@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Quidnug</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            width: 320px;
+            margin: 0;
+            padding: 12px;
+        }
+        h1 { font-size: 14px; margin: 0 0 8px; color: #444; }
+        .quid {
+            padding: 6px 8px;
+            background: #f7f7f7;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .quid .alias { font-weight: 600; color: #222; }
+        .quid .id { color: #888; font-size: 11px; }
+        button {
+            margin-top: 8px;
+            padding: 6px 12px;
+            border: 1px solid #999;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background: #f0f0f0; }
+        input[type=password], input[type=text] {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .row { display: flex; gap: 4px; margin-top: 6px; }
+        .row > * { flex: 1; }
+    </style>
+</head>
+<body>
+    <h1>Quidnug</h1>
+    <div id="app"></div>
+    <script type="module" src="popup.js"></script>
+</body>
+</html>

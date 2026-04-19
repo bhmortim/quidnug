@@ -24,3 +24,10 @@ clients/python/build/
 clients/python/dist/
 clients/python/*.egg-info/
 clients/rust/target/
+clients/dotnet/bin/
+clients/dotnet/obj/
+clients/java/target/
+clients/dotnet/tests/bin/
+clients/dotnet/tests/obj/
+clients/dotnet/examples/*/bin/
+clients/dotnet/examples/*/obj/

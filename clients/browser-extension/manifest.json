@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Quidnug",
+  "version": "2.0.0",
+  "description": "Manage Quidnug quids and sign Quidnug transactions from your browser.",
+  "author": "The Quidnug Authors",
+  "homepage_url": "https://github.com/bhmortim/quidnug",
+  "icons": {
+    "16": "public/icon-16.png",
+    "48": "public/icon-48.png",
+    "128": "public/icon-128.png"
+  },
+  "action": {
+    "default_title": "Quidnug",
+    "default_popup": "public/popup.html"
+  },
+  "options_page": "public/options.html",
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/injected.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Quidnug Android library — no runtime permissions required.
+         Apps that use AndroidKeystoreSigner with biometric prompts must
+         declare USE_BIOMETRIC themselves at the app level. -->
+</manifest>

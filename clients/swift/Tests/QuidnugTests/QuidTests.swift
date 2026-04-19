@@ -6,6 +6,8 @@ final class QuidTests: XCTestCase {
         let q = Quid.generate()
         XCTAssertEqual(q.id.count, 16)
         XCTAssertTrue(q.hasPrivateKey)
+        XCTAssertNotNil(q.publicKeyHex)
+        XCTAssertNotNil(q.privateKeyHex)
     }
 
     func testSignVerifyRoundtrip() throws {
@@ -17,8 +19,24 @@ final class QuidTests: XCTestCase {
 
     func testPrivateHexRoundtrip() throws {
         let q = Quid.generate()
-        let q2 = try Quid.fromPrivateHex(q.privateKeyHex!)
-        XCTAssertEqual(q.id, q2.id)
-        XCTAssertEqual(q.publicKeyHex, q2.publicKeyHex)
+        let r = try Quid.fromPrivateHex(q.privateKeyHex!)
+        XCTAssertEqual(q.id, r.id)
+        XCTAssertEqual(q.publicKeyHex, r.publicKeyHex)
+        XCTAssertTrue(r.hasPrivateKey)
+    }
+
+    func testReadOnlyCannotSign() throws {
+        let q = Quid.generate()
+        let ro = try Quid.fromPublicHex(q.publicKeyHex)
+        XCTAssertFalse(ro.hasPrivateKey)
+        XCTAssertEqual(q.id, ro.id)
+        XCTAssertThrowsError(try ro.sign(Data("x".utf8)))
+    }
+
+    func testCrossVerifyFails() throws {
+        let a = Quid.generate()
+        let b = Quid.generate()
+        let sig = try a.sign(Data("shared".utf8))
+        XCTAssertFalse(b.verify(Data("shared".utf8), sigHex: sig))
     }
 }
