@@ -503,38 +503,91 @@ See [`docs/integration-guide.md`](docs/integration-guide.md) for:
 
 ---
 
-## Integration
+## Integration — SDKs, integrations, tooling
 
-### JavaScript/TypeScript client
+Quidnug ships first-class SDKs covering the **full protocol surface**
+(QDPs 0001–0010) in Python, Go, JavaScript, and Rust, plus scaffolds
+for Java/Kotlin, C#/.NET, Swift, and Android. See
+[`docs/integration-guide.md`](docs/integration-guide.md) for
+side-by-side examples of the same workflow in every language.
 
-```bash
-npm install  # from clients/js/
-```
+### Client SDKs
 
-```javascript
-import { QuidnugClient } from 'quidnug-client';
+| Language | Path | Status | Package |
+| --- | --- | --- | --- |
+| Python 3.9+ | [`clients/python/`](clients/python/) | **full** — 42 tests passing | `pip install quidnug` |
+| Go 1.22+ | [`pkg/client/`](pkg/client/) | **full** — context-aware, typed, tested | `go get github.com/quidnug/quidnug/pkg/client` |
+| JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin for guardians/gossip/merkle | `npm install @quidnug/client` |
+| Rust 1.74+ | [`clients/rust/`](clients/rust/) | **full** — async reqwest, wiremock-tested | `cargo add quidnug` |
+| Java 17+ / Kotlin | [`clients/java/`](clients/java/) | scaffold — keypair + signing | — |
+| C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | scaffold — keypair + signing | — |
+| Swift iOS/macOS | [`clients/swift/`](clients/swift/) | scaffold — CryptoKit-based | — |
+| Android (Kotlin) | [`clients/android/`](clients/android/) | scaffold — planned Android Keystore integration | — |
+| React | [`clients/react/`](clients/react/) | scaffold — hooks + components | — |
+| Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | scaffold | — |
+| ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | scaffold | — |
+| CLI | [`cmd/quidnug-cli/`](cmd/quidnug-cli/) | **full** — wraps the Go SDK | `go install .../cmd/quidnug-cli@latest` |
 
-const c = new QuidnugClient('http://localhost:8080');
-const quid = await c.generateQuid();
-await c.submitTransaction({ type: 'IDENTITY', quidId: quid.id, name: 'Alice' });
-const trust = await c.getTrust('alice', 'bob', { domain: 'contractors.home' });
-```
+All canonical-bytes signing (the operation the node verifies) is
+**byte-for-byte compatible across every SDK**. A signature produced
+in Python verifies in Go, Rust, JavaScript, or on the reference node.
+See [`schemas/types/canonicalization.md`](schemas/types/canonicalization.md).
 
-### Go embed
+### Domain integrations
 
-```go
-import "github.com/quidnug/quidnug/internal/core"
+Turn-key adapters that bring Quidnug's per-observer trust into a
+specific ecosystem.
 
-cfg := config.LoadConfig()
-node, _ := core.NewQuidnugNode(cfg)
-// Use node.NonceLedger, node.TrustRegistry, etc. directly or start the HTTP server
-go node.StartServer(cfg.Port)
-```
+| Integration | Path | Purpose |
+| --- | --- | --- |
+| Sigstore / cosign | [`integrations/sigstore/`](integrations/sigstore/) | Record verified cosign bundles on artifact titles. |
+| C2PA | [`integrations/c2pa/`](integrations/c2pa/) | Record verified C2PA manifests on media-asset titles. |
+| HL7 FHIR | [`integrations/fhir/`](integrations/fhir/) | Record FHIR R4/R5 resources on patient / practitioner / org titles. |
+| Chainlink External Adapter | [`integrations/chainlink/`](integrations/chainlink/) | Expose relational-trust to on-chain smart contracts. |
+| OIDC bridge | [`cmd/quidnug-oidc/`](cmd/quidnug-oidc/) | Bind IdP subjects (Okta/Auth0/Azure/Keycloak) to Quidnug quids. |
+| gRPC gateway | [`integrations/grpc/`](integrations/grpc/) | Planned proto schemas + grpc-gateway wiring. |
+| GraphQL gateway | [`integrations/graphql/`](integrations/graphql/) | Planned single-round-trip query surface. |
+| WebSocket push | [`integrations/websocket/`](integrations/websocket/) | Planned real-time event subscription protocol. |
+| Terraform provider | [`integrations/terraform/`](integrations/terraform/) | Planned declarative management of domains + guardian sets. |
+| Ledger Nano app | [`integrations/ledger/`](integrations/ledger/) | Planned hardware-wallet signing app. |
+| MQTT bridge | [`integrations/mqtt/`](integrations/mqtt/) | Planned IoT-device event bridge. |
+| Postgres extension | [`integrations/postgres/`](integrations/postgres/) | Planned SQL function exposing relational trust. |
+| Elastic / OpenSearch | [`integrations/elastic/`](integrations/elastic/) | Planned event ingester. |
+
+### Signing backends
+
+Plug any of these into the `signer.Signer` interface instead of using
+in-process private keys.
+
+| Backend | Path | When to use |
+| --- | --- | --- |
+| PKCS#11 / HSM | [`pkg/signer/hsm/`](pkg/signer/hsm/) | SoftHSM, YubiHSM, Thales Luna, AWS CloudHSM, Azure Key Vault HSM, GCP HSM. |
+| WebAuthn / FIDO2 | [`pkg/signer/webauthn/`](pkg/signer/webauthn/) | Touch ID, Windows Hello, passkeys, YubiKey. |
+
+### Deployment + observability
+
+| Asset | Path | Purpose |
+| --- | --- | --- |
+| Helm chart | [`deploy/helm/quidnug/`](deploy/helm/quidnug/) | Production-grade StatefulSet with PVCs, PDB, anti-affinity. |
+| Docker Compose consortium | [`deploy/compose/`](deploy/compose/) | Three-node dev network with IPFS + Prometheus + Grafana. |
+| Grafana dashboard | [`deploy/observability/grafana-dashboard.json`](deploy/observability/grafana-dashboard.json) | Importable dashboard covering the full `quidnug_*` metric family. |
+| Prometheus alerts | [`deploy/observability/prometheus-alerts.yml`](deploy/observability/prometheus-alerts.yml) | Production-ready alert rules. |
+| Postman collection | [`docs/postman/quidnug.postman_collection.json`](docs/postman/quidnug.postman_collection.json) | Importable collection covering every API endpoint. |
+
+### CI / testing
+
+- [`.github/workflows/sdk-matrix.yml`](.github/workflows/sdk-matrix.yml)
+  — parallel matrix CI for Go, Python (3.9–3.13), Node 18/20/22,
+  Rust stable, and Helm-chart lint.
+- Each SDK ships its own tests; `schemas/` provides language-agnostic
+  JSON schemas ensuring all bindings produce byte-identical wire
+  transactions.
 
 ### Prometheus metrics
 
-All operational metrics exposed at `/metrics`. Grafana dashboard
-definitions live under `docs/dashboards/` (TODO).
+All operational metrics exposed at `/metrics`. The Grafana dashboard
+at [`deploy/observability/grafana-dashboard.json`](deploy/observability/grafana-dashboard.json)
+is importable as-is.
 
 ---
 

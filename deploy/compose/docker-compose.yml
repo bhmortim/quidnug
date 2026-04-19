@@ -1,0 +1,102 @@
+# Docker Compose consortium — spin up a small Quidnug network for
+# local development, demos, and integration tests.
+#
+# Three quidnug nodes (n1, n2, n3), a shared Postgres for IPFS
+# pinning, Prometheus + Grafana pre-wired to the deploy/observability
+# dashboards, and an IPFS node for off-chain payloads.
+#
+# Usage:
+#     cd deploy/compose
+#     docker compose up -d
+#     curl http://localhost:8081/api/health   # n1
+#     curl http://localhost:8082/api/health   # n2
+#     curl http://localhost:8083/api/health   # n3
+#     open http://localhost:3000              # Grafana (admin/admin)
+#     open http://localhost:9090              # Prometheus
+
+version: "3.9"
+
+name: quidnug-dev
+
+services:
+  n1:
+    image: ghcr.io/bhmortim/quidnug:2.0.0
+    container_name: quidnug-n1
+    ports: ["8081:8080"]
+    volumes:
+      - ./config/n1.yaml:/etc/quidnug/config.yaml:ro
+      - n1-data:/var/lib/quidnug
+    environment:
+      CONFIG_FILE: /etc/quidnug/config.yaml
+    depends_on: [ipfs]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [quidnug]
+
+  n2:
+    image: ghcr.io/bhmortim/quidnug:2.0.0
+    container_name: quidnug-n2
+    ports: ["8082:8080"]
+    volumes:
+      - ./config/n2.yaml:/etc/quidnug/config.yaml:ro
+      - n2-data:/var/lib/quidnug
+    environment:
+      CONFIG_FILE: /etc/quidnug/config.yaml
+    depends_on: [ipfs, n1]
+    networks: [quidnug]
+
+  n3:
+    image: ghcr.io/bhmortim/quidnug:2.0.0
+    container_name: quidnug-n3
+    ports: ["8083:8080"]
+    volumes:
+      - ./config/n3.yaml:/etc/quidnug/config.yaml:ro
+      - n3-data:/var/lib/quidnug
+    environment:
+      CONFIG_FILE: /etc/quidnug/config.yaml
+    depends_on: [ipfs, n1]
+    networks: [quidnug]
+
+  ipfs:
+    image: ipfs/kubo:v0.31.0
+    container_name: quidnug-ipfs
+    ports:
+      - "5001:5001"
+    volumes:
+      - ipfs-data:/data/ipfs
+    networks: [quidnug]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: quidnug-prometheus
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus-alerts.yml:/etc/prometheus/rules/quidnug-alerts.yml:ro
+    networks: [quidnug]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: quidnug-grafana
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana-dashboard.json:/var/lib/grafana/dashboards/quidnug-node.json:ro
+    networks: [quidnug]
+    depends_on: [prometheus]
+
+volumes:
+  n1-data:
+  n2-data:
+  n3-data:
+  ipfs-data:
+
+networks:
+  quidnug:
+    driver: bridge

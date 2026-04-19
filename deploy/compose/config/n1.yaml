@@ -1,0 +1,18 @@
+# Quidnug node n1 — dev compose
+node:
+  name: n1
+  homeDomain: dev.local
+http:
+  listen: "0.0.0.0:8080"
+data:
+  dir: /var/lib/quidnug
+ipfs:
+  enabled: true
+  endpoint: http://ipfs:5001
+gossip:
+  peers:
+    - http://n2:8080
+    - http://n3:8080
+gossipPush:
+  maxPerSecond: 100
+  burst: 200

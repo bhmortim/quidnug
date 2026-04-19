@@ -1,0 +1,91 @@
+# CI matrix for every Quidnug SDK.
+#
+# Each language has its own job; runs in parallel. The top-level `go`
+# job also builds and tests all the Go integration packages + cmd
+# binaries under cmd/ and integrations/.
+
+name: SDK matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: Go (SDK + integrations + CLIs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./... -count=1 -timeout=5m
+
+  python:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        working-directory: clients/python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+      - name: Test
+        working-directory: clients/python
+        run: pytest -q
+
+  js:
+    name: JS SDK (v1 + v2)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install + test
+        working-directory: clients/js
+        run: |
+          npm ci --omit=dev || npm install --omit=dev
+          npm test
+
+  rust:
+    name: Rust SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Cargo check
+        working-directory: clients/rust
+        run: cargo check --all-targets
+      - name: Cargo test
+        working-directory: clients/rust
+        run: cargo test --all-targets
+
+  helm:
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Helm lint
+        run: helm lint deploy/helm/quidnug
+      - name: Helm template
+        run: helm template test deploy/helm/quidnug > /tmp/rendered.yaml

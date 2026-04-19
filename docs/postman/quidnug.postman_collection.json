@@ -1,0 +1,227 @@
+{
+  "info": {
+    "name": "Quidnug v2",
+    "_postman_id": "quidnug-v2-collection",
+    "description": "API collection for Quidnug nodes (QDPs 0001-0010).\n\n- `{{baseUrl}}` → base URL of a node, e.g. `http://localhost:8080`\n- `{{quidId}}` → the quid you want to operate on\n- `{{observer}}`, `{{target}}`, `{{domain}}` → trust query variables\n- `{{bearerToken}}` → optional, sent as `Authorization: Bearer <token>`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{bearerToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "quidId", "value": "" },
+    { "key": "observer", "value": "" },
+    { "key": "target", "value": "" },
+    { "key": "domain", "value": "default" },
+    { "key": "bearerToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /api/health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/health" }
+        },
+        {
+          "name": "GET /api/info",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/info" }
+        },
+        {
+          "name": "GET /api/nodes",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/nodes" }
+        }
+      ]
+    },
+    {
+      "name": "Identity",
+      "item": [
+        {
+          "name": "POST /api/transactions/identity",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"IDENTITY\",\n  \"timestamp\": 1700000000,\n  \"trustDomain\": \"{{domain}}\",\n  \"signerQuid\": \"{{quidId}}\",\n  \"definerQuid\": \"{{quidId}}\",\n  \"subjectQuid\": \"{{quidId}}\",\n  \"updateNonce\": 1,\n  \"schemaVersion\": \"1.0\",\n  \"name\": \"Alice\",\n  \"signature\": \"<hex-DER-sig>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/transactions/identity"
+          }
+        },
+        {
+          "name": "GET /api/identity/:quidId",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/identity/{{quidId}}?domain={{domain}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Trust",
+      "item": [
+        {
+          "name": "POST /api/transactions/trust",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TRUST\",\n  \"timestamp\": 1700000000,\n  \"trustDomain\": \"{{domain}}\",\n  \"signerQuid\": \"{{observer}}\",\n  \"truster\": \"{{observer}}\",\n  \"trustee\": \"{{target}}\",\n  \"trustLevel\": 0.9,\n  \"nonce\": 1,\n  \"signature\": \"<hex-DER-sig>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/transactions/trust"
+          }
+        },
+        {
+          "name": "GET /api/trust/:observer/:target",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/trust/{{observer}}/{{target}}?domain={{domain}}&maxDepth=5"
+          }
+        },
+        {
+          "name": "POST /api/trust/query",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"observer\": \"{{observer}}\",\n  \"target\": \"{{target}}\",\n  \"domain\": \"{{domain}}\",\n  \"maxDepth\": 5\n}"
+            },
+            "url": "{{baseUrl}}/api/trust/query"
+          }
+        },
+        {
+          "name": "GET /api/trust/edges/:quidId",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/trust/edges/{{quidId}}" }
+        }
+      ]
+    },
+    {
+      "name": "Title",
+      "item": [
+        {
+          "name": "POST /api/transactions/title",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TITLE\",\n  \"timestamp\": 1700000000,\n  \"trustDomain\": \"{{domain}}\",\n  \"signerQuid\": \"{{quidId}}\",\n  \"issuerQuid\": \"{{quidId}}\",\n  \"assetQuid\": \"asset-1\",\n  \"ownershipMap\": [\n    { \"ownerId\": \"{{quidId}}\", \"percentage\": 100.0 }\n  ],\n  \"transferSigs\": {},\n  \"signature\": \"<hex-DER-sig>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/transactions/title"
+          }
+        },
+        {
+          "name": "GET /api/title/:assetId",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/title/asset-1?domain={{domain}}" }
+        }
+      ]
+    },
+    {
+      "name": "Events + streams",
+      "item": [
+        {
+          "name": "POST /api/events",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"EVENT\",\n  \"timestamp\": 1700000000,\n  \"trustDomain\": \"{{domain}}\",\n  \"subjectId\": \"{{quidId}}\",\n  \"subjectType\": \"QUID\",\n  \"eventType\": \"LOGIN\",\n  \"sequence\": 1,\n  \"payload\": { \"ip\": \"198.51.100.7\" },\n  \"signature\": \"<hex-DER-sig>\",\n  \"publicKey\": \"<SEC1-hex-pubkey>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/events"
+          }
+        },
+        {
+          "name": "GET /api/streams/:subjectId",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/streams/{{quidId}}?domain={{domain}}" }
+        },
+        {
+          "name": "GET /api/streams/:subjectId/events",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/streams/{{quidId}}/events?limit=50" }
+        }
+      ]
+    },
+    {
+      "name": "Guardians (QDP-0002)",
+      "item": [
+        {
+          "name": "POST /api/guardian/set-update",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"subjectQuid\": \"{{quidId}}\",\n  \"newSet\": { },\n  \"anchorNonce\": 1,\n  \"validFrom\": 1700000000\n}" },
+            "url": "{{baseUrl}}/api/guardian/set-update"
+          }
+        },
+        {
+          "name": "GET /api/guardian/set/:quid",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/guardian/set/{{quidId}}" }
+        },
+        {
+          "name": "GET /api/guardian/pending-recovery/:quid",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/guardian/pending-recovery/{{quidId}}" }
+        }
+      ]
+    },
+    {
+      "name": "Gossip (QDP-0003 / 0005)",
+      "item": [
+        {
+          "name": "POST /api/domain-fingerprints",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/domain-fingerprints" }
+        },
+        {
+          "name": "GET /api/domain-fingerprints/:domain/latest",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/domain-fingerprints/{{domain}}/latest" }
+        },
+        {
+          "name": "POST /api/anchor-gossip",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/anchor-gossip" }
+        }
+      ]
+    },
+    {
+      "name": "Bootstrap (QDP-0008)",
+      "item": [
+        {
+          "name": "GET /api/nonce-snapshots/:domain/latest",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/nonce-snapshots/{{domain}}/latest" }
+        },
+        {
+          "name": "GET /api/bootstrap/status",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/bootstrap/status" }
+        }
+      ]
+    },
+    {
+      "name": "Fork-block (QDP-0009)",
+      "item": [
+        {
+          "name": "POST /api/fork-block",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/fork-block" }
+        },
+        {
+          "name": "GET /api/fork-block/status",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/fork-block/status" }
+        }
+      ]
+    },
+    {
+      "name": "Blocks",
+      "item": [
+        {
+          "name": "GET /api/blocks",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/blocks?limit=50" }
+        },
+        {
+          "name": "GET /api/transactions",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/transactions?limit=50" }
+        }
+      ]
+    }
+  ]
+}

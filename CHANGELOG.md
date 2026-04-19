@@ -7,6 +7,79 @@ onward.
 
 ## [Unreleased]
 
+### QDP-0011 client libraries & integrations
+
+The client/integration surface lands in a tiered rollout:
+
+**Tier 1 — SDKs with full protocol parity**
+
+- **Python 2.0.0** (`clients/python/`) — new packaged SDK with typed
+  dataclasses, requests-based HTTP client, ECDSA P-256, canonical
+  signable bytes matching Go byte-for-byte, QDP-0010 proof verifier,
+  structured error taxonomy, four runnable examples, 42 passing tests.
+- **Go client package** (`pkg/client/`) — external-consumer-safe
+  package mirroring the Python API. Functional-options constructor,
+  context-aware methods, typed errors, inclusion-proof verifier.
+- **JS client v2** (`@quidnug/client@2.0.0`) — additive mixin adding
+  guardian / gossip / bootstrap / fork-block / merkle methods on top
+  of the existing v1 class. TypeScript module augmentation.
+- **`quidnug-cli`** (`cmd/quidnug-cli/`) — operator CLI wrapping the
+  Go SDK. Structured exit codes (0/2/3/4/5/6), offline Merkle verify.
+- **Observability bundle** (`deploy/observability/`) — Grafana
+  dashboard + Prometheus alert rules matching the live `quidnug_*`
+  metric family.
+
+**Tier 2 — deployment + enterprise identity**
+
+- **Helm chart** (`deploy/helm/quidnug/`) — production-grade
+  StatefulSet with PVCs, PDB, zone-spread anti-affinity,
+  ServiceMonitor + PrometheusRule opt-ins.
+- **Abstract signer interface** (`pkg/signer/`) — decouples key
+  custody from signing.
+- **PKCS#11 / HSM signer** (`pkg/signer/hsm/`) — wraps SoftHSM,
+  YubiHSM, CloudHSM, Azure KV, GCP HSM. Build-tag-gated CGo.
+- **WebAuthn / FIDO2 bridge** (`pkg/signer/webauthn/`) — server-side
+  coordinator for passkey / Touch ID / Windows Hello signing.
+- **Rust SDK** (`clients/rust/`) — new crate `quidnug` 2.0.0, async
+  reqwest client, wiremock-tested, full protocol surface.
+- **OIDC bridge** (`internal/oidc/` + `cmd/quidnug-oidc/`) — binds
+  Okta / Auth0 / Azure / Keycloak / Google Workspace subjects to
+  Quidnug quids with immutable bindings.
+
+**Tier 3 — domain integrations + language scaffolds**
+
+- **Sigstore / cosign** (`integrations/sigstore/`) — record verified
+  cosign bundles as SIGSTORE_SIGNATURE events on artifact titles.
+- **C2PA** (`integrations/c2pa/`) — record verified C2PA manifests as
+  C2PA_MANIFEST events on media-asset titles.
+- **HL7 FHIR** (`integrations/fhir/`) — record FHIR R4/R5 resources
+  as FHIR_RESOURCE.{ResourceType} events on patient titles.
+- **Chainlink External Adapter** (`integrations/chainlink/`) — expose
+  relational-trust queries to on-chain smart contracts.
+- **Java / Kotlin scaffold** (`clients/java/`) — Gradle Kotlin DSL,
+  Quid keygen + sign + verify with BouncyCastle.
+- **C# / .NET scaffold** (`clients/dotnet/`) — .NET 8 /
+  netstandard2.1, Quid keygen + sign + verify with built-in ECDsa.
+- **ISO 20022 mapping scaffold** (`clients/iso20022/`).
+
+**Tier 4 — platform scaffolds**
+
+- Swift (iOS/macOS), Android, browser extension, React hook library,
+  gRPC gateway, GraphQL gateway, WebSocket subscriptions, Terraform
+  provider, Ledger app, MQTT bridge, Postgres extension, Elastic
+  ingester — all scaffolded with README roadmaps.
+
+**Supporting infrastructure**
+
+- Language-agnostic JSON schemas (`schemas/json/`) plus the canonical
+  signable-bytes specification (`schemas/types/canonicalization.md`)
+  that every SDK implements identically.
+- Docker Compose consortium (`deploy/compose/`) for local dev.
+- Postman collection (`docs/postman/`) covering every endpoint.
+- Multi-language integration guide (`docs/integration-guide.md`).
+- SDK matrix CI (`.github/workflows/sdk-matrix.yml`) covering Go,
+  Python 3.9–3.13, Node 18/20/22, Rust stable, Helm lint.
+
 ### QDP-0010 compact Merkle proofs (H2, new, soft fork)
 
 - **New Block field** `TransactionsRoot`: SHA-256 binary Merkle
