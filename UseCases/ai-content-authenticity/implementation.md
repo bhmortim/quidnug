@@ -1,0 +1,274 @@
+# Implementation: AI Content Authenticity
+
+## 1. Identity setup
+
+### Camera manufacturer
+```bash
+curl -X POST $NODE/api/identities -d '{
+  "quidId":"canon-corp",
+  "name":"Canon Inc.",
+  "homeDomain":"media.provenance.news",
+  "creator":"canon-corp","updateNonce":1
+}'
+# Plus guardian set (corporate recovery structure)
+```
+
+### Each camera as a quid
+```bash
+# Camera manufacturer registers each produced device
+curl -X POST $NODE/api/identities -d '{
+  "quidId":"canon-5d-mark-iv-serial-123",
+  "name":"Canon 5D Mark IV #123",
+  "creator":"canon-corp","updateNonce":1,
+  "attributes":{
+    "model":"Canon 5D Mark IV",
+    "serialNumber":"123",
+    "manufactureDate":"2024-06-15",
+    "firmwareVersion":"1.2.3"
+  }
+}'
+
+# Canon publishes a trust edge endorsing the device
+curl -X POST $NODE/api/trust -d '{
+  "truster":"canon-corp",
+  "trustee":"canon-5d-mark-iv-serial-123",
+  "trustLevel":1.0,
+  "domain":"media.provenance.news.capture",
+  "description":"Authentic Canon device; factory-signed firmware"
+}'
+```
+
+### Photographer, editor, publisher quids — similar.
+
+## 2. Capture event
+
+Camera firmware signs internally (via HSM chip) as the shutter
+fires:
+
+```bash
+# Camera uploads the capture event on reconnection
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"photo-canon-capture-a1b2c3",
+  "subjectType":"TITLE",
+  "eventType":"media.captured",
+  "payload":{
+    "captureDevice":"canon-5d-mark-iv-serial-123",
+    "originalHash":"<sha256 of raw image>",
+    "captureParams":{"iso":200,"aperture":2.8,"shutter":"1/125"},
+    "timestamp":1713400000,
+    "geoHash":"9q8zn..."
+  },
+  "creator":"canon-5d-mark-iv-serial-123","signature":"<sig>"
+}'
+
+# Title created with photographer as owner
+curl -X POST $NODE/api/v1/titles -d '{
+  "assetId":"photo-canon-capture-a1b2c3",
+  "domain":"media.provenance.news",
+  "titleType":"media-asset",
+  "owners":[{"ownerId":"photographer-jane-doe","percentage":100.0}],
+  "attributes":{
+    "assetType":"photo",
+    "capturedAt":1713400000,
+    "captureDevice":"canon-5d-mark-iv-serial-123",
+    "assetContentHash":"<sha256>"
+  },
+  "signatures":{"photographer-jane-doe":"<sig>"}
+}'
+```
+
+## 3. Edits
+
+Each edit creates a new event:
+
+```bash
+# Photographer crops in Lightroom
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"photo-canon-capture-a1b2c3",
+  "subjectType":"TITLE",
+  "eventType":"media.cropped",
+  "payload":{
+    "editor":"photographer-jane-doe",
+    "cropBox":{"x1":100,"y1":200,"x2":2000,"y2":1500},
+    "inputHash":"<sha256 prev>",
+    "outputHash":"<sha256 cropped>",
+    "software":"Adobe Lightroom 13.0.1"
+  },
+  "creator":"photographer-jane-doe","signature":"<sig>"
+}'
+
+# Reuters staff editor color-grades
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"photo-canon-capture-a1b2c3",
+  "subjectType":"TITLE",
+  "eventType":"media.color-graded",
+  "payload":{
+    "editor":"editor-reuters-staff-mark",
+    "gradeParams":{"exposure":-0.3,"shadows":0.5},
+    "inputHash":"<sha256>","outputHash":"<sha256>"
+  },
+  "creator":"editor-reuters-staff-mark","signature":"<sig>"
+}'
+
+# Publishing
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"photo-canon-capture-a1b2c3",
+  "subjectType":"TITLE",
+  "eventType":"media.published",
+  "payload":{
+    "publisher":"reuters",
+    "storyID":"story-12345",
+    "publishedAt":1713500000
+  },
+  "creator":"reuters","signature":"<sig>"
+}'
+```
+
+## 4. Consumer verification
+
+A news aggregator's trust-aware verifier:
+
+```go
+type ContentVerifier struct {
+    client  QuidnugClient
+    selfQuid string
+    domain  string
+}
+
+func (v *ContentVerifier) Verify(ctx context.Context, assetID string) (*VerificationResult, error) {
+    title, err := v.client.GetTitle(ctx, assetID)
+    if err != nil { return nil, err }
+
+    events, err := v.client.GetSubjectEvents(ctx, assetID, "TITLE")
+    if err != nil { return nil, err }
+
+    result := &VerificationResult{AssetID: assetID, Chain: []ChainStep{}}
+
+    for _, ev := range events {
+        step := ChainStep{
+            Timestamp:  ev.Timestamp,
+            EventType:  ev.EventType,
+            Actor:      ev.Creator,
+        }
+        trust, err := v.client.GetTrust(ctx, v.selfQuid, ev.Creator, v.domain, nil)
+        if err != nil {
+            step.TrustLevel = 0
+        } else {
+            step.TrustLevel = trust.TrustLevel
+        }
+        // Verify signature (already done server-side on event storage;
+        // re-verify here if skeptical)
+        step.SignatureValid = v.VerifySignature(ev)
+        result.Chain = append(result.Chain, step)
+    }
+
+    // Overall trust = min over the chain (chain is only as strong as weakest link)
+    result.OverallTrust = 1.0
+    for _, s := range result.Chain {
+        if s.TrustLevel < result.OverallTrust {
+            result.OverallTrust = s.TrustLevel
+        }
+    }
+
+    return result, nil
+}
+```
+
+## 5. AI-generated content
+
+When the asset is generated by a model:
+
+```bash
+# Asset title
+curl -X POST $NODE/api/v1/titles -d '{
+  "assetId":"synthetic-image-xyz",
+  "domain":"media.provenance.social",
+  "titleType":"media-asset",
+  "owners":[{"ownerId":"acme-user-alice","percentage":100.0}],
+  "attributes":{
+    "assetType":"photo",
+    "origin":"generated"
+  }
+}'
+
+# Generation event
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"synthetic-image-xyz",
+  "subjectType":"TITLE",
+  "eventType":"media.generated",
+  "payload":{
+    "generator":"acme-image-model-v2",
+    "prompt":"Sunset over mountains",
+    "modelHash":"<sha256>",
+    "seed":42,
+    "outputHash":"<sha256>"
+  },
+  "creator":"acme-image-model-v2","signature":"<sig>"
+}'
+```
+
+## 6. Counter-claims (deepfake detection)
+
+A third-party detection service believes an asset is AI-generated
+despite claiming capture:
+
+```bash
+curl -X POST $NODE/api/v1/events -d '{
+  "subjectId":"photo-suspect-deepfake",
+  "subjectType":"TITLE",
+  "eventType":"media.authenticity.disputed",
+  "payload":{
+    "disputer":"deepfake-detector-org-x",
+    "evidence":"<hash of analysis report>",
+    "confidence":0.92,
+    "claim":"Likely AI-generated; mismatched lighting vectors"
+  },
+  "creator":"deepfake-detector-org-x","signature":"<sig>"
+}'
+```
+
+## 7. Revocation
+
+Canon discovers a batch of compromised cameras:
+
+```bash
+# Canon invalidates trust in the specific device
+curl -X POST $NODE/api/trust -d '{
+  "truster":"canon-corp",
+  "trustee":"canon-5d-mark-iv-serial-123",
+  "trustLevel":0.0,
+  "domain":"media.provenance.news.capture",
+  "nonce":<next>,
+  "description":"Device firmware compromise; do not trust captures"
+}'
+```
+
+Consumer verifiers checking trust now see trust=0 for this
+device → assets claiming capture from it have zero capture
+trust → overall trust tanks.
+
+## 8. Testing
+
+```go
+func TestMedia_CaptureAndChain(t *testing.T) {
+    // Create title + capture event + 2 edits + publish
+    // Verifier sees 5-step chain
+    // Overall trust = min(trust in each actor)
+}
+
+func TestMedia_CompromisedCameraPropagates(t *testing.T) {
+    // Canon revokes trust in device
+    // Consumer verifier sees capture trust = 0
+    // Overall trust = 0 (chain broken at origin)
+}
+
+func TestMedia_DisputeEvent(t *testing.T) {
+    // Fake authenticity disputed event
+    // Verifier flags overall
+}
+```
+
+## Where to go next
+
+- [`threat-model.md`](threat-model.md)
+- [`../ai-model-provenance/`](../ai-model-provenance/)
