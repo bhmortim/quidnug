@@ -1,0 +1,14 @@
+# Minimal config for the reviews demo. Single-node, no seeds.
+port: "8087"
+seed_nodes: []
+log_level: info
+data_dir: "/tmp/quidnug-reviews-demo-data"
+rate_limit_per_minute: 100000
+enable_nonce_ledger: false
+ipfs_enabled: false
+allow_domain_registration: true
+require_parent_domain_auth: false
+supported_domains: []
+# Fast blocks so identities commit to the registry quickly enough
+# for dependent transactions (titles, events).
+block_interval: "500ms"

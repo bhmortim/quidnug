@@ -5,6 +5,14 @@
 > expertise, and their historical helpfulness — not by an
 > average that treats every reviewer as identical.
 
+## Want to run it?
+
+A **full end-to-end working demo** against a live reference
+node is in [`demo/`](./demo/). It posts 16 identities, 14 trust
+edges, 15 reviews, and 8 helpfulness votes to an actual running
+Quidnug node and renders three divergent per-observer ratings
+in a browser. Start there if you want to see this working.
+
 ## The problem with today's reviews
 
 Every review system on the web uses the same broken model:

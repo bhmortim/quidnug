@@ -159,6 +159,8 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 			txDomain = t.TrustDomain
 		case TitleTransaction:
 			txDomain = t.TrustDomain
+		case EventTransaction:
+			txDomain = t.TrustDomain
 		default:
 			// Unknown transaction type, skip
 			continue

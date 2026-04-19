@@ -1,0 +1,153 @@
+{
+  "node": "http://localhost:8087",
+  "topic": "reviews.public.technology.laptops",
+  "product": "aced417afc2235d5",
+  "reviews": [
+    {
+      "reviewer": "veteran",
+      "reviewerId": "ee180622ab692cde",
+      "rating": 4.5,
+      "title": "Solid laptop with minor keyboard quirks"
+    },
+    {
+      "reviewer": "newbie",
+      "reviewerId": "7141fb615e93f861",
+      "rating": 2.0,
+      "title": "Not what I expected"
+    },
+    {
+      "reviewer": "rev_alice_trusts",
+      "reviewerId": "970d4cb96e426d33",
+      "rating": 4.8,
+      "title": "Best laptop I've used in years"
+    },
+    {
+      "reviewer": "rev_bob_trusts",
+      "reviewerId": "1cc55ea7fab00cf5",
+      "rating": 3.5,
+      "title": "Middle of the road"
+    },
+    {
+      "reviewer": "rev_random",
+      "reviewerId": "2e981c9b53d872e1",
+      "rating": 5.0,
+      "title": "AMAZING! BUY NOW!!!"
+    }
+  ],
+  "observers": {
+    "alice": {
+      "id": "a964b67ef43a1494",
+      "description": "Tech-savvy, direct trust to veteran + 5 voters",
+      "view": {
+        "observer": "a964b67ef43a1494",
+        "product": "aced417afc2235d5",
+        "topic": "reviews.public.technology.laptops",
+        "rating": 4.5349174800035925,
+        "total_weight": 0.6469806701017667,
+        "contributing": 2,
+        "total_considered": 5,
+        "contributions": [
+          {
+            "reviewer": "ee180622ab692cde",
+            "rating": 4.5,
+            "weight": 0.5716775547318023,
+            "t": 0.9,
+            "h": 1.0,
+            "a": 0.6351973509204972,
+            "r": 0.9999998931274487,
+            "age_days": 7.80169665813446e-05
+          },
+          {
+            "reviewer": "970d4cb96e426d33",
+            "rating": 4.8,
+            "weight": 0.07530311536996451,
+            "t": 0.85,
+            "h": 0.5,
+            "a": 0.17718382013555792,
+            "r": 0.9999998912708103,
+            "age_days": 7.93723127356282e-05
+          }
+        ]
+      }
+    },
+    "bob": {
+      "id": "2263c13e42579b9c",
+      "description": "Skeptic, narrower trust, 0.6 on veteran",
+      "view": {
+        "observer": "2263c13e42579b9c",
+        "product": "aced417afc2235d5",
+        "topic": "reviews.public.technology.laptops",
+        "rating": 4.343197362964958,
+        "total_weight": 0.4519918886611543,
+        "contributing": 2,
+        "total_considered": 5,
+        "contributions": [
+          {
+            "reviewer": "ee180622ab692cde",
+            "rating": 4.5,
+            "weight": 0.3811183686006359,
+            "t": 0.6,
+            "h": 1.0,
+            "a": 0.6351973509204972,
+            "r": 0.9999998899248599,
+            "age_days": 8.035485667211038e-05
+          },
+          {
+            "reviewer": "1cc55ea7fab00cf5",
+            "rating": 3.5,
+            "weight": 0.0708735200605184,
+            "t": 0.8,
+            "h": 0.5,
+            "a": 0.17718382013555792,
+            "r": 0.9999998872116997,
+            "age_days": 8.23354638285107e-05
+          }
+        ]
+      }
+    },
+    "carol": {
+      "id": "5aa0a7de11a2a362",
+      "description": "Restaurant reviewer \u2014 no tech network",
+      "view": {
+        "observer": "5aa0a7de11a2a362",
+        "product": "aced417afc2235d5",
+        "topic": "reviews.public.technology.laptops",
+        "rating": 4.5,
+        "total_weight": 0.2858387749398293,
+        "contributing": 1,
+        "total_considered": 5,
+        "contributions": [
+          {
+            "reviewer": "ee180622ab692cde",
+            "rating": 4.5,
+            "weight": 0.2858387749398293,
+            "t": 0.9,
+            "h": 0.5,
+            "a": 0.6351973509204972,
+            "r": 0.9999998846398964,
+            "age_days": 8.421288044364364e-05
+          }
+        ]
+      }
+    }
+  },
+  "reverse_lookup": {
+    "a964b67ef43a1494": "alice",
+    "2263c13e42579b9c": "bob",
+    "5aa0a7de11a2a362": "carol",
+    "ee180622ab692cde": "veteran",
+    "7141fb615e93f861": "newbie",
+    "970d4cb96e426d33": "rev_alice_trusts",
+    "1cc55ea7fab00cf5": "rev_bob_trusts",
+    "2e981c9b53d872e1": "rev_random",
+    "5a2edbb0fbe806c7": "voter-0",
+    "bfcdb538f14cfb43": "voter-1",
+    "1f9984ba2dd3afbf": "voter-2",
+    "a87fdbf558f067fd": "voter-3",
+    "b19716cc10545604": "voter-4",
+    "cf1d4df028273160": "voter-5",
+    "5fe7e7efe97c45a6": "voter-6",
+    "891053ac1c0fe96e": "voter-7"
+  },
+  "unweighted": 3.96
+}

@@ -37,7 +37,7 @@ from quidnug.types import OwnershipStake
 from algorithm import TrustWeightedRater
 
 
-NODE_URL = "http://localhost:8080"
+NODE_URL = "http://localhost:8087"
 TOPIC = "reviews.public.technology.laptops"
 PRODUCT_ID = "laptop-xps15-simulation"
 

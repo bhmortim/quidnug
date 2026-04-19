@@ -270,7 +270,7 @@ func Run() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := quidnugNode.StartServer(cfg.Port); err != nil && err != http.ErrServerClosed {
+		if err := quidnugNode.StartServerWithConfig(cfg.Port, cfg.RateLimitPerMinute, cfg.MaxBodySizeBytes); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
 	}()

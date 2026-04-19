@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quidnug Trust-Weighted Reviews — Live Demo</title>
+<style>
+    :root {
+        --bg: #0f1117;
+        --bg-card: #181b24;
+        --bg-card-hi: #242836;
+        --fg: #e8eaed;
+        --fg-dim: #9aa0a6;
+        --accent: #8ab4f8;
+        --accent-2: #f28b82;
+        --border: #2a2d37;
+        --star: #fbbc04;
+        --green: #81c995;
+        --red: #f28b82;
+    }
+    * { box-sizing: border-box; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 2em 1em 4em;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 {
+        font-size: 2em;
+        margin: 0 0 0.2em;
+        font-weight: 700;
+    }
+    h1 .sub {
+        font-size: 0.5em;
+        font-weight: 400;
+        color: var(--fg-dim);
+        display: block;
+        margin-top: 0.3em;
+    }
+    .meta {
+        color: var(--fg-dim);
+        font-size: 0.9em;
+        margin-bottom: 2em;
+    }
+    .meta code {
+        color: var(--accent);
+        background: var(--bg-card);
+        padding: 2px 6px;
+        border-radius: 3px;
+    }
+    .card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.4em 1.6em;
+        margin-bottom: 1.2em;
+    }
+    .card h2 {
+        margin: 0 0 0.6em;
+        font-size: 1.1em;
+        color: var(--fg-dim);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .ratings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1em;
+        margin-top: 0.8em;
+    }
+    .rating-box {
+        background: var(--bg-card-hi);
+        border-radius: 8px;
+        padding: 1em;
+        text-align: center;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: border-color 0.15s;
+    }
+    .rating-box.active {
+        border-color: var(--accent);
+    }
+    .rating-box .label {
+        color: var(--fg-dim);
+        font-size: 0.85em;
+        margin-bottom: 0.3em;
+    }
+    .rating-box .value {
+        font-size: 2.1em;
+        font-weight: 700;
+        color: var(--accent);
+        line-height: 1;
+    }
+    .rating-box.unweighted .value {
+        color: var(--accent-2);
+    }
+    .rating-box .stars {
+        color: var(--star);
+        font-size: 1em;
+        margin-top: 0.3em;
+        letter-spacing: 2px;
+    }
+    .rating-box .hint {
+        color: var(--fg-dim);
+        font-size: 0.75em;
+        margin-top: 0.4em;
+    }
+    .rating-box .desc {
+        color: var(--fg-dim);
+        font-size: 0.8em;
+        margin-top: 0.5em;
+        min-height: 2.4em;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92em;
+    }
+    th, td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+    }
+    th {
+        color: var(--fg-dim);
+        font-weight: 500;
+        font-size: 0.8em;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    td.num { font-variant-numeric: tabular-nums; text-align: right; }
+    td.muted { color: var(--fg-dim); font-style: italic; }
+    .stars-small {
+        color: var(--star);
+        letter-spacing: 1px;
+    }
+    .legend {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.7em;
+        font-size: 0.88em;
+    }
+    .legend div { color: var(--fg-dim); }
+    .legend b { color: var(--fg); }
+    .pill {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 12px;
+        font-size: 0.75em;
+        font-weight: 600;
+        background: var(--bg-card-hi);
+        color: var(--fg-dim);
+    }
+    .pill.in { color: var(--green); }
+    .pill.out { color: var(--red); }
+    .all-reviews {
+        margin-top: 0.6em;
+    }
+    .review-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6em 0.8em;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.92em;
+    }
+    .review-row:last-child { border-bottom: none; }
+    .review-row .name { font-weight: 600; }
+    .review-row .title { color: var(--fg-dim); font-style: italic; flex-grow: 1; padding: 0 1em; }
+    .review-row .right { display: flex; gap: 1em; align-items: center; }
+    .footer {
+        margin-top: 3em;
+        color: var(--fg-dim);
+        font-size: 0.85em;
+        text-align: center;
+    }
+    .footer code { color: var(--accent); }
+    details { margin-top: 1em; }
+    summary {
+        cursor: pointer;
+        color: var(--fg-dim);
+        font-size: 0.9em;
+    }
+    pre {
+        background: var(--bg);
+        padding: 1em;
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: 0.8em;
+        border: 1px solid var(--border);
+    }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Quidnug Trust-Weighted Reviews
+        <span class="sub">Live snapshot from an actual Quidnug node</span>
+    </h1>
+    <div class="meta" id="meta">Loading…</div>
+
+    <div class="card">
+        <h2>Per-observer rating</h2>
+        <div class="ratings-grid" id="ratings"></div>
+        <p style="margin-top: 1em; color: var(--fg-dim); font-size: 0.9em;">
+            Click any observer above. Same 5 raw reviews —
+            <b style="color: var(--fg)">completely different effective ratings</b>
+            depending on who is asking.
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>Raw reviews (all 5, unfiltered)</h2>
+        <div class="all-reviews" id="all-reviews"></div>
+    </div>
+
+    <div class="card" id="breakdown-card">
+        <h2>Contribution breakdown — <span id="observer-name" style="color: var(--fg); font-size: 0.9em; text-transform: none; letter-spacing: normal;"></span></h2>
+        <p style="color: var(--fg-dim); font-size: 0.9em; margin-top: 0;">
+            Why this observer's rating came out where it did. Each
+            reviewer's raw stars are multiplied by the four factors
+            <b>T × H × A × R</b>. Reviewers with any factor at zero
+            (or trust too low) are excluded entirely.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Reviewer</th>
+                    <th class="num">Raw stars</th>
+                    <th class="num">Weight</th>
+                    <th class="num">T (trust)</th>
+                    <th class="num">H (helpful)</th>
+                    <th class="num">A (activity)</th>
+                    <th class="num">R (recency)</th>
+                </tr>
+            </thead>
+            <tbody id="breakdown-body"></tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Factor legend</h2>
+        <div class="legend">
+            <div><b>T — Topical trust</b><br>Observer's transitive trust in the reviewer within this topic (with 0.8 decay per topic-tree hop when falling back to a parent domain).</div>
+            <div><b>H — Helpfulness</b><br>Ratio of HELPFUL / (HELPFUL + UNHELPFUL) votes on this reviewer from other observers the viewer trusts.</div>
+            <div><b>A — Activity</b><br>Log-scaled review count — raises confidence in the reviewer's pattern.</div>
+            <div><b>R — Recency</b><br>Exponential decay: 2-year half-life, floor 0.3 so ancient reviews never fully vanish.</div>
+        </div>
+    </div>
+
+    <details>
+        <summary>Raw demo-state.json (source of truth)</summary>
+        <pre id="raw-json"></pre>
+    </details>
+
+    <div class="footer">
+        Protocol spec: <code>examples/reviews-and-comments/PROTOCOL.md</code> ·
+        Algorithm: <code>examples/reviews-and-comments/algorithm.md</code> ·
+        Source: <code>examples/reviews-and-comments/demo/demo.py</code>
+    </div>
+</div>
+
+<script>
+const STATE_PATH = "demo-state.json";
+
+function renderStars(value, max = 5) {
+    const filled = Math.round(value);
+    return "★".repeat(filled) + "☆".repeat(max - filled);
+}
+
+function fmt(v) {
+    return v == null ? "—" : v.toFixed(2);
+}
+
+async function main() {
+    let state;
+    try {
+        state = await (await fetch(STATE_PATH, {cache: "no-store"})).json();
+    } catch (e) {
+        document.getElementById("meta").innerHTML =
+            "⚠️ Could not load <code>demo-state.json</code>. Run " +
+            "<code>python examples/reviews-and-comments/demo/demo.py</code> " +
+            "first to produce the snapshot.";
+        return;
+    }
+
+    document.getElementById("meta").innerHTML =
+        `Topic: <code>${state.topic}</code> · Product quid: <code>${state.product}</code> · Node: <code>${state.node}</code>`;
+
+    // Ratings grid
+    const grid = document.getElementById("ratings");
+
+    const unweighted = state.unweighted;
+    const unBox = document.createElement("div");
+    unBox.className = "rating-box unweighted";
+    unBox.innerHTML = `
+        <div class="label">Classic unweighted average</div>
+        <div class="value">${unweighted.toFixed(2)}</div>
+        <div class="stars">${renderStars(unweighted)}</div>
+        <div class="desc">What every review site shows today</div>
+        <div class="hint">${state.reviews.length} reviews averaged</div>
+    `;
+    grid.appendChild(unBox);
+
+    for (const [name, data] of Object.entries(state.observers)) {
+        const box = document.createElement("div");
+        box.className = "rating-box";
+        box.dataset.observer = name;
+        const r = data.view.rating;
+        box.innerHTML = `
+            <div class="label">${name.charAt(0).toUpperCase() + name.slice(1)}'s view</div>
+            <div class="value">${r == null ? "—" : r.toFixed(2)}</div>
+            <div class="stars">${r == null ? "(no basis)" : renderStars(r)}</div>
+            <div class="desc">${data.description}</div>
+            <div class="hint">${data.view.contributing}/${data.view.total_considered} reviews weighted in</div>
+        `;
+        box.addEventListener("click", () => selectObserver(name, state));
+        grid.appendChild(box);
+    }
+
+    // All reviews
+    const allBox = document.getElementById("all-reviews");
+    for (const r of state.reviews) {
+        const row = document.createElement("div");
+        row.className = "review-row";
+        row.innerHTML = `
+            <div class="name">${r.reviewer}</div>
+            <div class="title">"${r.title}"</div>
+            <div class="right">
+                <span class="stars-small">${renderStars(r.rating)}</span>
+                <span>${r.rating.toFixed(1)}</span>
+            </div>
+        `;
+        allBox.appendChild(row);
+    }
+
+    // Default-select Alice
+    selectObserver(Object.keys(state.observers)[0], state);
+
+    document.getElementById("raw-json").textContent =
+        JSON.stringify(state, null, 2);
+}
+
+function selectObserver(name, state) {
+    document.querySelectorAll(".rating-box").forEach(b => {
+        b.classList.toggle("active", b.dataset.observer === name);
+    });
+
+    const view = state.observers[name].view;
+    document.getElementById("observer-name").textContent =
+        `${name.charAt(0).toUpperCase() + name.slice(1)} (${view.contributing} of ${view.total_considered} raw reviews contribute)`;
+
+    const body = document.getElementById("breakdown-body");
+    body.innerHTML = "";
+
+    const contributingIds = new Set(view.contributions.map(c => c.reviewer));
+
+    // Lookup map: reviewer ID → review object
+    const reviewById = {};
+    for (const r of state.reviews) reviewById[r.reviewerId] = r;
+
+    // Show all 5 reviews; mark excluded ones dimly
+    for (const r of state.reviews) {
+        const contrib = view.contributions.find(c => c.reviewer === r.reviewerId);
+        const tr = document.createElement("tr");
+        if (contrib) {
+            tr.innerHTML = `
+                <td>${r.reviewer} <span class="pill in">included</span></td>
+                <td class="num">${r.rating.toFixed(1)}</td>
+                <td class="num">${contrib.weight.toFixed(3)}</td>
+                <td class="num">${contrib.t.toFixed(2)}</td>
+                <td class="num">${contrib.h.toFixed(2)}</td>
+                <td class="num">${contrib.a.toFixed(2)}</td>
+                <td class="num">${contrib.r.toFixed(2)}</td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td class="muted">${r.reviewer} <span class="pill out">excluded</span></td>
+                <td class="num muted">${r.rating.toFixed(1)}</td>
+                <td class="num muted" colspan="5">not trusted at this topic (T or weight below threshold)</td>
+            `;
+        }
+        body.appendChild(tr);
+    }
+}
+
+main();
+</script>
+</body>
+</html>
