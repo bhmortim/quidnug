@@ -148,6 +148,23 @@ site trusts different editors.
 
 ---
 
+## Government / Elections
+
+### [`elections/`](elections/)
+
+**Problem:** Voter registration, poll books, ballot secrecy,
+verifiability, and instant recount — today's systems trade one
+against another and none are publicly verifiable.
+
+**Why Quidnug:** Bring-your-own voter quid + authority-signed
+registration trust edge + blind-signature ballot issuance +
+per-BQ vote trust edges = every design requirement for a
+cryptographically-sound election, with paper-ballot parity for
+fail-safe auditability. Anyone can recount by running a query.
+This is the most detailed use case in the library.
+
+---
+
 ## Cross-industry
 
 High-stakes domains where the trust model, key lifecycle, or audit
@@ -211,9 +228,10 @@ style transparency log for this package").
 | 7  | ai-agent-authorization                 | AI            | Guardian set as capability scope, time-lock veto, emergency revoke    |
 | 8  | federated-learning-attestation         | AI            | Event streams for gradients, push gossip for coordination             |
 | 9  | ai-content-authenticity                | AI            | Event streams per asset, transitive edit trust                        |
-| 10 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
-| 11 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
-| 12 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
+| 10 | **elections**                          | **Government**| **BYO voter quid, blind-sig ballot issuance, public recount, paper parity** |
+| 11 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
+| 12 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
+| 13 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
 
 ---
 

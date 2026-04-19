@@ -144,6 +144,17 @@ architecture, Quidnug-specific integration, concrete code, and threat model.
 - [`UseCases/ai-content-authenticity/`](UseCases/ai-content-authenticity/) —
   C2PA-style media provenance with editing trust chains.
 
+**Government / Elections:**
+
+- [`UseCases/elections/`](UseCases/elections/) — Full-stack
+  election design: bring-your-own voter quid, authority-signed
+  registration trust edges replacing the voter registration
+  database, precinct-scoped poll books as queries, blind-
+  signature ballot issuance for anonymity with eligibility,
+  votes-as-trust-edges, paper-ballot parity, instant recount
+  anyone can run, and individual voter verification. The most
+  detailed use case in the library.
+
 **Cross-industry high-value:**
 
 - [`UseCases/healthcare-consent-management/`](UseCases/healthcare-consent-management/)
