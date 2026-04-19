@@ -1,0 +1,17 @@
+{{- if .Values.podDisruptionBudget.create }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "quidnug.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "quidnug.labels" . | nindent 4 }}
+spec:
+  {{- $min := .Values.podDisruptionBudget.minAvailable }}
+  {{- if eq (printf "%v" $min) "" }}
+  minAvailable: {{ sub .Values.replicaCount 1 }}
+  {{- else }}
+  minAvailable: {{ $min }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "quidnug.selectorLabels" . | nindent 6 }}
+{{- end }}

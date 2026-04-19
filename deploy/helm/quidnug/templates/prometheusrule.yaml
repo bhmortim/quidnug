@@ -1,0 +1,68 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "quidnug.fullname" . }}
+  namespace: {{ default .Release.Namespace .Values.prometheusRule.namespace }}
+  labels:
+    {{- include "quidnug.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # Mirrors deploy/observability/prometheus-alerts.yml. Keep in sync.
+  groups:
+    - name: quidnug.availability
+      interval: 30s
+      rules:
+        - alert: QuidnugNodeDown
+          expr: up{job="quidnug"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Quidnug node is down ({{ "{{" }} $labels.instance {{ "}}" }})"
+        - alert: QuidnugHighHTTPErrorRate
+          expr: |
+            (
+              sum by (instance) (rate(quidnug_http_requests_total{status=~"5..", job="quidnug"}[5m]))
+              /
+              sum by (instance) (rate(quidnug_http_requests_total{job="quidnug"}[5m]))
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "5xx rate > 5% on {{ "{{" }} $labels.instance {{ "}}" }}"
+    - name: quidnug.consensus
+      interval: 30s
+      rules:
+        - alert: QuidnugNoBlocksProduced
+          expr: |
+            increase(quidnug_blocks_total{job="quidnug"}[15m]) == 0
+            and quidnug_connected_nodes{job="quidnug"} > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "No blocks produced in 15m on {{ "{{" }} $labels.instance {{ "}}" }}"
+    - name: quidnug.security
+      interval: 30s
+      rules:
+        - alert: QuidnugNonceReplaySpike
+          expr: |
+            sum by (instance) (rate(quidnug_nonce_replay_rejections_total{job="quidnug"}[5m])) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Nonce-replay rejections spiking on {{ "{{" }} $labels.instance {{ "}}" }}"
+        - alert: QuidnugBlockMissingTxRoot
+          expr: |
+            increase(quidnug_block_missing_tx_root_rejected_total{job="quidnug"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Block rejected for missing transactions_root (QDP-0010)"
+{{- end }}

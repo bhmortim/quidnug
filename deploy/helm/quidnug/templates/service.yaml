@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "quidnug.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "quidnug.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+  selector: {{- include "quidnug.selectorLabels" . | nindent 4 }}
+---
+# Headless service: required by StatefulSet for stable per-pod DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "quidnug.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels: {{- include "quidnug.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: {{ .Values.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+  selector: {{- include "quidnug.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,30 @@
+Quidnug has been installed as Helm release `{{ .Release.Name }}` in
+namespace `{{ .Release.Namespace }}` (kind: {{ .Values.kind }}).
+
+Get the API endpoint (ClusterIP service):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "quidnug.fullname" . }} 8080:{{ .Values.service.httpPort }}
+
+Health check:
+
+  curl http://localhost:8080/api/health
+
+Then use any Quidnug SDK — Python, Go, JS — or the `quidnug-cli` tool
+to exercise the node. Pass --node=http://localhost:8080 when using the
+CLI.
+
+Follow logs:
+
+  kubectl -n {{ .Release.Namespace }} logs -f -l app.kubernetes.io/name={{ include "quidnug.name" . }} --max-log-requests {{ .Values.replicaCount }}
+
+Inspect Prometheus metrics:
+
+  curl http://localhost:8080/metrics | grep '^quidnug_'
+
+{{- if not (or .Values.existingQuidSecret .Values.generateQuidOnInstall) }}
+
+>>> WARNING: no bootstrap quid was injected. The node will generate
+    its own keypair in persistent storage on first boot. For production
+    deployments, pre-provision the quid keypair and set
+    `existingQuidSecret: <name>` in your values file.
+{{- end }}

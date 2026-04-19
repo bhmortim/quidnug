@@ -1,0 +1,23 @@
+apiVersion: v2
+name: quidnug
+description: Quidnug — decentralized protocol for relational, per-observer trust
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - quidnug
+  - trust
+  - identity
+  - decentralized
+  - blockchain
+home: https://github.com/bhmortim/quidnug
+sources:
+  - https://github.com/bhmortim/quidnug
+maintainers:
+  - name: The Quidnug Authors
+    url: https://github.com/bhmortim/quidnug
+annotations:
+  artifacthub.io/changes: |
+    - "Initial release. Protocol version 2.x (QDPs 0001-0010)."
+  artifacthub.io/license: Apache-2.0

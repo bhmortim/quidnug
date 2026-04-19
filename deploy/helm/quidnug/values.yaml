@@ -1,0 +1,155 @@
+# Default values for the quidnug chart.
+# Override any of these with `helm install -f my-values.yaml ...` or
+# `--set key=value`. See README.md for a walkthrough.
+
+# --- Image -----------------------------------------------------------------
+image:
+  repository: ghcr.io/bhmortim/quidnug
+  tag: ""  # defaults to Chart.appVersion when empty
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# --- Deployment topology --------------------------------------------------
+# Quidnug nodes are stateful; prefer StatefulSet for production. Set
+# kind: Deployment only for ephemeral dev/test pods.
+kind: StatefulSet
+replicaCount: 3
+
+# Pod disruption budget. Defaults to replicaCount - 1 minAvailable.
+podDisruptionBudget:
+  create: true
+  minAvailable: ""  # empty = (replicaCount - 1)
+
+# Affinity: by default, spread replicas across zones.
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: topology.kubernetes.io/zone
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: quidnug
+
+nodeSelector: {}
+tolerations: []
+
+# --- Resources ------------------------------------------------------------
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+# --- Networking -----------------------------------------------------------
+service:
+  type: ClusterIP
+  httpPort: 8080
+  # Node-to-node gossip port (future; currently everything rides on HTTP).
+  gossipPort: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: quidnug.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# --- Persistence ----------------------------------------------------------
+persistence:
+  enabled: true
+  size: 50Gi
+  storageClassName: ""  # empty = cluster default
+  accessModes:
+    - ReadWriteOnce
+  mountPath: /var/lib/quidnug
+  annotations: {}
+
+# --- Configuration --------------------------------------------------------
+# The chart writes `config.yaml` from .Values.config into a ConfigMap and
+# mounts it at /etc/quidnug/config.yaml. Any value may be overridden.
+config:
+  node:
+    quidId: ""         # empty = auto-generate on first boot
+    name: ""           # friendly display name
+    homeDomain: ""     # QDP-0007 home-domain (optional)
+  http:
+    listen: "0.0.0.0:8080"
+  data:
+    dir: /var/lib/quidnug
+  ipfs:
+    enabled: false
+    endpoint: ""
+  gossip:
+    peers: []
+  # QDP-0005 push gossip rate-limits
+  gossipPush:
+    maxPerSecond: 100
+    burst: 200
+
+# Existing secret holding bootstrap quid private key (PKCS8 hex).
+# If unset, the chart creates a Secret named `{{ include "quidnug.fullname" . }}-quid`.
+existingQuidSecret: ""
+# Auto-generate a Kubernetes Secret with a fresh quid on first install.
+# For production, pre-provision the quid and set existingQuidSecret.
+generateQuidOnInstall: false
+
+# --- Observability --------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  namespace: ""  # empty = same namespace as the release
+
+# Include the Prometheus alert rules from deploy/observability as a
+# PrometheusRule CRD. Requires kube-prometheus-stack.
+prometheusRule:
+  enabled: false
+  namespace: ""
+  additionalLabels: {}
+
+# --- Probes ---------------------------------------------------------------
+probes:
+  liveness:
+    path: /api/health
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 6
+  readiness:
+    path: /api/health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# --- Security context -----------------------------------------------------
+podSecurityContext:
+  fsGroup: 1000
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# --- ServiceAccount -------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# --- Extra env vars / volumes --------------------------------------------
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
