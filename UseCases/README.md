@@ -148,6 +148,26 @@ site trusts different editors.
 
 ---
 
+## Consumer rights / Anti-centralization
+
+### [`decentralized-credit-reputation/`](decentralized-credit-reputation/)
+
+**Problem:** Credit bureaus (Equifax / Experian / TransUnion)
+are opaque, error-prone, breach-prone, and concentrate judgment
+in three private companies. Social-credit systems concentrate
+judgment even further — in a state. Both produce a universal
+score that follows you without consent.
+
+**Why Quidnug:** No score. Signed credit events on the
+borrower's own quid (BYOQ); trust edges from each lender in
+domain-specific scope; each prospective lender runs their own
+relational trust evaluation. No central scorer. Subject controls
+who sees what via encrypted access grants. Structurally prevents
+social-credit concentration because there is no protocol
+authority for a "total-citizen score."
+
+---
+
 ## Government / Elections
 
 ### [`elections/`](elections/)
@@ -229,9 +249,10 @@ style transparency log for this package").
 | 8  | federated-learning-attestation         | AI            | Event streams for gradients, push gossip for coordination             |
 | 9  | ai-content-authenticity                | AI            | Event streams per asset, transitive edit trust                        |
 | 10 | **elections**                          | **Government**| **BYO voter quid, blind-sig ballot issuance, public recount, paper parity** |
-| 11 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
-| 12 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
-| 13 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
+| 11 | **decentralized-credit-reputation**    | **Consumer/FinTech** | **BYO subject quid, per-lender relational trust, alt-data, anti-social-credit** |
+| 12 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
+| 13 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
+| 14 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
 
 ---
 

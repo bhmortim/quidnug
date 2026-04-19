@@ -144,6 +144,16 @@ architecture, Quidnug-specific integration, concrete code, and threat model.
 - [`UseCases/ai-content-authenticity/`](UseCases/ai-content-authenticity/) —
   C2PA-style media provenance with editing trust chains.
 
+**Consumer rights / Anti-centralization:**
+
+- [`UseCases/decentralized-credit-reputation/`](UseCases/decentralized-credit-reputation/)
+  — Full replacement for credit bureaus and social-credit
+  systems. Borrower owns their credit history (BYOQ); each
+  potential lender computes their own relational trust score;
+  no central bureau, no universal number, no state-capturable
+  citizen-score infrastructure. Encrypted access grants give
+  the subject control over who sees what.
+
 **Government / Elections:**
 
 - [`UseCases/elections/`](UseCases/elections/) — Full-stack
