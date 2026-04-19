@@ -1,0 +1,192 @@
+{
+  "__meta": "Quidnug node — Grafana dashboard (dashboard spec v1, compatible with Grafana 9+)",
+  "title": "Quidnug Node",
+  "uid": "quidnug-node",
+  "schemaVersion": 38,
+  "version": 1,
+  "tags": ["quidnug", "protocol"],
+  "timezone": "browser",
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "query": "label_values(quidnug_blocks_total, job)",
+        "current": {"text": "quidnug", "value": "quidnug"},
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "query": "label_values(quidnug_blocks_total{job=\"$job\"}, instance)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Blocks produced (1h)",
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+      "targets": [{
+        "expr": "sum(increase(quidnug_blocks_total{job=\"$job\", instance=~\"$instance\"}[1h]))"
+      }],
+      "options": {"colorMode": "value", "graphMode": "area"}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Transactions (1h)",
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "targets": [{
+        "expr": "sum(increase(quidnug_transactions_total{job=\"$job\", instance=~\"$instance\"}[1h]))"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Connected peers",
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "avg(quidnug_connected_nodes{job=\"$job\", instance=~\"$instance\"})"}]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Pending txs",
+      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(quidnug_pending_transactions{job=\"$job\", instance=~\"$instance\"})"}]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Quarantine size",
+      "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(quidnug_quarantine_size{job=\"$job\", instance=~\"$instance\"})"}]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Nonce ledger entries",
+      "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(quidnug_nonce_ledger_entries{job=\"$job\", instance=~\"$instance\"})"}]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "HTTP requests / sec by method+path",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "sum by (method, path) (rate(quidnug_http_requests_total{job=\"$job\", instance=~\"$instance\"}[5m]))",
+        "legendFormat": "{{method}} {{path}}"
+      }]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "HTTP p95 latency by path",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "targets": [{
+        "expr": "histogram_quantile(0.95, sum by (path, le) (rate(quidnug_http_request_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))",
+        "legendFormat": "p95 {{path}}"
+      }]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Trust computation latency (ms)",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "1000 * histogram_quantile(0.50, sum by (le) (rate(quidnug_trust_computation_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p50"},
+        {"expr": "1000 * histogram_quantile(0.95, sum by (le) (rate(quidnug_trust_computation_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p95"},
+        {"expr": "1000 * histogram_quantile(0.99, sum by (le) (rate(quidnug_trust_computation_duration_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Gossip push propagation latency (s)",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(quidnug_gossip_push_propagation_latency_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, sum by (le) (rate(quidnug_gossip_push_propagation_latency_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, sum by (le) (rate(quidnug_gossip_push_propagation_latency_seconds_bucket{job=\"$job\", instance=~\"$instance\"}[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Security rejections (ops/s)",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(quidnug_nonce_replay_rejections_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "nonce replay"},
+        {"expr": "sum(rate(quidnug_block_missing_tx_root_rejected_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "missing tx root"},
+        {"expr": "sum(rate(quidnug_guardian_resignations_rejected_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "guardian-resign rejected"},
+        {"expr": "sum(rate(quidnug_fork_block_rejected_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "fork-block rejected"},
+        {"expr": "sum(rate(quidnug_quarantine_rejected_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "quarantine rejected"}
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Guardian / fork-block lifecycle (ops/s)",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(quidnug_guardian_resignations_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "resignations"},
+        {"expr": "sum(rate(quidnug_guardian_set_weakened_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "weakened"},
+        {"expr": "sum(rate(quidnug_fork_block_accepted_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "fork accepted"},
+        {"expr": "sum(rate(quidnug_fork_block_activated_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "fork activated"}
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Gossip push receive / drop (ops/s)",
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum by (kind) (rate(quidnug_gossip_push_received_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "received {{kind}}"},
+        {"expr": "sum by (reason) (rate(quidnug_gossip_push_forward_dropped_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "dropped {{reason}}"},
+        {"expr": "sum(rate(quidnug_gossip_push_rate_limited_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "rate-limited"}
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Merkle proof usage",
+      "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(quidnug_merkle_proof_used_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "proof used"},
+        {"expr": "sum(rate(quidnug_merkle_proof_fallback_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "proof fallback"}
+      ]
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Probe outcomes (H4 / QDP-0007)",
+      "gridPos": {"x": 0, "y": 36, "w": 24, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(quidnug_probe_attempts_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "attempts"},
+        {"expr": "sum(rate(quidnug_probe_success_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "success"},
+        {"expr": "sum(rate(quidnug_probe_failure_total{job=\"$job\", instance=~\"$instance\"}[5m]))", "legendFormat": "failure"}
+      ]
+    }
+  ],
+  "annotations": {"list": []},
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ]
+}

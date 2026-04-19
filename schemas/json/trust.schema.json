@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quidnug.org/schemas/trust.schema.json",
+  "title": "TrustTransaction",
+  "description": "Signed claim of trust from truster to trustee in a specific domain. See QDP pre-Phase-H.",
+  "type": "object",
+  "required": ["type", "truster", "trustee", "trustLevel", "domain", "nonce", "signature"],
+  "properties": {
+    "type":        { "const": "TRUST" },
+    "truster":     { "type": "string", "description": "Quid ID of the signer" },
+    "trustee":     { "type": "string", "description": "Quid ID receiving trust" },
+    "trustLevel":  { "type": "number", "minimum": 0, "maximum": 1 },
+    "domain":      { "type": "string", "minLength": 1 },
+    "nonce":       { "type": "integer", "minimum": 1 },
+    "validUntil":  { "type": "integer", "description": "Unix timestamp" },
+    "description": { "type": "string", "maxLength": 500 },
+    "attributes":  { "type": "object", "additionalProperties": true },
+    "signature":   { "type": "string", "description": "Hex-encoded ECDSA signature over canonical bytes" }
+  },
+  "additionalProperties": false
+}

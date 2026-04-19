@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quidnug.org/schemas/identity.schema.json",
+  "title": "IdentityTransaction",
+  "type": "object",
+  "required": ["type", "quidId", "creator", "updateNonce", "signature"],
+  "properties": {
+    "type":        { "const": "IDENTITY" },
+    "quidId":      { "type": "string", "pattern": "^[a-zA-Z0-9_.:-]+$" },
+    "name":        { "type": "string", "maxLength": 256 },
+    "description": { "type": "string", "maxLength": 1000 },
+    "attributes":  { "type": "object", "additionalProperties": true },
+    "creator":     { "type": "string" },
+    "updateNonce": { "type": "integer", "minimum": 1 },
+    "homeDomain":  { "type": "string", "description": "QDP-0007 optional home domain" },
+    "publicKey":   { "type": "string", "description": "Hex-encoded P-256 public key" },
+    "signature":   { "type": "string" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quidnug.org/schemas/event.schema.json",
+  "title": "EventTransaction",
+  "description": "Signed event appended to a subject's stream. Subjects are quids or titles.",
+  "type": "object",
+  "required": ["type", "subjectId", "subjectType", "eventType", "creator", "signature"],
+  "properties": {
+    "type":        { "const": "EVENT" },
+    "subjectId":   { "type": "string" },
+    "subjectType": { "enum": ["QUID", "TITLE"] },
+    "sequence":    { "type": "integer", "minimum": 0 },
+    "eventType":   { "type": "string", "pattern": "^[a-zA-Z0-9._-]+$" },
+    "payload":     { "type": "object", "additionalProperties": true },
+    "payloadCid":  { "type": "string", "description": "IPFS CID when payload exceeds 64KB inline limit" },
+    "timestamp":   { "type": "integer" },
+    "creator":     { "type": "string" },
+    "signature":   { "type": "string" }
+  },
+  "additionalProperties": false
+}

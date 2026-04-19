@@ -1,0 +1,190 @@
+# Prometheus alerting rules for Quidnug nodes.
+#
+# Load these in your Prometheus config via:
+#
+#   rule_files:
+#     - "/etc/prometheus/rules/quidnug-alerts.yml"
+#
+# The severity labels are:
+#   critical — paging; protocol-level safety impact.
+#   warning  — actionable within a business day.
+#   info     — observability signal; no pager.
+#
+# Tune the `for:` windows to your observation cadence.
+
+groups:
+  - name: quidnug.availability
+    interval: 30s
+    rules:
+      - alert: QuidnugNodeDown
+        expr: up{job="quidnug"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Quidnug node is down ({{ $labels.instance }})"
+          description: |
+            Prometheus scrape has failed for {{ $labels.instance }} for 5 minutes.
+            Check systemd/k8s status, disk, and recent deploys.
+
+      - alert: QuidnugHighHTTPErrorRate
+        expr: |
+          (
+            sum by (instance) (rate(quidnug_http_requests_total{status=~"5..", job="quidnug"}[5m]))
+            /
+            sum by (instance) (rate(quidnug_http_requests_total{job="quidnug"}[5m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx rate > 5% on {{ $labels.instance }}"
+          description: "Sustained server errors indicate a degraded dependency or a local fault."
+
+      - alert: QuidnugHTTPLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (instance, le) (rate(quidnug_http_request_duration_seconds_bucket{job="quidnug"}[5m]))
+          ) > 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 HTTP latency > 2s on {{ $labels.instance }}"
+
+  - name: quidnug.consensus
+    interval: 30s
+    rules:
+      - alert: QuidnugNoBlocksProduced
+        expr: |
+          increase(quidnug_blocks_total{job="quidnug"}[15m]) == 0
+          and
+          quidnug_connected_nodes{job="quidnug"} > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No blocks produced in 15m on {{ $labels.instance }}"
+          description: |
+            Consensus may be stalled. Check leader rotation, clock drift,
+            and peer connectivity.
+
+      - alert: QuidnugPendingTxBacklogGrowing
+        expr: |
+          deriv(quidnug_pending_transactions{job="quidnug"}[10m]) > 5
+          and quidnug_pending_transactions{job="quidnug"} > 1000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pending tx backlog growing fast on {{ $labels.instance }}"
+          description: "Pending queue is growing >5 tx/s and exceeds 1k — block production is falling behind ingress."
+
+      - alert: QuidnugConnectedNodesLow
+        expr: quidnug_connected_nodes{job="quidnug"} < 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fewer than 2 peers on {{ $labels.instance }}"
+
+  - name: quidnug.security
+    interval: 30s
+    rules:
+      - alert: QuidnugNonceReplaySpike
+        expr: |
+          sum by (instance) (rate(quidnug_nonce_replay_rejections_total{job="quidnug"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nonce-replay rejections spiking on {{ $labels.instance }}"
+          description: |
+            Sustained replay rate >1/s — possible replay attack, or a
+            misbehaving client resubmitting stale transactions.
+
+      - alert: QuidnugBlockMissingTxRoot
+        expr: |
+          increase(quidnug_block_missing_tx_root_rejected_total{job="quidnug"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Block rejected for missing transactions_root (QDP-0010)"
+          description: |
+            A peer is producing blocks without the transactions_root.
+            Almost certainly a mis-configured node on an old build.
+
+      - alert: QuidnugGuardianSetWeakened
+        expr: |
+          increase(quidnug_guardian_set_weakened_total{job="quidnug"}[1h]) > 0
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Guardian set weakened at {{ $labels.instance }}"
+          description: |
+            Guardian resignation or set update has reduced weighted
+            quorum headroom. Review the affected subjects.
+
+      - alert: QuidnugForkBlockRejected
+        expr: |
+          increase(quidnug_fork_block_rejected_total{job="quidnug"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fork-block proposal rejected"
+          description: "QDP-0009 fork proposals are being rejected — check validator roster + signature quorum."
+
+      - alert: QuidnugQuarantineGrowing
+        expr: |
+          quidnug_quarantine_size{job="quidnug"} > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Quarantine queue > 500 on {{ $labels.instance }}"
+          description: "Too many txs held in quarantine — likely a stuck stale-epoch probe."
+
+  - name: quidnug.gossip
+    interval: 30s
+    rules:
+      - alert: QuidnugGossipPropagationSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (instance, le) (rate(quidnug_gossip_push_propagation_latency_seconds_bucket{job="quidnug"}[15m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gossip push p95 propagation > 30s on {{ $labels.instance }}"
+
+      - alert: QuidnugGossipRateLimited
+        expr: |
+          sum by (instance) (rate(quidnug_gossip_push_rate_limited_total{job="quidnug"}[5m])) > 1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Gossip push rate-limiting active on {{ $labels.instance }}"
+
+  - name: quidnug.probes
+    interval: 60s
+    rules:
+      - alert: QuidnugProbeFailureRateHigh
+        expr: |
+          (
+            sum by (instance) (rate(quidnug_probe_failure_total{job="quidnug"}[10m]))
+            /
+            clamp_min(sum by (instance) (rate(quidnug_probe_attempts_total{job="quidnug"}[10m])), 1e-9)
+          ) > 0.20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Home-domain probe failure rate > 20%"
+          description: |
+            QDP-0007 cross-domain key probes are failing — peers may be
+            unreachable or home-domain routing is misconfigured.

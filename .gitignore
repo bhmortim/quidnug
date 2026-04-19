@@ -12,3 +12,14 @@
 # Python bytecode cache
 __pycache__/
 *.pyc
+
+# Build artifacts
+/quidnug
+/quidnug-cli
+/quidnug-cli.exe
+/quidnug.exe
+*.test
+*.out
+clients/python/build/
+clients/python/dist/
+clients/python/*.egg-info/

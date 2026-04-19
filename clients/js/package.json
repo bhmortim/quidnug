@@ -1,7 +1,7 @@
 {
   "name": "@quidnug/client",
-  "version": "1.0.0",
-  "description": "Quidnug Client SDK for JavaScript",
+  "version": "2.0.0",
+  "description": "Quidnug Client SDK for JavaScript \u2014 full protocol surface (QDPs 0001\u20130010)",
   "main": "quidnug-client.js",
   "module": "quidnug-client.js",
   "types": "quidnug-client.d.ts",
@@ -12,16 +12,24 @@
       "require": "./quidnug-client.js",
       "types": "./quidnug-client.d.ts",
       "default": "./quidnug-client.js"
+    },
+    "./v2": {
+      "import": "./quidnug-client-v2.js",
+      "types": "./quidnug-client-v2.d.ts",
+      "default": "./quidnug-client-v2.js"
     }
   },
   "scripts": {
-    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js",
-    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js",
-    "test:retry": "node --test quidnug-client.retry.test.js"
+    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js",
+    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js",
+    "test:retry": "node --test quidnug-client.retry.test.js",
+    "test:v2": "node --test quidnug-client-v2.test.js"
   },
   "files": [
     "quidnug-client.js",
-    "quidnug-client.d.ts"
+    "quidnug-client.d.ts",
+    "quidnug-client-v2.js",
+    "quidnug-client-v2.d.ts"
   ],
   "keywords": [
     "quidnug",

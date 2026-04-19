@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quidnug.org/schemas/anchor.schema.json",
+  "title": "Anchor",
+  "description": "Key-lifecycle primitive — rotation, invalidation, epoch cap, guardian variants. See QDP-0001 and QDP-0002.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/AnchorRotation" },
+    { "$ref": "#/$defs/AnchorInvalidation" },
+    { "$ref": "#/$defs/AnchorEpochCap" }
+  ],
+  "$defs": {
+    "AnchorRotation": {
+      "type": "object",
+      "required": ["kind", "signerQuid", "fromEpoch", "toEpoch", "newPublicKey", "anchorNonce", "signature"],
+      "properties": {
+        "kind":                { "const": "rotation" },
+        "signerQuid":          { "type": "string" },
+        "fromEpoch":           { "type": "integer", "minimum": 0 },
+        "toEpoch":             { "type": "integer", "minimum": 1 },
+        "newPublicKey":        { "type": "string", "description": "Hex P-256 public key" },
+        "minNextNonce":        { "type": "integer", "minimum": 1 },
+        "maxAcceptedOldNonce": { "type": "integer", "minimum": 0 },
+        "anchorNonce":         { "type": "integer", "minimum": 1, "description": "Monotonic per signer" },
+        "validFrom":           { "type": "integer" },
+        "signature":           { "type": "string" }
+      }
+    },
+    "AnchorInvalidation": {
+      "type": "object",
+      "required": ["kind", "signerQuid", "epochToInvalidate", "anchorNonce", "signature"],
+      "properties": {
+        "kind":              { "const": "invalidation" },
+        "signerQuid":        { "type": "string" },
+        "epochToInvalidate": { "type": "integer", "minimum": 0 },
+        "anchorNonce":       { "type": "integer", "minimum": 1 },
+        "validFrom":         { "type": "integer" },
+        "signature":         { "type": "string" }
+      }
+    },
+    "AnchorEpochCap": {
+      "type": "object",
+      "required": ["kind", "signerQuid", "epoch", "maxNonce", "anchorNonce", "signature"],
+      "properties": {
+        "kind":        { "const": "epoch-cap" },
+        "signerQuid":  { "type": "string" },
+        "epoch":       { "type": "integer", "minimum": 0 },
+        "maxNonce":    { "type": "integer", "minimum": 0 },
+        "anchorNonce": { "type": "integer", "minimum": 1 },
+        "validFrom":   { "type": "integer" },
+        "signature":   { "type": "string" }
+      }
+    }
+  }
+}
