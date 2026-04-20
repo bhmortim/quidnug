@@ -38,6 +38,7 @@ the live code:
 | 0011 | Client Libraries & Integrations roadmap | Landed (all four tiers shipped) |
 | 0012 | Domain Governance (cache replicas / consortium / governors) | Draft — design only, scheduled for Phase 1 implementation after public-network launch |
 | 0013 | Network Federation Model (one protocol, many networks) | Draft — mostly clarifies existing uniformity; new surface is `external_trust_sources` config + `TRUST_IMPORT` transaction |
+| 0014 | Node Discovery + Domain Sharding | Draft — new `NODE_ADVERTISEMENT` tx, discovery HTTP API, `.well-known/quidnug-network.json`, per-domain quid index, documented no-node participation mode |
 
 ### Client SDKs (done)
 

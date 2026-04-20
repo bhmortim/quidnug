@@ -432,6 +432,7 @@ Protocol evolution is tracked in versioned design docs under
 | 0010  | Compact Merkle Proofs (H2)              | Landed   |
 | 0012  | Domain Governance (cache/consortium/governor roles) | Draft |
 | 0013  | Network Federation Model (one protocol, many networks) | Draft |
+| 0014  | Node Discovery + Domain Sharding (operator → nodes, well-known discovery, quid index) | Draft |
 
 ---
 

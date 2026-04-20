@@ -1,0 +1,62 @@
+{
+    "version": 1,
+    "operator": {
+        "quid": "8e1f3a0000000000",
+        "name": "quidnug.com",
+        "publicKey": "04aabbccddee...example-sec1-uncompressed-public-key-128-hex-chars...",
+        "contact": "operators@quidnug.com"
+    },
+    "apiGateway": "https://api.quidnug.com",
+    "seeds": [
+        {
+            "nodeQuid": "5f8a9b0000000001",
+            "url": "https://node1.quidnug.com",
+            "region": "home-wsl",
+            "capabilities": ["validator", "archive", "bootstrap"]
+        },
+        {
+            "nodeQuid": "c7e2d10000000002",
+            "url": "https://node2.quidnug.com",
+            "region": "vps-hetzner-fsn1",
+            "capabilities": ["validator", "cache"]
+        }
+    ],
+    "domains": [
+        {
+            "name": "reviews.public",
+            "description": "Trust-weighted reviews (QRP-0001). Children hold per-category product reviews.",
+            "tree": "reviews.public.*"
+        },
+        {
+            "name": "network.quidnug.com",
+            "description": "Reserved meta-domains for peering, governance, and operator attestations.",
+            "tree": "*.network.quidnug.com"
+        },
+        {
+            "name": "operators.network.quidnug.com",
+            "description": "TRUST edges from operators to their node quids (QDP-0014 attestation).",
+            "tree": "operators.network.quidnug.com"
+        }
+    ],
+    "governance": {
+        "documentedAt": "https://quidnug.com/network/governance",
+        "governors": [
+            {
+                "quid": "8e1f3a0000000000",
+                "name": "Primary operator",
+                "publicKey": "04aabbccddee...",
+                "weight": 1.0
+            },
+            {
+                "quid": "0000000000aaaabb",
+                "name": "Co-founder",
+                "publicKey": "04112233...",
+                "weight": 1.0
+            }
+        ],
+        "quorum": 1.0
+    },
+    "federationAvailable": true,
+    "lastUpdated": 1745178293,
+    "signature": "deadbeef...example-128-hex-char-signature-placeholder..."
+}

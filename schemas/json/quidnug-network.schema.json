@@ -1,0 +1,99 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://quidnug.org/schemas/quidnug-network.schema.json",
+    "title": "QuidnugNetworkDescriptor",
+    "description": "The signed document an operator publishes at /.well-known/quidnug-network.json. Entry point for client discovery of a Quidnug network. See QDP-0014 §7.",
+    "type": "object",
+    "required": ["version", "operator", "apiGateway", "seeds", "lastUpdated", "signature"],
+    "properties": {
+        "version": {
+            "const": 1
+        },
+        "operator": {
+            "type": "object",
+            "required": ["quid", "publicKey"],
+            "properties": {
+                "quid":      { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+                "name":      { "type": "string", "maxLength": 256 },
+                "publicKey": { "type": "string", "pattern": "^04[0-9a-f]{128}$" },
+                "contact":   { "type": "string", "maxLength": 1024, "description": "Free-form operator contact info (email, URL, etc.)" }
+            },
+            "additionalProperties": false
+        },
+        "apiGateway": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+        },
+        "seeds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+                "type": "object",
+                "required": ["nodeQuid", "url"],
+                "properties": {
+                    "nodeQuid": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+                    "url":      { "type": "string", "format": "uri", "pattern": "^https://" },
+                    "region":   { "type": "string", "maxLength": 64 },
+                    "capabilities": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["validator", "cache", "archive", "bootstrap", "gossipSink", "ipfsGateway"]
+                        },
+                        "uniqueItems": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "domains": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name":        { "type": "string", "minLength": 1, "maxLength": 253 },
+                    "description": { "type": "string", "maxLength": 1024 },
+                    "tree":        { "type": "string", "maxLength": 253, "description": "Glob pattern for the tree rooted at this domain" }
+                },
+                "additionalProperties": false
+            }
+        },
+        "governance": {
+            "type": "object",
+            "properties": {
+                "documentedAt": { "type": "string", "format": "uri" },
+                "governors": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["quid"],
+                        "properties": {
+                            "quid":      { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+                            "name":      { "type": "string", "maxLength": 256 },
+                            "publicKey": { "type": "string", "pattern": "^04[0-9a-f]{128}$" },
+                            "weight":    { "type": "number", "minimum": 0 }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "quorum": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": false
+        },
+        "federationAvailable": {
+            "type": "boolean",
+            "description": "If true, this network exposes signed trust-lookup responses at api.quidnug.com/api/v2/federation/* for cross-network reputation (see QDP-0013)."
+        },
+        "lastUpdated": { "type": "integer", "minimum": 1, "description": "Unix timestamp" },
+        "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$",
+            "description": "Hex-encoded IEEE-1363 signature by operator.publicKey over the canonical bytes of this document with the signature field cleared."
+        }
+    },
+    "additionalProperties": false
+}

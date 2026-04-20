@@ -30,6 +30,13 @@
 > **Reviews rollout:** once your nodes are live, walk through
 > [`reviews-launch-checklist.md`](reviews-launch-checklist.md) to
 > bring the QRP-0001 ecosystem online on top of them.
+>
+> **Scaling out:** when you graduate from two nodes to many,
+> and when third-party apps want to use your network without
+> running nodes themselves, the discovery + sharding model is
+> in [`sharding-model.md`](sharding-model.md) (with
+> [QDP-0014](../../docs/design/0014-node-discovery-and-sharding.md)
+> as the formal spec).
 
 ## What lives here
 
