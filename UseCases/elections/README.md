@@ -9,6 +9,29 @@
 > paper-ballot fallback that cryptographically matches the
 > digital record.
 
+> **This README covers the protocol-level semantics. The
+> companion docs cover the operational story that turns this
+> design into a deployable system:**
+>
+> - [`integration.md`](integration.md) — how the design
+>   composes on top of the three architectural pillars (QDPs
+>   0012 / 0013 / 0014). The governance, multi-jurisdictional
+>   federation, and operational topology layers this README
+>   only sketches.
+> - [`operations.md`](operations.md) — deployment at five
+>   scales (pilot to federal), capacity planning, election-day
+>   operations, incident response, cost analysis.
+> - [`launch-checklist.md`](launch-checklist.md) — sequential
+>   T-180 through T+30 go-live checklist.
+>
+> If you're new to Quidnug as a whole, read
+> [`../ARCHITECTURE.md`](../ARCHITECTURE.md) first — it
+> places the elections use case in the broader protocol
+> context. Elections is the most complex worked example of a
+> coordination-archetype use case; its depth of trust-edge
+> semantics and multi-party governance pushes the protocol
+> harder than any other use case in the library.
+
 ---
 
 ## The problem
@@ -1036,23 +1059,94 @@ from the chain.
 
 ## What's in this folder
 
-- [`README.md`](README.md) — this document (comprehensive design)
-- [`architecture.md`](architecture.md) — data model + domain
-  structure in depth
-- [`implementation.md`](implementation.md) — concrete API flows
-  for each role (voter, registrar, poll worker, tally engine)
-- [`threat-model.md`](threat-model.md) — attackers, threats, and
-  mitigations
+The elections use case is the most detailed in the library.
+Six files cover the full lifecycle from design to go-live:
+
+- [`README.md`](README.md) — this document. Protocol-level
+  semantics: quid types, trust edges as votes, blind
+  signatures, paper parity, recount, etc.
+- [`architecture.md`](architecture.md) — data model, domain
+  hierarchy, event schemas, sequence diagrams.
+- [`implementation.md`](implementation.md) — concrete API
+  flows for each role (voter, registrar, poll worker, tally
+  engine).
+- [`integration.md`](integration.md) — how the election
+  design composes on top of the three architectural pillars
+  (QDPs 0012 Domain Governance, 0013 Network Federation,
+  0014 Node Discovery + Sharding). Fills in the governance,
+  multi-jurisdictional federation, and operational topology
+  layers that this README only sketches.
+- [`operations.md`](operations.md) — deployment topology at
+  five scales (pilot to federal), capacity planning, election-
+  day operations playbook, incident response, cost analysis.
+- [`launch-checklist.md`](launch-checklist.md) — sequential
+  T-180 through T+30 go-live checklist. Use this as the
+  actual project plan.
+- [`threat-model.md`](threat-model.md) — attackers, threats,
+  and mitigations.
+
+Recommended reading order for someone implementing:
+
+1. This README (problem + design principles + mechanics).
+2. `architecture.md` (data model).
+3. `integration.md` (how it fits the larger architecture).
+4. `operations.md` (how you'd actually deploy + run it).
+5. `threat-model.md` (what you're defending against).
+6. `launch-checklist.md` (when you're ready to execute).
+7. `implementation.md` for code-level detail when building.
 
 ## Related
 
+Protocol QDPs this design uses:
+
 - [QDP-0002 Guardian Recovery](../../docs/design/0002-guardian-based-recovery.md)
+  — recovery mechanism for governor / observer / voter keys.
 - [QDP-0005 Push Gossip](../../docs/design/0005-push-based-gossip.md)
+  — gets fresh check-ins + cast votes across the consortium fast.
 - [QDP-0008 K-of-K Bootstrap](../../docs/design/0008-kofk-bootstrap.md)
+  — how new observer nodes seed state from the consortium.
+- [QDP-0012 Domain Governance](../../docs/design/0012-domain-governance.md)
+  — cache replica / consortium member / governor role separation
+  that elections load-bears on.
+- [QDP-0013 Network Federation](../../docs/design/0013-network-federation.md)
+  — cross-jurisdictional federation (state → county, federal →
+  state) for multi-level elections.
+- [QDP-0014 Node Discovery + Sharding](../../docs/design/0014-node-discovery-and-sharding.md)
+  — operational topology for running many nodes across precincts +
+  regions + capabilities.
+
+Related use cases:
+
 - [`../healthcare-consent-management/`](../healthcare-consent-management/)
-  — similar bring-your-own-identity + guardian override pattern
+  — similar bring-your-own-identity + guardian override pattern.
 - [`../credential-verification-network/`](../credential-verification-network/)
-  — similar authority + registered-entity trust graph
+  — similar authority + registered-entity trust graph.
+- [`../dns-replacement/`](../dns-replacement/) — similar
+  multi-jurisdictional federated governance pattern; the DNS use
+  case's TLD-governance-with-delegation mirrors state-delegates-
+  to-county in elections.
+
+Operator playbooks (for deployment):
+
+- [`../../deploy/public-network/home-operator-plan.md`](../../deploy/public-network/home-operator-plan.md)
+  — the cheap-deployment pattern, adapted for elections in
+  `operations.md`.
+- [`../../deploy/public-network/governance-model.md`](../../deploy/public-network/governance-model.md)
+  — operator-facing QDP-0012 explainer.
+- [`../../deploy/public-network/federation-model.md`](../../deploy/public-network/federation-model.md)
+  — operator-facing QDP-0013 explainer.
+- [`../../deploy/public-network/sharding-model.md`](../../deploy/public-network/sharding-model.md)
+  — operator-facing QDP-0014 explainer.
+
+Architecture orientation (start here if you're new):
+
+- [`../ARCHITECTURE.md`](../ARCHITECTURE.md) — single-doc tour
+  of the protocol, the three pillars, and how every use case
+  fits the same pattern. Elections is the most complex worked
+  example.
+- [`../BUILDING-A-USE-CASE.md`](../BUILDING-A-USE-CASE.md) —
+  the six-phase recipe for designing a use case. Elections was
+  designed following this pattern.
 
 ## Open research questions (future QDPs)
 

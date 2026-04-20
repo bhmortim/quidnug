@@ -206,7 +206,21 @@ registration trust edge + blind-signature ballot issuance +
 per-BQ vote trust edges = every design requirement for a
 cryptographically-sound election, with paper-ballot parity for
 fail-safe auditability. Anyone can recount by running a query.
-This is the most detailed use case in the library.
+
+The elections folder is the most detailed use case in the
+library — seven files covering the full lifecycle:
+
+- `README.md` + `architecture.md` + `implementation.md` +
+  `threat-model.md` (the standard four-file use-case pattern)
+- `integration.md` — how the design composes on top of
+  QDPs 0012 / 0013 / 0014
+- `operations.md` — deployment at five scales (pilot to
+  federal), capacity planning, cost analysis
+- `launch-checklist.md` — sequential T-180 through T+30 go-
+  live steps
+
+~5000 lines total. Use it as the reference when designing any
+complex multi-party / multi-jurisdictional use case.
 
 ---
 
