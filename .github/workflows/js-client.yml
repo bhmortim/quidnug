@@ -36,8 +36,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "npm"
-          cache-dependency-path: clients/js/package-lock.json
+          # Cache disabled until we start committing package-lock.json.
+          # setup-node requires the lockfile to compute a cache key
+          # and fails the job otherwise.
 
       - name: Install dependencies
         run: npm install
