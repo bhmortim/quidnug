@@ -95,6 +95,13 @@ type QuidnugNode struct {
 	// Guarded by the same TrustRegistryMutex as TrustRegistry.
 	// See QDP-0022.
 	TrustExpiryRegistry map[string]map[string]int64
+	// TrustEdgeTimestampRegistry tracks the last-refreshed
+	// timestamp (Unix seconds) for each trust edge. Populated
+	// from the TRUST transaction's Timestamp at admission.
+	// Used by QDP-0019 decay computation. Guarded by
+	// TrustRegistryMutex. Zero = no timestamp known (treat as
+	// "decay disabled" for that edge).
+	TrustEdgeTimestampRegistry map[string]map[string]int64
 	IdentityRegistry   map[string]IdentityTransaction
 	TitleRegistry      map[string]TitleTransaction
 
@@ -431,9 +438,10 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		PendingTxs:                []interface{}{},
 		TrustDomains:              make(map[string]TrustDomain),
 		KnownNodes:                make(map[string]Node),
-		TrustRegistry:             make(map[string]map[string]float64),
-		TrustNonceRegistry:        make(map[string]map[string]int64),
-		TrustExpiryRegistry:       make(map[string]map[string]int64),
+		TrustRegistry:                 make(map[string]map[string]float64),
+		TrustNonceRegistry:            make(map[string]map[string]int64),
+		TrustExpiryRegistry:           make(map[string]map[string]int64),
+		TrustEdgeTimestampRegistry:    make(map[string]map[string]int64),
 		IdentityRegistry:          make(map[string]IdentityTransaction),
 		TitleRegistry:             make(map[string]TitleTransaction),
 		EventStreamRegistry:       make(map[string]*EventStream),

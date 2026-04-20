@@ -372,6 +372,16 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 		node.TrustExpiryRegistry[tx.Truster][tx.Trustee] = tx.ValidUntil
 	}
 
+	// QDP-0019: record the edge's last-refreshed timestamp
+	// so decay computation can age weights. Tx.Timestamp is
+	// Unix seconds (the canonical BaseTransaction timestamp).
+	if node.TrustEdgeTimestampRegistry != nil && tx.Timestamp > 0 {
+		if _, exists := node.TrustEdgeTimestampRegistry[tx.Truster]; !exists {
+			node.TrustEdgeTimestampRegistry[tx.Truster] = make(map[string]int64)
+		}
+		node.TrustEdgeTimestampRegistry[tx.Truster][tx.Trustee] = tx.Timestamp
+	}
+
 	// Invalidate trust cache since trust graph has changed
 	if node.TrustCache != nil {
 		node.TrustCache.Invalidate()
