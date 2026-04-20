@@ -147,6 +147,47 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	// Add this node's public key for signature verification
 	domain.ValidatorPublicKeys[node.NodeID] = node.GetPublicKeyHex()
 
+	// QDP-0012 Phase 1 — apply the single-registrant governance
+	// fallback. If the registrant didn't supply an explicit
+	// Governors set we install the registering node as the sole
+	// governor with unanimous quorum (1.0), which preserves pre-
+	// QDP-0012 behavior: the registrant is the only party who
+	// can mutate their own domain.
+	//
+	// Callers that want a multi-governor consortium pass a
+	// populated `domain.Governors` + `domain.GovernorPublicKeys`
+	// + `domain.GovernanceQuorum`. Phase 1 doesn't enforce any
+	// of this — Phase 3 wires enforcement behind the QDP-0009
+	// fork-activation flag.
+	if len(domain.Governors) == 0 {
+		domain.Governors = map[string]float64{node.NodeID: 1.0}
+	}
+	if domain.GovernorPublicKeys == nil {
+		domain.GovernorPublicKeys = make(map[string]string)
+	}
+	// Make sure every declared governor has a public key on file.
+	// For the registering node we can fill it from our own key;
+	// for other governors the registrant is expected to have
+	// supplied the keys. Missing keys leave the entry empty (log
+	// a warning so Phase 2 validation knows what to flag).
+	if _, ok := domain.GovernorPublicKeys[node.NodeID]; !ok {
+		if _, selfIsGovernor := domain.Governors[node.NodeID]; selfIsGovernor {
+			domain.GovernorPublicKeys[node.NodeID] = node.GetPublicKeyHex()
+		}
+	}
+	for govQuid := range domain.Governors {
+		if _, ok := domain.GovernorPublicKeys[govQuid]; !ok {
+			logger.Warn("Governor declared without accompanying public key",
+				"domain", domain.Name, "governorQuid", govQuid)
+		}
+	}
+	if domain.GovernanceQuorum == 0 {
+		domain.GovernanceQuorum = 1.0 // unanimous, matches the single-registrant default
+	}
+	if domain.ParentDelegationMode == "" {
+		domain.ParentDelegationMode = DelegationModeSelf
+	}
+
 	// Single exclusive section for the registry mutation.
 	node.TrustDomainsMutex.Lock()
 	defer node.TrustDomainsMutex.Unlock()
@@ -155,7 +196,12 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 	}
 	node.TrustDomains[domain.Name] = domain
 
-	logger.Info("Registered new trust domain", "domain", domain.Name, "validators", len(domain.ValidatorNodes))
+	logger.Info("Registered new trust domain",
+		"domain", domain.Name,
+		"validators", len(domain.ValidatorNodes),
+		"governors", len(domain.Governors),
+		"governanceQuorum", domain.GovernanceQuorum,
+		"delegationMode", domain.ParentDelegationMode)
 	return nil
 }
 

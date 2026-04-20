@@ -271,6 +271,132 @@ type TrustDomain struct {
 	// ValidatorPublicKeys maps validator node IDs to their hex-encoded public keys.
 	// Used to cryptographically verify block signatures from domain validators.
 	ValidatorPublicKeys map[string]string `json:"validatorPublicKeys"`
+
+	// QDP-0012 Phase 1 additions — governance state. All fields
+	// are `omitempty` so serialized TrustDomains from pre-QDP-0012
+	// nodes round-trip unchanged and unmarshaling on older nodes
+	// silently drops the extra keys.
+	//
+	// Phase 1 populates these at registration time with a single-
+	// governor fallback (registrant becomes sole governor, quorum
+	// 1.0). Phase 2 introduces the DOMAIN_GOVERNANCE transaction
+	// that mutates them under governor-quorum signature. Phase 3
+	// wires enforcement via the QDP-0009 fork-block activation
+	// flag.
+	//
+	// See docs/design/0012-domain-governance.md §3.2.
+
+	// Governors maps each governor's quid to their vote weight.
+	// Nil / empty on domains that predate Phase 1.
+	Governors map[string]float64 `json:"governors,omitempty"`
+	// GovernorPublicKeys maps each governor's quid to their hex-
+	// encoded public key, so DOMAIN_GOVERNANCE transaction
+	// signatures can be verified without re-looking-up identity
+	// registry entries.
+	GovernorPublicKeys map[string]string `json:"governorPublicKeys,omitempty"`
+	// GovernanceQuorum is the fraction of total governor vote
+	// weight required for a governance action to activate, e.g.
+	// 0.67 for 2/3. Zero means no quorum policy set (Phase 1
+	// fallback — quorum is treated as "all governors unanimous"
+	// which, with the single-registrant default, is trivially
+	// met).
+	GovernanceQuorum float64 `json:"governanceQuorum,omitempty"`
+	// GovernanceNonce is the highest nonce of any applied
+	// DOMAIN_GOVERNANCE transaction for this domain. Prevents
+	// replay of earlier governance actions.
+	GovernanceNonce int64 `json:"governanceNonce,omitempty"`
+	// ParentDelegationMode describes how this domain's
+	// governance relates to its parent domain:
+	//   "self"      = this domain manages its own Governors
+	//   "inherit"   = governance flows from the parent domain
+	//   "delegated" = governance was explicitly handed to
+	//                 another operator via DELEGATE_CHILD
+	// Empty string is treated as "self" for backward compat.
+	ParentDelegationMode string `json:"parentDelegationMode,omitempty"`
+	// DelegatedFrom names the parent domain that delegated
+	// governance authority here. Empty unless
+	// ParentDelegationMode == "delegated" or "inherit".
+	DelegatedFrom string `json:"delegatedFrom,omitempty"`
+}
+
+// Governance role constants for QDP-0012.
+const (
+	// DomainRoleGovernor is returned for quids in Governors.
+	DomainRoleGovernor = "governor"
+	// DomainRoleConsortiumMember is returned for quids in
+	// Validators with non-zero weight.
+	DomainRoleConsortiumMember = "consortium-member"
+	// DomainRoleCacheReplica is the default for any quid the
+	// domain has no record of. Matches the relativistic stance
+	// of the protocol: a node can hold a mirror of a domain's
+	// chain without being explicitly admitted to its consortium.
+	DomainRoleCacheReplica = "cache-replica"
+)
+
+// Parent-delegation mode constants for QDP-0012.
+const (
+	DelegationModeSelf      = "self"
+	DelegationModeInherit   = "inherit"
+	DelegationModeDelegated = "delegated"
+)
+
+// IsGovernor reports whether quid carries governor authority
+// on this domain. A quid with weight <= 0 is not a governor
+// even if present in the map (defensive against future code
+// that zero-weights rather than deletes).
+func (td *TrustDomain) IsGovernor(quid string) bool {
+	if td == nil || td.Governors == nil {
+		return false
+	}
+	w, ok := td.Governors[quid]
+	return ok && w > 0
+}
+
+// IsConsortiumMember reports whether quid produces admissible
+// blocks for this domain. Mirrors the existing check that
+// happened inline in block-acceptance paths; promoted to a
+// named method so the role model is explicit.
+func (td *TrustDomain) IsConsortiumMember(quid string) bool {
+	if td == nil || td.Validators == nil {
+		return false
+	}
+	w, ok := td.Validators[quid]
+	return ok && w > 0
+}
+
+// Role returns one of DomainRoleGovernor /
+// DomainRoleConsortiumMember / DomainRoleCacheReplica. A quid
+// that is both a governor and a consortium member reports as
+// DomainRoleGovernor (the higher-privilege role).
+func (td *TrustDomain) Role(quid string) string {
+	switch {
+	case td.IsGovernor(quid):
+		return DomainRoleGovernor
+	case td.IsConsortiumMember(quid):
+		return DomainRoleConsortiumMember
+	default:
+		return DomainRoleCacheReplica
+	}
+}
+
+// GovernorQuorumWeight returns the minimum signed-weight sum
+// required for a governance action to meet quorum on this
+// domain. Zero quorum is treated as "require the full weight
+// of all governors" (the pre-QDP-0012 sole-registrant default
+// — trivially met, because the registrant IS the full weight).
+func (td *TrustDomain) GovernorQuorumWeight() float64 {
+	if td == nil || len(td.Governors) == 0 {
+		return 0
+	}
+	var total float64
+	for _, w := range td.Governors {
+		total += w
+	}
+	q := td.GovernanceQuorum
+	if q <= 0 {
+		q = 1.0
+	}
+	return total * q
 }
 
 // RelationalTrustQuery represents a query for trust between two quids

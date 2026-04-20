@@ -2,7 +2,7 @@
 
 | Field      | Value                                                            |
 |------------|------------------------------------------------------------------|
-| Status     | Draft — design only, no code landed                              |
+| Status     | Phase 1 landed — state extension (no behavior change); Phases 2-6 pending |
 | Track      | Protocol                                                         |
 | Author     | The Quidnug Authors                                              |
 | Created    | 2026-04-20                                                       |
