@@ -128,6 +128,18 @@ all run Quidnug nodes.
 - [`README.md`](README.md) — this document (high-level)
 - [`architecture.md`](architecture.md) — detailed data model,
   sequence diagrams, per-component breakdown
+- [`integration.md`](integration.md) — how the use case composes
+  on top of the three architectural pillars (QDP-0012 governance,
+  QDP-0013 federation, QDP-0014 discovery + sharding); why each
+  bank is its own network
+- [`operations.md`](operations.md) — deployment topology by
+  bank scale (community / regional / national / global),
+  capacity planning, daily ops playbook, incident response,
+  SWIFT/Fedwire/SEPA bridge patterns
+- [`launch-checklist.md`](launch-checklist.md) — T-180 through
+  T+30 bank-onboarding sequence: legal + regulatory foundation,
+  HSM procurement, governance setup, peer federation,
+  staged rollout to production
 - [`implementation.md`](implementation.md) — concrete Quidnug API
   calls with Go and shell examples
 - [`threat-model.md`](threat-model.md) — attacker profiles, what the
@@ -139,6 +151,18 @@ all run Quidnug nodes.
 - [QDP-0002: Guardian Recovery](../../docs/design/0002-guardian-based-recovery.md)
 - [QDP-0007: Lazy Epoch Propagation](../../docs/design/0007-lazy-epoch-propagation.md)
 - [QDP-0009: Fork-Block Trigger](../../docs/design/0009-fork-block-trigger.md)
+- [QDP-0012: Domain Governance](../../docs/design/0012-domain-governance.md)
+  — governor / consortium / cache separation; the mechanism
+  behind per-bank governance quorums
+- [QDP-0013: Network Federation](../../docs/design/0013-network-federation.md)
+  — one-protocol-many-networks; every bank is its own network
+  linked to peers via `TRUST_IMPORT`
+- [QDP-0014: Node Discovery + Sharding](../../docs/design/0014-node-discovery-and-sharding.md)
+  — `NODE_ADVERTISEMENT` + `.well-known/quidnug-network.json` for
+  cross-bank counterparty discovery
+- [`UseCases/elections/`](../elections/) — companion coordination-
+  archetype use case (same governance + federation + discovery
+  story, different deployment profile)
 
 ## Out of scope for this design
 
