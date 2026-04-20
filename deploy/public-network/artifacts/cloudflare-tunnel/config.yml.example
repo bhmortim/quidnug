@@ -1,0 +1,57 @@
+# Cloudflare Tunnel configuration for exposing a home Quidnug
+# node alongside an existing website tunnel.
+#
+# Usage:
+#   1. Copy this snippet into your existing ~/.cloudflared/config.yml
+#      (do NOT replace the file — merge the `ingress` rules).
+#   2. Replace <TUNNEL_UUID> with the output of
+#      `cloudflared tunnel list`.
+#   3. Replace <CREDENTIALS_FILE_PATH> with the on-disk path of the
+#      JSON credentials file created when you first ran
+#      `cloudflared tunnel create`.
+#   4. Add the `node1.quidnug.com` public hostname through the
+#      Zero Trust dashboard → Access → Tunnels → [your tunnel] →
+#      Public Hostname, pointing at `http://localhost:8087`.
+#   5. `sudo systemctl restart cloudflared` (or equivalent).
+#
+# Validation:
+#   curl https://node1.quidnug.com/api/health
+#   # {"success":true,"data":{"status":"ok",...}}
+
+tunnel: <TUNNEL_UUID>
+credentials-file: <CREDENTIALS_FILE_PATH>
+
+# Tune CF's origin-to-tunnel connection pool. These defaults are
+# appropriate for a home node serving tens of req/s; for higher
+# volume raise the connection count and the keepalive timeout.
+originRequest:
+    connectTimeout: 10s
+    tcpKeepAlive: 30s
+    keepAliveTimeout: 60s
+    noTLSVerify: false
+
+ingress:
+    # ─── Existing website rule — KEEP in place. ──────────────────
+    - hostname: quidnug.com
+      service: http://127.0.0.1:80
+      originRequest:
+          httpHostHeader: quidnug.com
+
+    # ─── NEW — the Quidnug node's public HTTP surface. ───────────
+    # Node binds on 8087 locally (see the YAML config in
+    # home-operator-plan.md §4.3). Cloudflare terminates TLS at the
+    # edge; the tunnel carries plain HTTP.
+    - hostname: node1.quidnug.com
+      service: http://127.0.0.1:8087
+      originRequest:
+          connectTimeout: 10s
+          tcpKeepAlive: 30s
+          keepAliveTimeout: 60s
+          # A long-lived tunnel is fine — CF's idle-connection
+          # reaping takes care of stale sessions. We deliberately
+          # DO NOT disable TLS verification end-to-end since we run
+          # plain HTTP on the origin by design.
+          httpHostHeader: node1.quidnug.com
+
+    # ─── Catch-all. MUST come last. ──────────────────────────────
+    - service: http_status:404

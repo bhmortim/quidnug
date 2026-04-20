@@ -3,6 +3,18 @@
 > Operational guide for running the seed nodes behind `quidnug.com`.
 > Not for joiners — if you want to peer with the public network, see
 > [peering-protocol.md](peering-protocol.md).
+>
+> **Cheap home-based deployment:** this README assumes a Fly.io
+> budget. If you'd rather run the primary node on a home machine
+> via Cloudflare Tunnel with a tiny VPS for failover (target cost
+> $0–$6/month), follow
+> [`home-operator-plan.md`](home-operator-plan.md) instead. The
+> two playbooks describe the same architecture with different
+> infrastructure choices.
+>
+> **Reviews rollout:** once your nodes are live, walk through
+> [`reviews-launch-checklist.md`](reviews-launch-checklist.md) to
+> bring the QRP-0001 ecosystem online on top of them.
 
 ## What lives here
 

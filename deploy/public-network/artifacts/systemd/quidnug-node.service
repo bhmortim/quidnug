@@ -1,0 +1,99 @@
+# Quidnug node systemd unit.
+#
+# Works on both:
+#   - WSL2 with systemd enabled (home-node, primary)
+#   - Plain Ubuntu / Debian VPS (failover node)
+#
+# Installation:
+#   sudo cp quidnug-node.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now quidnug-node
+#   systemctl status quidnug-node
+#
+# Logs:
+#   journalctl -u quidnug-node -f
+#
+# Inspection:
+#   curl http://127.0.0.1:8087/api/health
+#
+# Prerequisites:
+#   1. `/usr/local/bin/quidnug` exists (built from `./cmd/quidnug`).
+#   2. `/etc/quidnug/node.yaml` holds the YAML config.
+#   3. `/etc/quidnug/node.key.json` holds the validator key (chmod 600).
+#   4. `/etc/quidnug/auth.secret` holds the shared inter-node HMAC.
+#   5. A `quidnug` system user owns /var/lib/quidnug.
+#
+# On WSL-home, substitute:
+#   WorkingDirectory=/home/YOURUSER/.quidnug
+#   ExecStart=/home/YOURUSER/bin/quidnug ...
+#   User=YOURUSER
+
+[Unit]
+Description=Quidnug public-network node
+Documentation=https://github.com/bhmortim/quidnug/blob/main/deploy/public-network/home-operator-plan.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=quidnug
+Group=quidnug
+WorkingDirectory=/var/lib/quidnug
+Environment=CONFIG_FILE=/etc/quidnug/node.yaml
+Environment=LOG_LEVEL=info
+# Key is loaded from this file via the node's config, not from env
+# directly, so the secret never appears in `systemctl show` output.
+Environment=NODE_KEY_FILE=/etc/quidnug/node.key.json
+Environment=NODE_AUTH_SECRET_FILE=/etc/quidnug/auth.secret
+# Remote-write to Grafana Cloud (set via override).
+#   sudo systemctl edit quidnug-node
+# [Service]
+# Environment=GRAFANA_REMOTE_WRITE_URL=https://...
+# Environment=GRAFANA_REMOTE_WRITE_TOKEN=...
+ExecStart=/usr/local/bin/quidnug
+Restart=on-failure
+RestartSec=5s
+# Graceful shutdown — the node drains its pending-tx pool into a
+# block before exiting. 30s is enough for a normal drain.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# ─── Hardening ──────────────────────────────────────────────────
+# Deny access to everything we don't need. Drop these one at a time
+# if you hit errors (e.g. plug-in signers or IPFS sidecars need more
+# permissive settings).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/quidnug
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @debug @cpu-emulation @obsolete @privileged @reboot @swap
+CapabilityBoundingSet=
+AmbientCapabilities=
+# Bind the loopback only — the public entry is cloudflared's
+# reverse tunnel on WSL-home, and UFW on the VPS.
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=link-local
+# For the VPS node, ALSO allow the Cloudflare IP ranges so the node
+# can remote-write to Grafana Cloud and pull peer gossip. Uncomment:
+# IPAddressAllow=0.0.0.0/0   # or a tighter egress-only allowlist
+
+# Resource limits
+MemoryMax=768M
+TasksMax=256
+LimitNOFILE=8192
+LimitNPROC=256
+
+[Install]
+WantedBy=multi-user.target
