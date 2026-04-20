@@ -183,6 +183,17 @@ architecture, Quidnug-specific integration, concrete code, and threat model.
   — Code-signing with guardian-recoverable keys — kill the GPG single-point-
   of-failure problem.
 
+**Infrastructure / internet plumbing:**
+
+- [`UseCases/dns-replacement/`](UseCases/dns-replacement/) —
+  Replace DNS with a cryptographically-owned, censorship-resistant,
+  guardian-recoverable naming system. Every record is signed at
+  publish, every delegation is governance-enforced, and DANE-
+  integrated TLS removes CAs from the trust path. Deployable
+  first as a parallel `.quidnug` TLD, then via DNS gateway for
+  legacy clients, eventually as an alternative root for existing
+  TLDs.
+
 Each folder contains a full `README.md` (problem + why Quidnug + high-level
 design), `architecture.md` (data model + sequence diagrams), `implementation.md`
 (concrete API calls + pseudocode), and `threat-model.md`.

@@ -235,6 +235,27 @@ style transparency log for this package").
 
 ---
 
+### [`dns-replacement/`](dns-replacement/)
+
+**Problem:** DNS has nine structural flaws — centralized root authority,
+registrar-mediated rent-seeking ownership, DNSSEC complexity, cache
+poisoning, BGP-hijack vulnerability, CA-dependent TLS, fragile key
+rotation, opaque censorship at every layer, and no cryptographic owner
+binding. Each one would be a design blocker if DNS were being proposed
+today.
+
+**Why Quidnug:** A domain is a `TrustDomain` with cryptographic
+governors (QDP-0012). DNS record types map one-to-one to signed
+`DNS_RECORD` events on the domain's stream. Federation (QDP-0013)
+gives users alternative roots. Discovery (QDP-0014) finds the right
+nodes to query. Guardian recovery replaces "forgot password." DANE
+over Quidnug-signed TLSA records removes CAs from the TLS trust path.
+First deployable as a parallel `.quidnug` TLD, then as a DNS gateway
+for legacy clients, eventually as an alternative root for existing
+TLDs.
+
+---
+
 ## Index summary
 
 | #  | Use case                               | Domain        | Key Quidnug features                                                   |
