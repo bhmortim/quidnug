@@ -98,6 +98,10 @@ type QuidnugNode struct {
 	// internal lock; no QuidnugNode-level mutex needed.
 	NodeAdvertisementRegistry *NodeAdvertisementRegistry
 
+	// QDP-0014: per-(domain, quid) activity index, populated
+	// incrementally as blocks commit.
+	QuidDomainIndex *QuidDomainIndex
+
 	// IPFS client
 	IPFSClient ipfsclient.IPFSClient
 
@@ -407,6 +411,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		EventStreamRegistry:       make(map[string]*EventStream),
 		EventRegistry:             make(map[string][]EventTransaction),
 		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
+		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,
 		TentativeBlocks:           make(map[string][]Block),
 		VerifiedTrustEdges:        make(map[string]map[string]TrustEdge),

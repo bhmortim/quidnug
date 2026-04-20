@@ -152,6 +152,12 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateTrustRegistry(tx)
+			// QDP-0014: credit both ends of the edge in the
+			// per-domain quid index for discovery queries.
+			if node.QuidDomainIndex != nil {
+				node.QuidDomainIndex.observeTrustEdge(
+					tx.TrustDomain, tx.Truster, tx.Trustee, tx.Timestamp)
+			}
 
 		case TxTypeIdentity:
 			var tx IdentityTransaction
@@ -160,6 +166,10 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateIdentityRegistry(tx)
+			if node.QuidDomainIndex != nil {
+				node.QuidDomainIndex.observe(
+					tx.TrustDomain, tx.QuidID, tx.Timestamp)
+			}
 
 		case TxTypeTitle:
 			var tx TitleTransaction
@@ -168,6 +178,15 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateTitleRegistry(tx)
+			// Credit each owner in the domain's index — all
+			// are "active participants" from the tx's domain's
+			// perspective.
+			if node.QuidDomainIndex != nil {
+				for _, stake := range tx.Owners {
+					node.QuidDomainIndex.observe(
+						tx.TrustDomain, stake.OwnerID, tx.Timestamp)
+				}
+			}
 
 		case TxTypeEvent:
 			var tx EventTransaction
@@ -176,6 +195,16 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateEventStreamRegistry(tx)
+			// For events the signer is derived from PublicKey
+			// (consortium block-production machinery already
+			// computes this; reuse the derivation).
+			if node.QuidDomainIndex != nil && tx.PublicKey != "" {
+				signerQuid := QuidIDFromPublicKeyHex(tx.PublicKey)
+				if signerQuid != "" {
+					node.QuidDomainIndex.observeEvent(
+						tx.TrustDomain, signerQuid, tx.EventType, tx.Timestamp)
+				}
+			}
 
 		case TxTypeNodeAdvertisement:
 			var tx NodeAdvertisementTransaction
@@ -184,6 +213,10 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 				continue
 			}
 			node.updateNodeAdvertisementRegistry(tx)
+			if node.QuidDomainIndex != nil {
+				node.QuidDomainIndex.observe(
+					tx.TrustDomain, tx.NodeQuid, tx.Timestamp)
+			}
 
 		case TxTypeAnchor:
 			var tx AnchorTransaction
