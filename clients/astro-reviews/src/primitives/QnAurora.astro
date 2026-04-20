@@ -1,0 +1,69 @@
+---
+/**
+ * <QnAurora /> — Astro component for server-rendered rating glyphs.
+ *
+ * Renders the SVG statically at build-time (using the pure
+ * `renderAuroraSVG` function) so search engines and non-JS
+ * clients see the visualization. The custom element is still
+ * registered on the client for interactivity (hover tooltips,
+ * click events).
+ *
+ * Props mirror <qn-aurora> attributes.
+ */
+import { renderAuroraSVG, SIZES } from "@quidnug/web-components/src/primitives/index.js";
+
+interface Props {
+    rating?: number | null;
+    max?: number;
+    crowd?: number | null;
+    contributors?: number;
+    direct?: number;
+    size?: "nano" | "standard" | "large";
+    observerName?: string;
+    showValue?: boolean;
+    showDelta?: boolean;
+    showHistogram?: boolean;
+    contributorRatings?: number[];
+    class?: string;
+}
+
+const {
+    rating = null,
+    max = 5,
+    crowd = null,
+    contributors = 0,
+    direct = 0,
+    size = "standard",
+    observerName = "",
+    showValue = size !== "nano",
+    showDelta = size !== "nano",
+    showHistogram = false,
+    contributorRatings = null,
+    class: className = "",
+} = Astro.props;
+
+const sizeCfg = SIZES[size] ?? SIZES.standard;
+const ssr = renderAuroraSVG({
+    rating,
+    max,
+    crowd,
+    contributorCount: contributors,
+    directCount: direct,
+    sizeCfg,
+    sizeName: size,
+    observerName,
+    showValue,
+    showDelta,
+    showHistogram,
+    contributorRatings,
+    hasBasis: rating != null && Number.isFinite(rating),
+});
+---
+
+<div class:list={["qn-aurora-ssr", className]} data-size={size} set:html={ssr}></div>
+
+<script>
+    // Hydrate the custom element lazily once the client is ready
+    // so hover tooltips and click events work.
+    import("@quidnug/web-components/src/primitives/index.js");
+</script>

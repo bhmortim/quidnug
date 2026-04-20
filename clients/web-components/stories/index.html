@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quidnug rating primitives — storybook</title>
+<style>
+    :root {
+        --ink: #0B1D3A;
+        --paper: #FAFBFC;
+        --rule: #E2E6EE;
+        --muted: #7A8598;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        line-height: 1.5;
+    }
+    header {
+        padding: 24px 32px;
+        border-bottom: 1px solid var(--rule);
+        background: #fff;
+    }
+    header h1 { margin: 0; font-size: 22px; }
+    header p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    main { padding: 24px 32px 80px; max-width: 1100px; margin: 0 auto; }
+    section {
+        margin-top: 40px;
+    }
+    h2 {
+        font-size: 17px;
+        margin: 0 0 4px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid var(--ink);
+        display: inline-block;
+    }
+    h2 .sub {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 13px;
+        margin-left: 8px;
+    }
+    .grid {
+        display: grid;
+        gap: 16px;
+        margin-top: 20px;
+    }
+    .cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .cell {
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    .cell .caption {
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+        margin-top: auto;
+    }
+    .cell .caption code {
+        color: var(--ink);
+        background: #F1F3F7;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-size: 11px;
+    }
+    .product-tile {
+        display: grid;
+        grid-template-columns: 72px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+    }
+    .product-tile .thumb {
+        width: 72px;
+        height: 72px;
+        background: linear-gradient(135deg, #E2E6EE, #B0B7BD);
+        border-radius: 6px;
+    }
+    .product-tile .name { font-weight: 600; }
+    .product-tile .meta { font-size: 12px; color: var(--muted); }
+    .trace-cell {
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        padding: 14px;
+    }
+    .trace-cell .label {
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+    .panel {
+        background: #fff;
+        border: 1px solid var(--rule);
+        border-radius: 10px;
+        padding: 24px;
+    }
+    .detail-layout {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 32px;
+        align-items: start;
+    }
+    .detail-layout .copy h3 {
+        margin: 0 0 4px;
+    }
+    .detail-layout .copy p { color: var(--muted); font-size: 14px; margin: 6px 0; }
+    .log {
+        margin-top: 20px;
+        background: #0B1D3A;
+        color: #D1E1FF;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-family: 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 12px;
+        min-height: 40px;
+        white-space: pre-wrap;
+    }
+    @media (max-width: 780px) {
+        .cols-4, .cols-3, .cols-2 { grid-template-columns: 1fr 1fr; }
+        .detail-layout { grid-template-columns: 1fr; }
+    }
+</style>
+</head>
+<body>
+<header>
+    <h1>Quidnug rating primitives</h1>
+    <p>Storybook for <code>&lt;qn-aurora&gt;</code>, <code>&lt;qn-constellation&gt;</code>, and <code>&lt;qn-trace&gt;</code>. Every state variant we care about, rendered side-by-side. Use this for design review, regression checking, and theming.</p>
+</header>
+<main>
+
+<section>
+    <h2>Aurora — nano <span class="sub">product grids, feeds, search results</span></h2>
+    <div class="grid cols-4">
+        <div class="cell">
+            <qn-aurora size="nano" rating="4.7" contributors="8" direct="6" crowd="4.2" show-delta></qn-aurora>
+            <div class="caption">thick ring, <code>+0.5</code> delta</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="3.2" contributors="3" direct="1" crowd="4.0" show-delta></qn-aurora>
+            <div class="caption">mostly indirect, below crowd</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="4.1" contributors="1" direct="1" crowd="4.0" show-delta></qn-aurora>
+            <div class="caption">single direct source</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="4.2" contributors="0" crowd="4.2"></qn-aurora>
+            <div class="caption">crowd-only (dotted ring)</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano"></qn-aurora>
+            <div class="caption">no basis (hollow)</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="1.8" contributors="4" direct="3" crowd="4.5" show-delta></qn-aurora>
+            <div class="caption">strong negative signal</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="2.6" contributors="2" direct="1" crowd="2.5" show-delta></qn-aurora>
+            <div class="caption">mixed, matches crowd</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="4.6" contributors="12" direct="10" crowd="3.9" show-delta></qn-aurora>
+            <div class="caption">high-confidence pos divergence</div>
+        </div>
+    </div>
+
+    <h2 style="margin-top:36px">Aurora — standard <span class="sub">product detail pages</span></h2>
+    <div class="grid cols-3">
+        <div class="cell">
+            <qn-aurora size="standard" rating="4.5" contributors="7" direct="5" crowd="4.1"
+                       observer-name="alice" show-delta show-histogram
+                       contributor-ratings='[4.5,4.8,4.2,5,4,4.3,4.7]'></qn-aurora>
+            <div class="caption">seven contributors with histogram</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="standard" rating="3.1" contributors="4" direct="2" crowd="4.2"
+                       observer-name="bob" show-delta show-histogram
+                       contributor-ratings='[3,4,2,3.5]'></qn-aurora>
+            <div class="caption">below crowd, mixed histogram</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="standard" contributors="0"></qn-aurora>
+            <div class="caption">no basis — too new</div>
+        </div>
+    </div>
+
+    <h2 style="margin-top:36px">Aurora — large <span class="sub">hero block, marketing</span></h2>
+    <div class="grid cols-2">
+        <div class="cell">
+            <qn-aurora size="large" rating="4.7" contributors="11" direct="8" crowd="4.1"
+                       observer-name="alice" show-delta show-histogram
+                       contributor-ratings='[4.5,4.8,4.2,5,4,4.3,4.7,5,4.6,4.5,4.8]'></qn-aurora>
+            <div class="caption">hero-size aurora, rich signal</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="large" rating="2.1" contributors="6" direct="4" crowd="4.4"
+                       observer-name="alice" show-delta show-histogram
+                       contributor-ratings='[1,3,2,2.5,1.5,3]'></qn-aurora>
+            <div class="caption">your network says skip it</div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>Product list example <span class="sub">aurora-nano + trace</span></h2>
+    <div class="grid cols-2" style="gap: 12px">
+        <div class="product-tile">
+            <div class="thumb"></div>
+            <div>
+                <div class="name">Dell XPS 15 (Alice's view)</div>
+                <div class="meta">laptops · 7 trusted reviews</div>
+            </div>
+            <qn-aurora size="nano" rating="4.7" contributors="7" direct="5" crowd="4.1" show-delta></qn-aurora>
+        </div>
+        <div class="product-tile">
+            <div class="thumb" style="background: linear-gradient(135deg, #FFE7DB, #F0A780)"></div>
+            <div>
+                <div class="name">MacBook Pro 14 (Alice's view)</div>
+                <div class="meta">laptops · 12 trusted reviews</div>
+            </div>
+            <qn-aurora size="nano" rating="4.5" contributors="12" direct="8" crowd="4.6" show-delta></qn-aurora>
+        </div>
+        <div class="product-tile">
+            <div class="thumb" style="background: linear-gradient(135deg, #E2E6EE, #B0B7BD)"></div>
+            <div>
+                <div class="name">Budget laptop X (Alice's view)</div>
+                <div class="meta">laptops · 2 trusted reviews (1 indirect)</div>
+            </div>
+            <qn-aurora size="nano" rating="2.9" contributors="2" direct="1" crowd="4.3" show-delta></qn-aurora>
+        </div>
+        <div class="product-tile">
+            <div class="thumb" style="background: linear-gradient(135deg, #DCEFDC, #9AC99A)"></div>
+            <div>
+                <div class="name">ThinkPad X1 (Alice's view)</div>
+                <div class="meta">laptops · no trusted reviews yet</div>
+            </div>
+            <qn-aurora size="nano" rating="4.2" contributors="0" crowd="4.2"></qn-aurora>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>Trace <span class="sub">how the weighted rating was composed</span></h2>
+    <div class="grid cols-2">
+        <div class="trace-cell">
+            <div class="label">Dell XPS 15 (Alice's view) — 4.7 ★</div>
+            <qn-trace contributors='[
+                {"id":"vet","name":"veteran","rating":4.8,"weight":0.6,"direct":true},
+                {"id":"sam","name":"sam-tech","rating":4.5,"weight":0.2,"direct":true},
+                {"id":"kai","name":"kai","rating":4.2,"weight":0.1,"direct":false},
+                {"id":"nah","name":"netnet","rating":3.5,"weight":0.05,"direct":false}
+            ]' show-labels></qn-trace>
+        </div>
+        <div class="trace-cell">
+            <div class="label">Budget laptop X (Alice's view) — 2.9 ★</div>
+            <qn-trace contributors='[
+                {"id":"n","name":"newbie","rating":3.0,"weight":0.7,"direct":true},
+                {"id":"r","name":"random-voice","rating":2.5,"weight":0.3,"direct":false}
+            ]' show-labels></qn-trace>
+        </div>
+        <div class="trace-cell">
+            <div class="label">ThinkPad X1 — no signal</div>
+            <qn-trace contributors="[]"></qn-trace>
+        </div>
+        <div class="trace-cell">
+            <div class="label">Polarized laptop Y</div>
+            <qn-trace contributors='[
+                {"id":"a","name":"alice-pal","rating":5,"weight":0.35,"direct":true},
+                {"id":"b","name":"veteran","rating":5,"weight":0.3,"direct":true},
+                {"id":"c","name":"drew","rating":1.5,"weight":0.2,"direct":true},
+                {"id":"d","name":"sam","rating":2,"weight":0.15,"direct":false}
+            ]' show-labels></qn-trace>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>Drilldown <span class="sub">aurora + constellation + trace</span></h2>
+    <div class="panel detail-layout">
+        <div>
+            <qn-aurora size="large" rating="4.5" contributors="7" direct="5" crowd="4.1"
+                       observer-name="alice" show-delta show-histogram
+                       contributor-ratings='[4.5,4.8,4.2,5,4,4.3,4.7]'></qn-aurora>
+        </div>
+        <div class="copy">
+            <h3>Why you see 4.5, not 4.1</h3>
+            <p>Seven reviewers your trust graph vouches for weighed in on this laptop. Five are in your direct circle; two are friends-of-friends. The full crowd average is 4.1 — we filtered out two outlier ratings that came from untrusted sources who've been flagged as unhelpful by people you trust.</p>
+            <p>Click any dot in the map below to see the trust path from you to that reviewer.</p>
+            <qn-constellation size="standard" observer-name="alice"
+                title-text="Your trust map for this rating"
+                contributors='[
+                    {"id":"vet","name":"veteran","rating":4.8,"weight":0.33,"hops":1},
+                    {"id":"sam","name":"sam-tech","rating":4.5,"weight":0.22,"hops":1},
+                    {"id":"jo","name":"jo","rating":4.2,"weight":0.14,"hops":1},
+                    {"id":"p","name":"pippa","rating":5,"weight":0.12,"hops":1},
+                    {"id":"m","name":"mae","rating":4,"weight":0.08,"hops":1},
+                    {"id":"k","name":"kai","rating":4.3,"weight":0.07,"hops":2},
+                    {"id":"n","name":"nath","rating":4.7,"weight":0.04,"hops":2}
+                ]'></qn-constellation>
+            <div class="log" id="log">click a dot in the constellation to see its detail…</div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>Polarized signal <span class="sub">your network disagrees with itself</span></h2>
+    <div class="panel detail-layout">
+        <qn-aurora size="large" rating="3.2" contributors="6" direct="4" crowd="3.4"
+                   observer-name="alice" show-delta show-histogram
+                   contributor-ratings='[5,5,4.5,1,2,2.5]'></qn-aurora>
+        <div class="copy">
+            <h3>Your network is split</h3>
+            <p>The aurora histogram shows why — three sources loved it, three disliked it. Click each dot in the map to see which. The weighted mean of 3.2 hides the divergence, but the visual tells you something's up.</p>
+            <qn-constellation size="standard" observer-name="alice"
+                contributors='[
+                    {"id":"a1","name":"alice-pal","rating":5,"weight":0.25,"hops":1},
+                    {"id":"a2","name":"veteran","rating":5,"weight":0.22,"hops":1},
+                    {"id":"a3","name":"drew","rating":4.5,"weight":0.15,"hops":1},
+                    {"id":"a4","name":"sam","rating":1,"weight":0.2,"hops":1},
+                    {"id":"a5","name":"ximena","rating":2,"weight":0.12,"hops":2},
+                    {"id":"a6","name":"nath","rating":2.5,"weight":0.06,"hops":2}
+                ]'></qn-constellation>
+        </div>
+    </div>
+</section>
+
+<section>
+    <h2>Anonymous visitor <span class="sub">no trust graph yet</span></h2>
+    <div class="grid cols-3">
+        <div class="cell">
+            <qn-aurora size="standard" rating="4.2" contributors="0" crowd="4.2"></qn-aurora>
+            <div class="caption">crowd-only (dotted ring, no delta)</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="nano" rating="4.2" contributors="0" crowd="4.2"></qn-aurora>
+            <div class="caption">same, nano</div>
+        </div>
+        <div class="cell">
+            <qn-aurora size="standard"></qn-aurora>
+            <div class="caption">no basis at all</div>
+        </div>
+    </div>
+</section>
+</main>
+
+<script type="module">
+    // Register all primitives.
+    import "../src/primitives/index.js";
+
+    // Log dot clicks in the constellation examples.
+    document.addEventListener("qn-constellation-select", (e) => {
+        const log = document.getElementById("log");
+        if (log) {
+            const c = e.detail;
+            log.textContent =
+                `selected: ${c.name ?? c.id}\n` +
+                `  rating: ${c.rating}\n` +
+                `  weight: ${c.weight}\n` +
+                `  hops:   ${c.hops}`;
+        }
+    });
+    document.addEventListener("qn-aurora-click", (e) => {
+        // eslint-disable-next-line no-console
+        console.log("aurora clicked:", e.detail);
+    });
+</script>
+</body>
+</html>

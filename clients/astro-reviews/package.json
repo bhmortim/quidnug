@@ -1,0 +1,39 @@
+{
+    "name": "@quidnug/astro-reviews",
+    "version": "0.1.0",
+    "description": "Astro integration for Quidnug trust-weighted reviews. SSR-safe wrappers that output static SVG and hydrate the custom elements on the client.",
+    "type": "module",
+    "main": "src/index.js",
+    "module": "src/index.js",
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "exports": {
+        ".": "./src/index.js",
+        "./primitives": "./src/primitives/index.js",
+        "./QnAurora": "./src/primitives/QnAurora.astro",
+        "./QnConstellation": "./src/primitives/QnConstellation.astro",
+        "./QnTrace": "./src/primitives/QnTrace.astro"
+    },
+    "scripts": {
+        "test": "echo 'no tests yet'"
+    },
+    "peerDependencies": {
+        "astro": "^4.0.0",
+        "@quidnug/web-components": "^2.0.0"
+    },
+    "keywords": [
+        "astro",
+        "quidnug",
+        "reviews",
+        "trust",
+        "ratings",
+        "ssr"
+    ],
+    "author": "The Quidnug Authors",
+    "license": "Apache-2.0",
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}

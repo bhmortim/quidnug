@@ -1,0 +1,36 @@
+{
+    "name": "@quidnug/vue-reviews",
+    "version": "0.1.0",
+    "description": "Vue 3 components for Quidnug trust-weighted reviews. Thin wrappers over @quidnug/web-components.",
+    "type": "module",
+    "main": "src/index.js",
+    "module": "src/index.js",
+    "files": [
+        "src",
+        "README.md"
+    ],
+    "exports": {
+        ".": "./src/index.js",
+        "./primitives": "./src/primitives/index.js"
+    },
+    "scripts": {
+        "test": "echo 'no tests yet'"
+    },
+    "peerDependencies": {
+        "vue": "^3.3.0",
+        "@quidnug/web-components": "^2.0.0",
+        "@quidnug/client": "^2.0.0"
+    },
+    "keywords": [
+        "vue",
+        "quidnug",
+        "reviews",
+        "trust",
+        "ratings"
+    ],
+    "author": "The Quidnug Authors",
+    "license": "Apache-2.0",
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}

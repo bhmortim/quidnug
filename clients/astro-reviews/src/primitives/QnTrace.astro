@@ -1,0 +1,46 @@
+---
+/**
+ * <QnTrace /> — Astro SSR wrapper around <qn-trace>.
+ */
+import { renderTraceSVG } from "@quidnug/web-components/src/primitives/index.js";
+
+interface Contributor {
+    id: string;
+    name?: string;
+    rating: number;
+    weight: number;
+    direct?: boolean;
+}
+
+interface Props {
+    contributors: Contributor[];
+    max?: number;
+    height?: number;
+    showLabels?: boolean;
+    emptyText?: string;
+    class?: string;
+}
+
+const {
+    contributors,
+    max = 5,
+    height = 10,
+    showLabels = false,
+    emptyText = "no trusted reviews yet",
+    class: className = "",
+} = Astro.props;
+
+const ssr = renderTraceSVG({
+    contributors,
+    max,
+    height,
+    showLabels,
+    emptyText,
+});
+---
+
+<div class:list={["qn-trace-ssr", className]} set:html={ssr}></div>
+
+<script>
+    import("@quidnug/web-components/src/primitives/index.js");
+</script>

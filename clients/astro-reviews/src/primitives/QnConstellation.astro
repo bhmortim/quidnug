@@ -1,0 +1,54 @@
+---
+/**
+ * <QnConstellation /> — Astro SSR wrapper around <qn-constellation>.
+ */
+import { renderConstellationSVG } from "@quidnug/web-components/src/primitives/index.js";
+
+interface Contributor {
+    id: string;
+    name?: string;
+    rating: number;
+    weight: number;
+    hops: number;
+    direct?: boolean;
+}
+
+interface Props {
+    contributors: Contributor[];
+    max?: number;
+    size?: "compact" | "standard" | "large";
+    titleText?: string;
+    observerName?: string;
+    class?: string;
+}
+
+const GEOM = {
+    compact:  { outer: 180, padding: 8,  labelFont: 10, dotMax: 10 },
+    standard: { outer: 320, padding: 16, labelFont: 11, dotMax: 16 },
+    large:    { outer: 480, padding: 24, labelFont: 13, dotMax: 22 },
+};
+
+const {
+    contributors,
+    max = 5,
+    size = "standard",
+    titleText = "",
+    observerName = "",
+    class: className = "",
+} = Astro.props;
+
+const ssr = renderConstellationSVG({
+    contributors,
+    max,
+    sizeName: size,
+    geometry: GEOM[size] ?? GEOM.standard,
+    titleText,
+    observerName,
+});
+---
+
+<div class:list={["qn-constellation-ssr", className]} set:html={ssr}></div>
+
+<script>
+    import("@quidnug/web-components/src/primitives/index.js");
+</script>

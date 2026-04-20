@@ -20,3 +20,6 @@ export { QuidnugStars } from "./components/QuidnugStars.jsx";
 export { QuidnugReviewPanel } from "./components/QuidnugReviewPanel.jsx";
 export { QuidnugReviewList } from "./components/QuidnugReviewList.jsx";
 export { QuidnugWriteReview } from "./components/QuidnugWriteReview.jsx";
+
+// Low-level primitives — use when you already have rating state.
+export { QnAurora, QnConstellation, QnTrace } from "./primitives/index.js";
