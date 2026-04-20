@@ -22,6 +22,12 @@ Read the whole doc once before you start executing. Phase 1 is
 ~half a day if nothing goes wrong; the reviews rollout is a
 second half-day.
 
+> **Read this first:** [`governance-model.md`](governance-model.md)
+> explains how nodes join the public network (cache replicas /
+> consortium members / governors). The Phase 6 reviews rollout
+> assumes you've internalized that role separation. The formal
+> protocol spec is [QDP-0012](../../docs/design/0012-domain-governance.md).
+
 ---
 
 ## Table of contents
@@ -369,10 +375,16 @@ hostname's rules:
 
 ### 4.7 Seed the network's bedrock data
 
-Register the reserved domains. Run from any machine with CLI
-access:
+Register the reserved domains. Each domain gets an explicit
+initial consortium (your seed nodes) + governor set (you +
+your co-founder's quid) — see
+[`governance-model.md`](governance-model.md) for the background
+on what these roles mean. Run from any machine with CLI access:
 
 ```bash
+SEEDS="node1-quid:1.0,node2-quid:1.0"     # consortium members
+GOVS="operator-quid:1.0,cofounder-quid:1.0" # governor quorum (2-of-2)
+
 for d in network.quidnug.com \
          peering.network.quidnug.com \
          validators.network.quidnug.com \
@@ -386,9 +398,18 @@ for d in network.quidnug.com \
     quidnug-cli domain register \
         --node https://node1.quidnug.com \
         --name "$d" \
-        --threshold 0.5
+        --threshold 0.5 \
+        --validators "${SEEDS}" \
+        --governors "${GOVS}" \
+        --governance-quorum 1.0
 done
 ```
+
+Pre-QDP-0012 activation this extra metadata is just stored; the
+node still auto-adds itself as a single-governor validator for
+backward compatibility. Post-activation it's the authoritative
+source of truth for domain governance. Publishing it now is
+forward-compatible and documents your intent.
 
 **Phase 1 done.** You have a public node reachable at
 `https://node1.quidnug.com`, serving the reviews reserved

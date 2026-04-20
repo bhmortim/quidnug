@@ -4,6 +4,12 @@
 > Not for joiners — if you want to peer with the public network, see
 > [peering-protocol.md](peering-protocol.md).
 >
+> **Read first:** [`governance-model.md`](governance-model.md)
+> — how nodes actually join the network. Defines the cache-replica,
+> consortium-member, and governor roles that everything below
+> references. The formal protocol spec is
+> [QDP-0012](../../docs/design/0012-domain-governance.md).
+>
 > **Cheap home-based deployment:** this README assumes a Fly.io
 > budget. If you'd rather run the primary node on a home machine
 > via Cloudflare Tunnel with a tiny VPS for failover (target cost

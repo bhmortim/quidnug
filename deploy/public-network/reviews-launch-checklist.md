@@ -14,6 +14,10 @@ Before starting:
       (`home-operator-plan.md` phases 1 through 3 complete).
 - [ ] Nightly R2 backups running and verified (phase 5).
 - [ ] Status page live at `status.quidnug.com` (phase 4).
+- [ ] You've read [`governance-model.md`](governance-model.md)
+      and understand the cache-replica / consortium-member /
+      governor role separation. Domain registrations below assume
+      you've picked your initial consortium and governor set.
 - [ ] You've read
       [`../../examples/reviews-and-comments/PROTOCOL.md`](../../examples/reviews-and-comments/PROTOCOL.md)
       and understand the QRP-0001 event shapes.
@@ -30,6 +34,8 @@ Start narrow — you can always add children.
 
 ```bash
 API=https://api.quidnug.com
+SEEDS="node1-quid:1.0,node2-quid:1.0"       # consortium members
+GOVS="operator-quid:1.0,cofounder-quid:1.0" # governors (2-of-2)
 
 for topic in \
     reviews.public \
@@ -55,9 +61,51 @@ for topic in \
         --node "${API}" \
         --name "${topic}" \
         --threshold 0.5 \
+        --validators "${SEEDS}" \
+        --governors "${GOVS}" \
+        --governance-quorum 1.0 \
         || echo "skipped (probably exists): ${topic}"
 done
 ```
+
+After this runs, the public tree is "yours" — your consortium
+produces the blocks, your governors control the roster. Anyone
+else in the world can now spin up a cache replica pointing at
+your consortium and start mirroring the agreed chain.
+
+### 1a. Publish the governor attestation
+
+File: `deploy/public-network/seeds.json`. Add a `governors`
+block alongside the existing seed-node entries:
+
+```json
+{
+    "seeds": [ ... existing ... ],
+    "governors": [
+        {
+            "quid": "<operator-quid>",
+            "name": "Operator (you)",
+            "publicKey": "<sec1-uncompressed-hex>",
+            "weight": 1.0,
+            "role": "primary"
+        },
+        {
+            "quid": "<cofounder-quid>",
+            "name": "Co-founder",
+            "publicKey": "<sec1-uncompressed-hex>",
+            "weight": 1.0,
+            "role": "primary"
+        }
+    ],
+    "governanceQuorum": 1.0,
+    "governanceNotice": "1440 blocks (~24 hours)"
+}
+```
+
+Commit the signed JSON and render it at
+`https://quidnug.com/network/seeds.json`. This is the
+public attestation — anyone considering running a cache replica
+should be able to audit who actually holds governance authority.
 
 - [ ] All topics show up in `GET ${API}/api/domains`.
 - [ ] A test identity can submit an IDENTITY tx under any of them.

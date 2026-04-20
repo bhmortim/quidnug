@@ -36,6 +36,7 @@ the live code:
 | 0009 | Fork-Block Migration Trigger (H5) | Landed |
 | 0010 | Compact Merkle Proofs (H2) | Landed |
 | 0011 | Client Libraries & Integrations roadmap | Landed (all four tiers shipped) |
+| 0012 | Domain Governance (cache replicas / consortium / governors) | Draft — design only, scheduled for Phase 1 implementation after public-network launch |
 
 ### Client SDKs (done)
 
