@@ -83,17 +83,41 @@ type ElectionAuthorityIdentity struct {
     }
 }
 
-// Guardian set for the authority quid
-type AuthorityGuardians struct {
-    Chief            string   // quid of the elected election admin
-    BipartisanBoard  []string // D-aligned, R-aligned, independent
+// Governor quorum for the authority's domain tree (QDP-0012).
+// This is the policy layer — who authorizes consortium
+// changes, threshold tweaks, child-domain delegation.
+type AuthorityGovernors struct {
+    Chief            string   // chief election official (e.g. county clerk)
     StateSOS         string   // Secretary of State's quid
+    BipartisanBoard  []string // D-aligned, R-aligned, independent
     ObserverPanel    []string // League of Women Voters, etc.
-    Threshold        uint16   // e.g., 3
-    RecoveryDelay    time.Duration  // e.g., 72h (short by election-protocol standards)
-    RequireGuardianRotation: true
+    Quorum           float64  // e.g., 0.7 (5-of-7 weighted)
+    NoticeBlocks     int64    // e.g., 1440 (~72h at 3-minute blocks)
+    EmergencyClause  bool     // if true, REMOVE_VALIDATOR gets 1h notice
+                              // during active voting week
+}
+
+// Each individual governor ALSO has a personal guardian set
+// (QDP-0002) for recovering their own key if lost/compromised.
+// These are separate humans from the governor quorum above;
+// typically chosen per-governor for their life context
+// (spouse, lawyer, federal monitor, etc.).
+type GovernorGuardians struct {
+    GovernorQuid     string
+    Guardians        []string // quids of the guardian humans/orgs
+    Threshold        uint16   // e.g., 3-of-5
+    RecoveryDelay    time.Duration  // e.g., 24h typical
 }
 ```
+
+**Two-layer key-resilience model.** The governor quorum is the
+policy layer — it changes the authority's validator set,
+domain parameters, delegation scopes. The per-governor
+guardian quorums are the key-recovery layer — each governor
+individually can recover a lost key without waiting for quorum
+agreement. Both layers are needed; one without the other
+leaves obvious failure modes (losing a key = stuck, losing a
+policy vote = stuck).
 
 ### Voter Registration Quid (VRQ)
 
@@ -245,19 +269,49 @@ subject=Election-Authority:
 ### Pre-election setup (T-90 days)
 
 ```
-1. State SOS establishes the authority quid:
-     IDENTITY: election-authority-williamson-2026-nov
-     with attributes + initial GuardianSet installation
+1. State SOS establishes the operator quid (the persistent
+   identity for the county election authority):
+     IDENTITY: election-authority-williamson
+     (separate from the per-election quid below)
 
-2. Authority creates its own guardian set:
-     GuardianSetUpdate with primary signatures from Chief,
-     bipartisan board, SOS office, observer panel
+2. Each governor generates their personal quid + installs
+   their own guardian set (QDP-0002):
+     For each governor G:
+       GuardianSetUpdate for G.quid, signed by G
+       Guardians: whatever humans G has chosen
+       Recovery delay: 24h typical
 
-3. Authority creates contest quids:
+3. Authority registers the per-election domain tree using
+   DOMAIN_REGISTRATION transactions (QDP-0012):
+     DOMAIN_REGISTRATION: elections.williamson-county-tx.2026-nov
+       validators: {node-authority-primary: 1.0, ...}
+       governors: {chief: 2, sos: 2, r-obs: 1, d-obs: 1, lwv: 1}
+       governanceQuorum: 0.7  # 5-of-7 weighted
+       noticePeriod: 1440 blocks
+     (repeat for registration, poll-book, ballot-issuance,
+      contests.*, tally, audit sub-domains)
+
+4. Authority publishes the well-known file (QDP-0014):
+     /.well-known/quidnug-network.json
+       operator: <county-authority-quid>
+       governors: [chief, sos, r-obs, d-obs, lwv with weights]
+       seeds: [node-authority-primary, node-observer-r, ...]
+       signed by county-authority operator key
+
+5. Each consortium node publishes a NODE_ADVERTISEMENT
+   (QDP-0014):
+     NODE_ADVERTISEMENT for each node
+       operator: county-authority-quid (or observer org's operator)
+       endpoints: [https://node-xxx.elections.wilco.gov]
+       capabilities: {validator: true, archive: true}
+       supportedDomains: ["elections.williamson-county-tx.2026-nov.*"]
+       expires: +7 days (renewed weekly)
+
+6. Authority creates contest quids:
      For each race: IDENTITY: contest-williamson-2026-us-senate
      etc.
 
-4. Candidates file their candidacy:
+7. Candidates file their candidacy:
      Each candidate creates their own candidate quid, signs an
      identity transaction, and submits to the authority.
      Authority reviews, emits a trust edge from election-authority

@@ -110,16 +110,41 @@ rather than one persistent "elections office" quid. This scopes
 authority cleanly: a fresh election's keys can't be used to
 manipulate a prior election's records.
 
-**Guardian set** for the authority quid includes:
-- Chief election official (e.g., county clerk)
-- Bipartisan oversight board (one D-aligned, one R-aligned, one independent)
-- State Secretary of State office
-- A panel of independent election observers (League of Women Voters, etc.)
+Under [QDP-0012 Domain Governance](../../docs/design/0012-domain-governance.md),
+the authority's authority-to-act is expressed through two
+distinct mechanisms that the original version of this document
+conflated. Both are needed; they do different things.
 
-Threshold: typically 3-of-5 or higher. `requireGuardianRotation`
-is `true` — no solo rotation of authority keys. Any change to the
-election authority's cryptographic identity requires a public,
-time-locked quorum event.
+**Governor quorum for the election's domains** (QDP-0012): the
+humans / institutions authorized to vote on changes to the
+consortium roster + parameters of the election's domain tree.
+Typically:
+
+- Chief election official (e.g., county clerk)
+- State Secretary of State office
+- Bipartisan oversight board (one D-aligned, one R-aligned, one independent)
+- Panel of independent election observers (League of Women Voters, etc.)
+
+Recommended structure: 7 governors with weighted votes, 5-of-7
+weighted quorum for routine governance actions, unanimous for
+`UPDATE_GOVERNORS`. Notice period 72 hours normally; with a
+pre-negotiated 1-hour emergency-notice clause active during the
+week of the election for `REMOVE_VALIDATOR` actions against
+compromised consortium members. See
+[`integration.md`](integration.md) §2 for the concrete setup.
+
+**Guardian quorum per governor key** (QDP-0002): each individual
+governor's cryptographic identity has its own M-of-N guardian
+set for recovering a lost or compromised key. Guardians are
+independent parties trusted for that specific role (spouse,
+lawyer, federal monitor, state ethics officer, etc.), not the
+same people as the governor quorum. Losing a governor's key
+doesn't lose their position — guardians rotate the key to a
+fresh one, typically over a 24-hour time-lock.
+
+The two mechanisms serve different purposes: governor quorum
+authorizes policy changes; guardian quorum recovers individual
+keys. Elections need both.
 
 ### 2. Voter Registration Quid (VRQ)
 
@@ -215,10 +240,27 @@ elections.williamson-county-tx.2026-nov.contests.governor
 elections.williamson-county-tx.2026-nov.contests.proposition-5
 ```
 
-Each domain has its own validators (the election authority +
-observers). Vote edges in `contests.us-senate` only count if the
-edge signer (the BQ) has a valid ballot issuance in
-`ballot-issuance`.
+Each domain has its own **consortium** (the election authority
++ observer organizations running physical nodes that produce
+blocks; see [QDP-0012](../../docs/design/0012-domain-governance.md)
+for the cache-replica / consortium-member / governor role
+separation). Consortium membership is granted by on-chain
+`ADD_VALIDATOR` governance transactions signed by the governor
+quorum, not self-declared — new operators join the consortium
+by policy action, not by spinning up a node.
+
+Vote edges in `contests.us-senate` only count if the edge
+signer (the BQ) has a valid ballot issuance in
+`ballot-issuance`. This eligibility check is cryptographic and
+runs at tally time; nothing in the consortium can bypass it.
+
+**Cache replicas** (typically precinct polling-place devices
+plus any observer / journalist / candidate running a mirror)
+trust the consortium, mirror the agreed chain locally, serve
+reads, and relay transactions — but do not produce blocks.
+This keeps the number of block-producing nodes small and
+governance-controlled while letting the read-serving
+infrastructure scale out cheaply.
 
 ---
 
@@ -968,11 +1010,15 @@ At tally, the election authority:
 
 ```
 T-90 days: Election Authority publishes election parameters
-  - Authority quid + guardian set installed
+  - Authority operator quid + per-governor guardian quorums installed
+  - Governor quorum for the election's domain tree configured
+    (5-of-7 weighted; see integration.md §2)
+  - Domain tree registered via DOMAIN_REGISTRATION transactions,
+    consortium members added via ADD_VALIDATOR governance
+  - Well-known file (`/.well-known/quidnug-network.json`) published
   - Contests registered as quids
   - Candidates file their quids
-  - Domain hierarchy created
-  - Pre-election audit quorum configured
+  - Pre-election audit delegation configured
 
 T-30 days: Voter registration deadline
   - Authority stops accepting new registrations
