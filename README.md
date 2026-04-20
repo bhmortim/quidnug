@@ -431,6 +431,7 @@ Protocol evolution is tracked in versioned design docs under
 | 0009  | Fork-Block Migration Trigger (H5)       | Landed   |
 | 0010  | Compact Merkle Proofs (H2)              | Landed   |
 | 0012  | Domain Governance (cache/consortium/governor roles) | Draft |
+| 0013  | Network Federation Model (one protocol, many networks) | Draft |
 
 ---
 

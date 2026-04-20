@@ -339,11 +339,26 @@ initial governor attestation and link it from
 `seeds.json`." That's the operator's public commitment to who
 can act as governor for the public tree.
 
+## This whole model applies to any network
+
+Nothing above is specific to `quidnug.com`'s public network —
+every primitive (cache replica, consortium, governor) works
+the same way on any Quidnug network. Running your own network
+with its own domain tree is a supported, first-class scenario;
+see [`federation-model.md`](federation-model.md) for the
+architecture of "one protocol, many networks" and how
+reputation flows between them.
+
 ## Further reading
 
 - [QDP-0012 formal spec](../../docs/design/0012-domain-governance.md)
   — attack vectors, validation rules, rollout plan, worked
   example.
+- [QDP-0013 network federation model](../../docs/design/0013-network-federation.md)
+  — the formal statement that the protocol is network-neutral
+  plus the primitives that enable reputation fungibility.
+- [`federation-model.md`](federation-model.md) — operator-facing
+  version of QDP-0013.
 - [QDP-0002 guardian recovery](../../docs/design/0002-guardian-based-recovery.md)
   — the mechanism governors use to rotate compromised keys.
 - [QDP-0008 k-of-k bootstrap](../../docs/design/0008-kofk-bootstrap.md)

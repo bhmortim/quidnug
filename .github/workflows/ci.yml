@@ -16,6 +16,40 @@ permissions:
   contents: read
 
 jobs:
+  uniformity:
+    # QDP-0013 §3: the reference implementation must not hardcode
+    # any identifier tied to the quidnug.com public network in
+    # production code paths. Test files, docs, examples, and the
+    # deploy/ operator playbooks may legitimately name specific
+    # public-network domains and are exempt.
+    name: QDP-0013 uniformity invariant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for hardcoded public-network identifiers
+        run: |
+          set -euo pipefail
+          pattern='"(reviews\.public|network\.quidnug|operators\.network|api\.quidnug\.com)'
+          # Production paths only — no tests, examples, or docs.
+          targets=(internal cmd pkg clients/js/quidnug-client.js clients/js/quidnug-client-v2.js)
+          found=0
+          for t in "${targets[@]}"; do
+              [ -e "$t" ] || continue
+              if grep -rEn --include='*.go' --include='*.js' --include='*.ts' \
+                   --exclude='*_test.go' \
+                   --exclude='*.test.js' \
+                   "$pattern" "$t"; then
+                  found=1
+              fi
+          done
+          if [ "$found" = "1" ]; then
+              echo "::error::QDP-0013 uniformity invariant violated: hardcoded public-network identifier"
+              echo "::error::The reference implementation must be network-neutral. Move any public-network"
+              echo "::error::specifics into config, tests, docs, or examples."
+              exit 1
+          fi
+          echo "✓ no hardcoded public-network identifiers in production code"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

@@ -4,6 +4,15 @@
 > Not for joiners — if you want to peer with the public network, see
 > [peering-protocol.md](peering-protocol.md).
 >
+> **The protocol is network-neutral.** The playbook below is
+> specifically about the `quidnug.com` public network, but the
+> same steps let anyone run their own parallel network with
+> different names, keys, and peers. See
+> [`federation-model.md`](federation-model.md) and
+> [QDP-0013](../../docs/design/0013-network-federation.md) for
+> the architectural statement and the primitives that let
+> reputation flow between networks.
+>
 > **Read first:** [`governance-model.md`](governance-model.md)
 > — how nodes actually join the network. Defines the cache-replica,
 > consortium-member, and governor roles that everything below
