@@ -10,23 +10,21 @@ canonical serialization and signing behavior is compatible.
 ```
 docs/test-vectors/v1.0/
 ├── README.md                         (this file)
-├── trust-tx.json                     (TRUST vectors)
-├── identity-tx.json                  (IDENTITY vectors)
-├── event-tx.json                     (EVENT vectors)
-├── title-tx.json                     (TODO)
-├── node-advertisement-tx.json        (TODO)
-├── moderation-action-tx.json         (TODO)
-├── dsr-tx.json                       (TODO: DSR + consent family)
+├── trust-tx.json                     (TRUST: 4 cases)
+├── identity-tx.json                  (IDENTITY: 3 cases)
+├── event-tx.json                     (EVENT: 3 cases)
+├── title-tx.json                     (TITLE: 3 cases)
+├── node-advertisement-tx.json        (NODE_ADVERTISEMENT: 2 cases)
+├── moderation-action-tx.json         (MODERATION_ACTION: 3 cases)
+├── dsr-tx.json                       (DSR family: 6 cases across 5 tx types)
 └── test-keys/
     ├── key-alice.json
     ├── key-bob.json
     └── key-carol.json                (deterministic test keys; NEVER used in production)
 ```
 
-Vectors for TRUST, IDENTITY, EVENT land first because they
-are the three most-frequently-exercised transaction types
-and share the widest SDK coverage. The remaining types are
-listed as TODO and will be produced in subsequent sessions.
+Total: 24 conformance cases across 7 files covering all v1.0
+Required transaction types.
 
 ## Authoritative canonical form (v1.0)
 
@@ -180,40 +178,77 @@ compatibility. An SDK that passes 1-4 but fails 5 is broken.
 An SDK that passes 3-5 but fails 1-2 has divergent
 canonical form.
 
-## Known divergences (v1.0 launch-blocking)
+## Conformance status
 
-As of 2026-04-20, the following known gaps prevent the
-listed implementations from passing this vector suite out
-of the box:
+### `internal/core` reference node — conformant
 
-### `pkg/client` (Go SDK)
+`internal/core/vectors_test.go` passes all 24 cases across 7
+files. All conformance properties hold for every transaction
+type using the reference node's own serialization +
+signature-verification code paths.
 
-- **Signature format:** currently uses `ecdsa.SignASN1`
-  (DER-encoded). MUST be changed to IEEE-1363 raw 64-byte
-  form.
-- **Canonical bytes:** `CanonicalBytes()` uses the round-
-  trip-through-map alphabetical approach. Struct-
-  declaration-order typed-mirror approach is required.
-  Already used for `NODE_ADVERTISEMENT` via
-  `nodeAdvertisementWire`; must be applied to TRUST,
-  IDENTITY, TITLE, EVENT, MODERATION_ACTION, DSR family.
-- **Consumer test:** `pkg/client/vectors_test.go` included
-  here documents the current state and fails for tx types
-  not yet fixed. The tests are structured so fixes to
-  `pkg/client` make the tests pass incrementally.
+### `pkg/client` Go SDK — conformant
 
-### `clients/python/` (Python SDK)
+`pkg/client/crypto.go` converged to IEEE-1363 signatures in
+the same commit as the expanded vector harness. Submit paths
+for TRUST, IDENTITY, TITLE, EVENT use typed mirror structs in
+`pkg/client/types_wire.go` matching the server's field order
+exactly. `pkg/client/vectors_test.go` exercises all 24 cases
+via the SDK's public `(*Quid).Sign` / `(*Quid).Verify` /
+`QuidFromPublicHex` entry points — all pass.
 
-- Example code in `examples/elections/clients/common/`
-  already uses the correct canonical form (struct-order
-  via hand-written `to_signable_dict` + IEEE-1363 via
-  `ecdsa_sign_ieee1363`). Formal test-vector consumer
-  pending.
+Two divergence-probe tests remain in place as regression
+detectors:
 
-### `clients/js/` (JS/TS SDK)
+- `TestPkgClientCanonicalBytesDivergesFromAuthoritative`:
+  `CanonicalBytes()` retains alphabetical ordering for
+  backward compat. It is no longer on the critical signing
+  path for any v1.0 submission; the probe documents the
+  retained legacy behavior.
+- `TestPkgClientSignNowMatchesAuthoritative`: asserts that
+  `(*Quid).Sign` produces valid 64-byte IEEE-1363
+  signatures that verify via an independent authoritative
+  verifier. Regression-detects any accidental rollback.
 
-- Consumer pending. Known to use a different signing
-  library; cross-check required before launch.
+### `clients/python` Python vector consumer — conformant (via local helpers)
+
+`clients/python/tests/test_vectors.py` passes all 24
+conformance cases using local IEEE-1363 helpers that match
+the authoritative form (see the `sign_ieee1363` /
+`verify_ieee1363` functions in the test file).
+
+### `clients/python/quidnug` Python SDK itself — still divergent
+
+The SDK's public API (`quidnug.crypto.Quid.sign`,
+`canonical_bytes`) still produces DER signatures and
+alphabetical canonical bytes. Convergence of the Python SDK
+itself is a pending launch blocker analogous to
+`pkg/client`'s earlier state. The fix follows the same
+pattern:
+
+- Migrate `quidnug.crypto.Quid.sign` to return 64-byte
+  IEEE-1363 (DER → raw r||s via `decode_dss_signature` then
+  zero-padded concat, identical to the pattern already used
+  in `examples/elections/clients/common/crypto.py`).
+- Migrate `quidnug.crypto.Quid.verify` to accept the same
+  format.
+- Add typed mirror dataclasses per tx type, replacing
+  map-based tx construction in `clients/python/quidnug/client.py`
+  submit paths.
+
+Two divergence probes in `test_vectors.py` document the SDK
+gap:
+
+- `test_clients_python_sdk_sign_diverges_from_authoritative`
+- `test_clients_python_canonical_bytes_diverges_from_authoritative`
+
+Both self-heal: they log "converged!" and pass without
+assertion once the SDK migrates.
+
+### `clients/js/` (JS/TS SDK) — consumer pending
+
+Known to use a different signing library; cross-check
+required before launch.
 
 ### `clients/rust/` (Rust SDK)
 

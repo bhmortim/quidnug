@@ -308,6 +308,189 @@ func TestVectorsEvent(t *testing.T) {
 	}
 }
 
+// TestVectorsTitle validates title-tx.json.
+func TestVectorsTitle(t *testing.T) {
+	keys := loadKeys(t)
+	vf := loadVectorFile(t, "title-tx.json")
+	if vf.TxType != "TITLE" {
+		t.Fatalf("expected tx_type TITLE, got %s", vf.TxType)
+	}
+	for _, c := range vf.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			var tx TitleTransaction
+			if err := json.Unmarshal(c.Input, &tx); err != nil {
+				t.Fatalf("unmarshal input: %v", err)
+			}
+			key := keys[c.SignerKeyRef]
+			if tx.PublicKey != key.PublicKeySEC1Hex {
+				t.Errorf("pubkey mismatch")
+			}
+			txCopy := tx
+			txCopy.Signature = ""
+			signable, _ := json.Marshal(txCopy)
+			assertCanonicalBytes(t, c, signable)
+			assertSignatureLength(t, c)
+			assertReferenceSignatureVerifies(t, c, key.PublicKeySEC1Hex, signable)
+			assertTamperedSignatureRejects(t, c, key.PublicKeySEC1Hex, signable)
+			if gotID := titleID(tx); gotID != c.Expected.ExpectedID {
+				t.Errorf("id mismatch: want %s got %s", c.Expected.ExpectedID, gotID)
+			}
+		})
+	}
+}
+
+// TestVectorsNodeAdvertisement validates node-advertisement-tx.json.
+func TestVectorsNodeAdvertisement(t *testing.T) {
+	keys := loadKeys(t)
+	vf := loadVectorFile(t, "node-advertisement-tx.json")
+	if vf.TxType != "NODE_ADVERTISEMENT" {
+		t.Fatalf("expected NODE_ADVERTISEMENT, got %s", vf.TxType)
+	}
+	for _, c := range vf.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			var tx NodeAdvertisementTransaction
+			if err := json.Unmarshal(c.Input, &tx); err != nil {
+				t.Fatalf("unmarshal input: %v", err)
+			}
+			key := keys[c.SignerKeyRef]
+			if tx.PublicKey != key.PublicKeySEC1Hex {
+				t.Errorf("pubkey mismatch")
+			}
+			txCopy := tx
+			txCopy.Signature = ""
+			signable, _ := json.Marshal(txCopy)
+			assertCanonicalBytes(t, c, signable)
+			assertSignatureLength(t, c)
+			assertReferenceSignatureVerifies(t, c, key.PublicKeySEC1Hex, signable)
+			assertTamperedSignatureRejects(t, c, key.PublicKeySEC1Hex, signable)
+			if gotID := nodeAdvertisementID(tx); gotID != c.Expected.ExpectedID {
+				t.Errorf("id mismatch: want %s got %s", c.Expected.ExpectedID, gotID)
+			}
+		})
+	}
+}
+
+// TestVectorsModerationAction validates moderation-action-tx.json.
+func TestVectorsModerationAction(t *testing.T) {
+	keys := loadKeys(t)
+	vf := loadVectorFile(t, "moderation-action-tx.json")
+	if vf.TxType != "MODERATION_ACTION" {
+		t.Fatalf("expected MODERATION_ACTION, got %s", vf.TxType)
+	}
+	for _, c := range vf.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			var tx ModerationActionTransaction
+			if err := json.Unmarshal(c.Input, &tx); err != nil {
+				t.Fatalf("unmarshal input: %v", err)
+			}
+			key := keys[c.SignerKeyRef]
+			if tx.PublicKey != key.PublicKeySEC1Hex {
+				t.Errorf("pubkey mismatch")
+			}
+			txCopy := tx
+			txCopy.Signature = ""
+			signable, _ := json.Marshal(txCopy)
+			assertCanonicalBytes(t, c, signable)
+			assertSignatureLength(t, c)
+			assertReferenceSignatureVerifies(t, c, key.PublicKeySEC1Hex, signable)
+			assertTamperedSignatureRejects(t, c, key.PublicKeySEC1Hex, signable)
+			if gotID := moderationActionID(tx); gotID != c.Expected.ExpectedID {
+				t.Errorf("id mismatch: want %s got %s", c.Expected.ExpectedID, gotID)
+			}
+		})
+	}
+}
+
+// TestVectorsDSR validates dsr-tx.json (heterogeneous: five
+// privacy-family tx types in one file, each case dispatched by
+// the `type` field in Input).
+func TestVectorsDSR(t *testing.T) {
+	keys := loadKeys(t)
+	vf := loadVectorFile(t, "dsr-tx.json")
+	if vf.TxType != "DSR_FAMILY" {
+		t.Fatalf("expected DSR_FAMILY, got %s", vf.TxType)
+	}
+
+	for _, c := range vf.Cases {
+		t.Run(c.Name, func(t *testing.T) {
+			key := keys[c.SignerKeyRef]
+
+			// Peek at the type field.
+			var peek struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(c.Input, &peek)
+
+			var (
+				signable []byte
+				gotID    string
+			)
+			switch peek.Type {
+			case string(TxTypeDataSubjectRequest):
+				var tx DataSubjectRequestTransaction
+				_ = json.Unmarshal(c.Input, &tx)
+				if tx.PublicKey != key.PublicKeySEC1Hex {
+					t.Errorf("pubkey mismatch")
+				}
+				txCopy := tx
+				txCopy.Signature = ""
+				signable, _ = json.Marshal(txCopy)
+				gotID = dsrRequestIDFromTx(tx)
+			case string(TxTypeConsentGrant):
+				var tx ConsentGrantTransaction
+				_ = json.Unmarshal(c.Input, &tx)
+				if tx.PublicKey != key.PublicKeySEC1Hex {
+					t.Errorf("pubkey mismatch")
+				}
+				txCopy := tx
+				txCopy.Signature = ""
+				signable, _ = json.Marshal(txCopy)
+				gotID = consentGrantIDFromTx(tx)
+			case string(TxTypeConsentWithdraw):
+				var tx ConsentWithdrawTransaction
+				_ = json.Unmarshal(c.Input, &tx)
+				if tx.PublicKey != key.PublicKeySEC1Hex {
+					t.Errorf("pubkey mismatch")
+				}
+				txCopy := tx
+				txCopy.Signature = ""
+				signable, _ = json.Marshal(txCopy)
+				gotID = consentWithdrawIDFromTx(tx)
+			case string(TxTypeProcessingRestriction):
+				var tx ProcessingRestrictionTransaction
+				_ = json.Unmarshal(c.Input, &tx)
+				if tx.PublicKey != key.PublicKeySEC1Hex {
+					t.Errorf("pubkey mismatch")
+				}
+				txCopy := tx
+				txCopy.Signature = ""
+				signable, _ = json.Marshal(txCopy)
+				gotID = processingRestrictionIDFromTx(tx)
+			case string(TxTypeDSRCompliance):
+				var tx DSRComplianceTransaction
+				_ = json.Unmarshal(c.Input, &tx)
+				if tx.PublicKey != key.PublicKeySEC1Hex {
+					t.Errorf("pubkey mismatch")
+				}
+				txCopy := tx
+				txCopy.Signature = ""
+				signable, _ = json.Marshal(txCopy)
+				gotID = dsrComplianceIDFromTx(tx)
+			default:
+				t.Fatalf("unknown dsr-family type: %q", peek.Type)
+			}
+
+			assertCanonicalBytes(t, c, signable)
+			assertSignatureLength(t, c)
+			assertReferenceSignatureVerifies(t, c, key.PublicKeySEC1Hex, signable)
+			assertTamperedSignatureRejects(t, c, key.PublicKeySEC1Hex, signable)
+			if gotID != c.Expected.ExpectedID {
+				t.Errorf("id mismatch: want %s got %s", c.Expected.ExpectedID, gotID)
+			}
+		})
+	}
+}
+
 // --- Local ID derivation (mirrors cmd/quidnug-test-vectors) ---------------
 //
 // The real ID derivation happens inline in
@@ -372,6 +555,121 @@ func eventID(tx EventTransaction) string {
 		TrustDomain: tx.TrustDomain,
 		Timestamp:   tx.Timestamp,
 	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func titleID(tx TitleTransaction) string {
+	payload, _ := json.Marshal(struct {
+		AssetID     string
+		Owners      []OwnershipStake
+		TrustDomain string
+		Timestamp   int64
+	}{
+		AssetID:     tx.AssetID,
+		Owners:      tx.Owners,
+		TrustDomain: tx.TrustDomain,
+		Timestamp:   tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func nodeAdvertisementID(tx NodeAdvertisementTransaction) string {
+	payload, _ := json.Marshal(struct {
+		NodeQuid           string
+		OperatorQuid       string
+		TrustDomain        string
+		AdvertisementNonce int64
+		Timestamp          int64
+	}{
+		NodeQuid:           tx.NodeQuid,
+		OperatorQuid:       tx.OperatorQuid,
+		TrustDomain:        tx.TrustDomain,
+		AdvertisementNonce: tx.AdvertisementNonce,
+		Timestamp:          tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func moderationActionID(tx ModerationActionTransaction) string {
+	payload, _ := json.Marshal(struct {
+		ModeratorQuid string
+		TargetType    string
+		TargetID      string
+		Scope         string
+		ReasonCode    string
+		Nonce         int64
+		Timestamp     int64
+	}{
+		ModeratorQuid: tx.ModeratorQuid,
+		TargetType:    tx.TargetType,
+		TargetID:      tx.TargetID,
+		Scope:         tx.Scope,
+		ReasonCode:    tx.ReasonCode,
+		Nonce:         tx.Nonce,
+		Timestamp:     tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func dsrRequestIDFromTx(tx DataSubjectRequestTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject     string
+		Controller  string
+		RequestType string
+		Nonce       int64
+		Timestamp   int64
+	}{tx.SubjectQuid, tx.ControllerQuid, tx.RequestType, tx.Nonce, tx.Timestamp})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func consentGrantIDFromTx(tx ConsentGrantTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject    string
+		Controller string
+		Scope      []string
+		PolicyHash string
+		Nonce      int64
+		Timestamp  int64
+	}{tx.SubjectQuid, tx.ControllerQuid, tx.Scope, tx.PolicyHash, tx.Nonce, tx.Timestamp})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func consentWithdrawIDFromTx(tx ConsentWithdrawTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject   string
+		Withdraw  string
+		Nonce     int64
+		Timestamp int64
+	}{tx.SubjectQuid, tx.WithdrawsGrantTxID, tx.Nonce, tx.Timestamp})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func processingRestrictionIDFromTx(tx ProcessingRestrictionTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject   string
+		Uses      []string
+		Nonce     int64
+		Timestamp int64
+	}{tx.SubjectQuid, tx.RestrictedUses, tx.Nonce, tx.Timestamp})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func dsrComplianceIDFromTx(tx DSRComplianceTransaction) string {
+	payload, _ := json.Marshal(struct {
+		RequestTxID string
+		Operator    string
+		CompletedAt int64
+		Nonce       int64
+		Timestamp   int64
+	}{tx.RequestTxID, tx.OperatorQuid, tx.CompletedAt, tx.Nonce, tx.Timestamp})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }

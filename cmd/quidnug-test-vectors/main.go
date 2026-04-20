@@ -279,10 +279,24 @@ func cmdGenerate(args []string) error {
 	if err := genEventVectors(outDir, keys, commit, now); err != nil {
 		return fmt.Errorf("event vectors: %w", err)
 	}
+	if err := genTitleVectors(outDir, keys, commit, now); err != nil {
+		return fmt.Errorf("title vectors: %w", err)
+	}
+	if err := genNodeAdvertisementVectors(outDir, keys, commit, now); err != nil {
+		return fmt.Errorf("node-advertisement vectors: %w", err)
+	}
+	if err := genModerationActionVectors(outDir, keys, commit, now); err != nil {
+		return fmt.Errorf("moderation-action vectors: %w", err)
+	}
+	if err := genDSRVectors(outDir, keys, commit, now); err != nil {
+		return fmt.Errorf("DSR vectors: %w", err)
+	}
 
 	fmt.Printf("Generated test vectors in %s\n", outDir)
 	fmt.Printf("  Keys: %d (alice, bob, carol)\n", len(keys))
-	fmt.Printf("  Files: trust-tx.json, identity-tx.json, event-tx.json\n")
+	fmt.Printf("  Files: trust-tx.json, identity-tx.json, event-tx.json,\n")
+	fmt.Printf("         title-tx.json, node-advertisement-tx.json,\n")
+	fmt.Printf("         moderation-action-tx.json, dsr-tx.json\n")
 	return nil
 }
 
@@ -820,3 +834,767 @@ func cryptoRandFallback(p []byte) (int, error) {
 // cr is the actual crypto/rand.Reader; assigned at init so
 // the import stays visible to go vet.
 var cr io.Reader
+
+// ---------------------------------------------------------------
+// Additional ID derivations
+// ---------------------------------------------------------------
+
+// titleTxID mirrors AddTitleTransaction. Payload: AssetID,
+// Owners (the full stake list), TrustDomain, Timestamp.
+func titleTxID(tx core.TitleTransaction) string {
+	payload, _ := json.Marshal(struct {
+		AssetID     string
+		Owners      []core.OwnershipStake
+		TrustDomain string
+		Timestamp   int64
+	}{
+		AssetID:     tx.AssetID,
+		Owners:      tx.Owners,
+		TrustDomain: tx.TrustDomain,
+		Timestamp:   tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// nodeAdvertisementTxID mirrors AddNodeAdvertisementTransaction.
+func nodeAdvertisementTxID(tx core.NodeAdvertisementTransaction) string {
+	payload, _ := json.Marshal(struct {
+		NodeQuid           string
+		OperatorQuid       string
+		TrustDomain        string
+		AdvertisementNonce int64
+		Timestamp          int64
+	}{
+		NodeQuid:           tx.NodeQuid,
+		OperatorQuid:       tx.OperatorQuid,
+		TrustDomain:        tx.TrustDomain,
+		AdvertisementNonce: tx.AdvertisementNonce,
+		Timestamp:          tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// moderationActionTxID mirrors AddModerationActionTransaction.
+func moderationActionTxID(tx core.ModerationActionTransaction) string {
+	payload, _ := json.Marshal(struct {
+		ModeratorQuid string
+		TargetType    string
+		TargetID      string
+		Scope         string
+		ReasonCode    string
+		Nonce         int64
+		Timestamp     int64
+	}{
+		ModeratorQuid: tx.ModeratorQuid,
+		TargetType:    tx.TargetType,
+		TargetID:      tx.TargetID,
+		Scope:         tx.Scope,
+		ReasonCode:    tx.ReasonCode,
+		Nonce:         tx.Nonce,
+		Timestamp:     tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func dsrRequestTxID(tx core.DataSubjectRequestTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject     string
+		Controller  string
+		RequestType string
+		Nonce       int64
+		Timestamp   int64
+	}{
+		Subject:     tx.SubjectQuid,
+		Controller:  tx.ControllerQuid,
+		RequestType: tx.RequestType,
+		Nonce:       tx.Nonce,
+		Timestamp:   tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func consentGrantTxID(tx core.ConsentGrantTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject    string
+		Controller string
+		Scope      []string
+		PolicyHash string
+		Nonce      int64
+		Timestamp  int64
+	}{
+		Subject:    tx.SubjectQuid,
+		Controller: tx.ControllerQuid,
+		Scope:      tx.Scope,
+		PolicyHash: tx.PolicyHash,
+		Nonce:      tx.Nonce,
+		Timestamp:  tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func consentWithdrawTxID(tx core.ConsentWithdrawTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject   string
+		Withdraw  string
+		Nonce     int64
+		Timestamp int64
+	}{
+		Subject:   tx.SubjectQuid,
+		Withdraw:  tx.WithdrawsGrantTxID,
+		Nonce:     tx.Nonce,
+		Timestamp: tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func processingRestrictionTxID(tx core.ProcessingRestrictionTransaction) string {
+	payload, _ := json.Marshal(struct {
+		Subject   string
+		Uses      []string
+		Nonce     int64
+		Timestamp int64
+	}{
+		Subject:   tx.SubjectQuid,
+		Uses:      tx.RestrictedUses,
+		Nonce:     tx.Nonce,
+		Timestamp: tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+func dsrComplianceTxID(tx core.DSRComplianceTransaction) string {
+	payload, _ := json.Marshal(struct {
+		RequestTxID string
+		Operator    string
+		CompletedAt int64
+		Nonce       int64
+		Timestamp   int64
+	}{
+		RequestTxID: tx.RequestTxID,
+		Operator:    tx.OperatorQuid,
+		CompletedAt: tx.CompletedAt,
+		Nonce:       tx.Nonce,
+		Timestamp:   tx.Timestamp,
+	})
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
+}
+
+// ---------------------------------------------------------------
+// TITLE vectors
+// ---------------------------------------------------------------
+
+func genTitleVectors(outDir string, keys []*testKey, commit, now string) error {
+	alice, bob, carol := keys[0], keys[1], keys[2]
+	baseTS := int64(1729468800)
+
+	cases := []struct {
+		name   string
+		cmt    string
+		signer *testKey
+		build  func(k *testKey) core.TitleTransaction
+	}{
+		{
+			name:   "title_alice_sole_owner",
+			cmt:    "Sole-owner title: Alice owns 100% of asset-1.",
+			signer: alice,
+			build: func(k *testKey) core.TitleTransaction {
+				return core.TitleTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeTitle,
+						TrustDomain: "titles.home",
+						Timestamp:   baseTS,
+						PublicKey:   k.PubHex,
+					},
+					AssetID: "asset-sku-000001",
+					Owners: []core.OwnershipStake{
+						{OwnerID: k.QuidID, Percentage: 1.0, StakeType: "full-ownership"},
+					},
+					Signatures: map[string]string{},
+					TitleType:  "inventory",
+				}
+			},
+		},
+		{
+			name:   "title_alice_bob_joint_ownership",
+			cmt:    "Two-owner title: Alice 60%, Bob 40%.",
+			signer: alice,
+			build: func(k *testKey) core.TitleTransaction {
+				return core.TitleTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeTitle,
+						TrustDomain: "titles.home",
+						Timestamp:   baseTS + 3600,
+						PublicKey:   k.PubHex,
+					},
+					AssetID: "asset-joint-002",
+					Owners: []core.OwnershipStake{
+						{OwnerID: k.QuidID, Percentage: 0.6},
+						{OwnerID: bob.QuidID, Percentage: 0.4},
+					},
+					Signatures: map[string]string{},
+				}
+			},
+		},
+		{
+			name:   "title_carol_with_expiry_three_owners",
+			cmt:    "Three-owner title with explicit ExpiryDate (90 days).",
+			signer: carol,
+			build: func(k *testKey) core.TitleTransaction {
+				return core.TitleTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeTitle,
+						TrustDomain: "titles.lease",
+						Timestamp:   baseTS + 86400,
+						PublicKey:   k.PubHex,
+					},
+					AssetID: "lease-apt-3f",
+					Owners: []core.OwnershipStake{
+						{OwnerID: alice.QuidID, Percentage: 0.4, StakeType: "tenant"},
+						{OwnerID: bob.QuidID, Percentage: 0.3, StakeType: "tenant"},
+						{OwnerID: k.QuidID, Percentage: 0.3, StakeType: "tenant"},
+					},
+					Signatures: map[string]string{},
+					ExpiryDate: baseTS + 86400 + 90*86400,
+					TitleType:  "residential-lease",
+				}
+			},
+		},
+	}
+
+	vf := vectorFile{
+		SchemaVersion:      schemaVersion,
+		TxType:             "TITLE",
+		GeneratedAt:        now,
+		GeneratorCommit:    commit,
+		CanonicalFormNotes: "json.Marshal(txCopy) on typed TitleTransaction struct with Signature=''",
+	}
+	for _, c := range cases {
+		tx := c.build(c.signer)
+		tx.ID = titleTxID(tx)
+		tx.Signature = ""
+		signable, err := json.Marshal(tx)
+		if err != nil {
+			return err
+		}
+		sigHex, err := c.signer.signIEEE1363(signable)
+		if err != nil {
+			return err
+		}
+		txWithSig := tx
+		txWithSig.Signature = sigHex
+		inputBytes, err := json.Marshal(txWithSig)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(signable)
+		sigBytes, _ := hex.DecodeString(sigHex)
+		vf.Cases = append(vf.Cases, vectorCase{
+			Name: c.name, Comments: c.cmt, SignerKeyRef: c.signer.Name,
+			Input: inputBytes,
+			Expected: expectedBlock{
+				CanonicalSignableBytesHex:  hex.EncodeToString(signable),
+				CanonicalSignableBytesUTF8: string(signable),
+				SHA256OfCanonicalHex:       hex.EncodeToString(sum[:]),
+				ExpectedID:                 tx.ID,
+				ReferenceSignatureHex:      sigHex,
+				SignatureLengthBytes:       len(sigBytes),
+			},
+		})
+	}
+	return writeJSON(filepath.Join(outDir, "title-tx.json"), vf)
+}
+
+// ---------------------------------------------------------------
+// NODE_ADVERTISEMENT vectors
+// ---------------------------------------------------------------
+
+func genNodeAdvertisementVectors(outDir string, keys []*testKey, commit, now string) error {
+	alice, bob, _ := keys[0], keys[1], keys[2]
+	baseTS := int64(1729468800)
+
+	cases := []struct {
+		name   string
+		cmt    string
+		signer *testKey
+		build  func(k *testKey) core.NodeAdvertisementTransaction
+	}{
+		{
+			name:   "node_ad_alice_validator_single_endpoint",
+			cmt:    "Minimal validator node advertisement; 7-day TTL; single endpoint.",
+			signer: alice,
+			build: func(k *testKey) core.NodeAdvertisementTransaction {
+				return core.NodeAdvertisementTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeNodeAdvertisement,
+						TrustDomain: "operators.network.reviews.public",
+						Timestamp:   baseTS,
+						PublicKey:   k.PubHex,
+					},
+					NodeQuid:     k.QuidID,
+					OperatorQuid: bob.QuidID,
+					Endpoints: []core.NodeEndpoint{
+						{
+							URL:      "https://node-alice.example.com:443",
+							Protocol: "http/2",
+							Region:   "iad",
+							Priority: 10,
+							Weight:   100,
+						},
+					},
+					SupportedDomains: []string{"reviews.public.*"},
+					Capabilities: core.NodeCapabilities{
+						Validator: true,
+						Cache:     true,
+						Archive:   false,
+					},
+					ProtocolVersion:    "1.0",
+					ExpiresAt:          (baseTS + 7*86400) * 1_000_000_000,
+					AdvertisementNonce: 1,
+				}
+			},
+		},
+		{
+			name:   "node_ad_bob_multi_region_cache_only",
+			cmt:    "Multi-region cache-only node; two endpoints with different priorities.",
+			signer: bob,
+			build: func(k *testKey) core.NodeAdvertisementTransaction {
+				return core.NodeAdvertisementTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeNodeAdvertisement,
+						TrustDomain: "operators.network.reviews.public",
+						Timestamp:   baseTS + 1,
+						PublicKey:   k.PubHex,
+					},
+					NodeQuid:     k.QuidID,
+					OperatorQuid: alice.QuidID,
+					Endpoints: []core.NodeEndpoint{
+						{
+							URL: "https://cache-lhr.example.com:443",
+							Protocol: "http/2", Region: "lhr", Priority: 10, Weight: 100,
+						},
+						{
+							URL: "https://cache-sin.example.com:443",
+							Protocol: "http/2", Region: "sin", Priority: 20, Weight: 50,
+						},
+					},
+					Capabilities: core.NodeCapabilities{
+						Cache: true, MaxBodyBytes: 1048576,
+					},
+					ProtocolVersion:    "1.0",
+					ExpiresAt:          (baseTS + 1 + 6*3600) * 1_000_000_000,
+					AdvertisementNonce: 1,
+				}
+			},
+		},
+	}
+
+	vf := vectorFile{
+		SchemaVersion:      schemaVersion,
+		TxType:             "NODE_ADVERTISEMENT",
+		GeneratedAt:        now,
+		GeneratorCommit:    commit,
+		CanonicalFormNotes: "json.Marshal(txCopy) on typed NodeAdvertisementTransaction struct with Signature=''",
+	}
+	for _, c := range cases {
+		tx := c.build(c.signer)
+		tx.ID = nodeAdvertisementTxID(tx)
+		tx.Signature = ""
+		signable, err := json.Marshal(tx)
+		if err != nil {
+			return err
+		}
+		sigHex, err := c.signer.signIEEE1363(signable)
+		if err != nil {
+			return err
+		}
+		txWithSig := tx
+		txWithSig.Signature = sigHex
+		inputBytes, err := json.Marshal(txWithSig)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(signable)
+		sigBytes, _ := hex.DecodeString(sigHex)
+		vf.Cases = append(vf.Cases, vectorCase{
+			Name: c.name, Comments: c.cmt, SignerKeyRef: c.signer.Name,
+			Input: inputBytes,
+			Expected: expectedBlock{
+				CanonicalSignableBytesHex:  hex.EncodeToString(signable),
+				CanonicalSignableBytesUTF8: string(signable),
+				SHA256OfCanonicalHex:       hex.EncodeToString(sum[:]),
+				ExpectedID:                 tx.ID,
+				ReferenceSignatureHex:      sigHex,
+				SignatureLengthBytes:       len(sigBytes),
+			},
+		})
+	}
+	return writeJSON(filepath.Join(outDir, "node-advertisement-tx.json"), vf)
+}
+
+// ---------------------------------------------------------------
+// MODERATION_ACTION vectors
+// ---------------------------------------------------------------
+
+func genModerationActionVectors(outDir string, keys []*testKey, commit, now string) error {
+	alice, bob, _ := keys[0], keys[1], keys[2]
+	baseTS := int64(1729468800)
+
+	cases := []struct {
+		name   string
+		cmt    string
+		signer *testKey
+		build  func(k *testKey) core.ModerationActionTransaction
+	}{
+		{
+			name:   "mod_alice_suppress_event_dmca",
+			cmt:    "Classic DMCA takedown: suppress scope, EVENT target.",
+			signer: alice,
+			build: func(k *testKey) core.ModerationActionTransaction {
+				return core.ModerationActionTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeModerationAction,
+						TrustDomain: "reviews.public.technology.laptops",
+						Timestamp:   baseTS,
+						PublicKey:   k.PubHex,
+					},
+					ModeratorQuid: k.QuidID,
+					TargetType:    "EVENT",
+					TargetID:      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+					Scope:         "suppress",
+					ReasonCode:    "DMCA",
+					EvidenceURL:   "https://legal.example/dmca/2026-04-01.pdf",
+					Nonce:         1,
+				}
+			},
+		},
+		{
+			name:   "mod_bob_hide_quid_policy_violation",
+			cmt:    "Hide a QUID for policy violation; bounded 30-day duration.",
+			signer: bob,
+			build: func(k *testKey) core.ModerationActionTransaction {
+				return core.ModerationActionTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeModerationAction,
+						TrustDomain: "reviews.public.technology.laptops",
+						Timestamp:   baseTS + 3600,
+						PublicKey:   k.PubHex,
+					},
+					ModeratorQuid:  k.QuidID,
+					TargetType:     "QUID",
+					TargetID:       alice.QuidID,
+					Scope:          "hide",
+					ReasonCode:     "policy-violation",
+					EffectiveFrom:  baseTS + 3600,
+					EffectiveUntil: baseTS + 3600 + 30*86400,
+					Nonce:          1,
+				}
+			},
+		},
+		{
+			name:   "mod_alice_annotate_event_with_supersede",
+			cmt:    "Annotate (soft moderation) + supersedes an earlier action.",
+			signer: alice,
+			build: func(k *testKey) core.ModerationActionTransaction {
+				return core.ModerationActionTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeModerationAction,
+						TrustDomain: "reviews.public.technology.laptops",
+						Timestamp:   baseTS + 86400,
+						PublicKey:   k.PubHex,
+					},
+					ModeratorQuid:  k.QuidID,
+					TargetType:     "EVENT",
+					TargetID:       "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+					Scope:          "annotate",
+					ReasonCode:     "disputed-claim",
+					AnnotationText: "Flagged pending fact-check by external editor.",
+					SupersedesTxID: "0000000000000000000000000000000000000000000000000000000000000001",
+					Nonce:          2,
+				}
+			},
+		},
+	}
+
+	vf := vectorFile{
+		SchemaVersion:      schemaVersion,
+		TxType:             "MODERATION_ACTION",
+		GeneratedAt:        now,
+		GeneratorCommit:    commit,
+		CanonicalFormNotes: "json.Marshal(txCopy) on typed ModerationActionTransaction struct with Signature=''",
+	}
+	for _, c := range cases {
+		tx := c.build(c.signer)
+		tx.ID = moderationActionTxID(tx)
+		tx.Signature = ""
+		signable, err := json.Marshal(tx)
+		if err != nil {
+			return err
+		}
+		sigHex, err := c.signer.signIEEE1363(signable)
+		if err != nil {
+			return err
+		}
+		txWithSig := tx
+		txWithSig.Signature = sigHex
+		inputBytes, err := json.Marshal(txWithSig)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(signable)
+		sigBytes, _ := hex.DecodeString(sigHex)
+		vf.Cases = append(vf.Cases, vectorCase{
+			Name: c.name, Comments: c.cmt, SignerKeyRef: c.signer.Name,
+			Input: inputBytes,
+			Expected: expectedBlock{
+				CanonicalSignableBytesHex:  hex.EncodeToString(signable),
+				CanonicalSignableBytesUTF8: string(signable),
+				SHA256OfCanonicalHex:       hex.EncodeToString(sum[:]),
+				ExpectedID:                 tx.ID,
+				ReferenceSignatureHex:      sigHex,
+				SignatureLengthBytes:       len(sigBytes),
+			},
+		})
+	}
+	return writeJSON(filepath.Join(outDir, "moderation-action-tx.json"), vf)
+}
+
+// ---------------------------------------------------------------
+// DSR family vectors (5 types in one file)
+// ---------------------------------------------------------------
+
+type dsrVectorFile struct {
+	SchemaVersion      string       `json:"schema_version"`
+	TxType             string       `json:"tx_type"`
+	GeneratedAt        string       `json:"generated_at"`
+	GeneratorCommit    string       `json:"generator_commit"`
+	CanonicalFormNotes string       `json:"canonical_form_notes"`
+	Cases              []vectorCase `json:"cases"`
+}
+
+func genDSRVectors(outDir string, keys []*testKey, commit, now string) error {
+	alice, bob, carol := keys[0], keys[1], keys[2]
+	baseTS := int64(1729468800)
+
+	vf := dsrVectorFile{
+		SchemaVersion: schemaVersion,
+		TxType:        "DSR_FAMILY",
+		GeneratedAt:   now,
+		GeneratorCommit: commit,
+		CanonicalFormNotes: "DSR family: json.Marshal(txCopy) on typed struct with Signature=''. " +
+			"Each case's Input carries a `type` field naming which of the five " +
+			"tx types (DATA_SUBJECT_REQUEST | CONSENT_GRANT | CONSENT_WITHDRAW | " +
+			"PROCESSING_RESTRICTION | DSR_COMPLIANCE).",
+	}
+
+	// DATA_SUBJECT_REQUEST
+	{
+		tx := core.DataSubjectRequestTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeDataSubjectRequest,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS,
+				PublicKey:   alice.PubHex,
+			},
+			SubjectQuid:    alice.QuidID,
+			ControllerQuid: bob.QuidID,
+			RequestType:    "access",
+			ContactEmail:   "alice@example.com",
+			Jurisdiction:   "EU",
+			Nonce:          1,
+		}
+		tx.ID = dsrRequestTxID(tx)
+		if err := appendDSRCase(&vf, "dsr_alice_access_gdpr",
+			"GDPR Art. 15 right of access; minimal request.",
+			alice, tx); err != nil {
+			return err
+		}
+	}
+
+	// DATA_SUBJECT_REQUEST (erasure)
+	{
+		tx := core.DataSubjectRequestTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeDataSubjectRequest,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS + 60,
+				PublicKey:   bob.PubHex,
+			},
+			SubjectQuid:    bob.QuidID,
+			ControllerQuid: alice.QuidID,
+			RequestType:    "erasure",
+			RequestDetails: "Please delete all my reviews older than 2 years per GDPR Art. 17.",
+			Jurisdiction:   "EU",
+			Nonce:          1,
+		}
+		tx.ID = dsrRequestTxID(tx)
+		if err := appendDSRCase(&vf, "dsr_bob_erasure_gdpr_art17",
+			"GDPR Art. 17 right to erasure with details.",
+			bob, tx); err != nil {
+			return err
+		}
+	}
+
+	// CONSENT_GRANT
+	{
+		tx := core.ConsentGrantTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeConsentGrant,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS + 120,
+				PublicKey:   alice.PubHex,
+			},
+			SubjectQuid:    alice.QuidID,
+			ControllerQuid: bob.QuidID,
+			Scope: []string{
+				"reputation-computation",
+				"recommendations",
+			},
+			PolicyURL:      "https://example.com/privacy-policy/v2",
+			PolicyHash:     "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+			EffectiveUntil: baseTS + 120 + 365*86400,
+			Nonce:          1,
+		}
+		tx.ID = consentGrantTxID(tx)
+		if err := appendDSRCase(&vf, "consent_grant_alice_reputation_and_recs",
+			"Consent to reputation computation + recommendations; 1-year TTL.",
+			alice, tx); err != nil {
+			return err
+		}
+	}
+
+	// CONSENT_WITHDRAW
+	{
+		tx := core.ConsentWithdrawTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeConsentWithdraw,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS + 180,
+				PublicKey:   alice.PubHex,
+			},
+			SubjectQuid:        alice.QuidID,
+			WithdrawsGrantTxID: "deadbeef0000000000000000000000000000000000000000000000000000cafe",
+			Reason:             "no-longer-using-service",
+			Nonce:              2,
+		}
+		tx.ID = consentWithdrawTxID(tx)
+		if err := appendDSRCase(&vf, "consent_withdraw_alice_service_exit",
+			"Consent withdrawal referencing a prior grant tx.",
+			alice, tx); err != nil {
+			return err
+		}
+	}
+
+	// PROCESSING_RESTRICTION
+	{
+		tx := core.ProcessingRestrictionTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeProcessingRestriction,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS + 240,
+				PublicKey:   bob.PubHex,
+			},
+			SubjectQuid:    bob.QuidID,
+			ControllerQuid: alice.QuidID,
+			RestrictedUses: []string{"marketing-analytics", "ml-training"},
+			Reason:         "gdpr-art-18-objection",
+			Nonce:          1,
+		}
+		tx.ID = processingRestrictionTxID(tx)
+		if err := appendDSRCase(&vf, "processing_restriction_bob_two_uses",
+			"Restrict two processing uses under GDPR Art. 18; no explicit end.",
+			bob, tx); err != nil {
+			return err
+		}
+	}
+
+	// DSR_COMPLIANCE (operator-signed)
+	{
+		tx := core.DSRComplianceTransaction{
+			BaseTransaction: core.BaseTransaction{
+				Type:        core.TxTypeDSRCompliance,
+				TrustDomain: "reviews.public.technology.laptops",
+				Timestamp:   baseTS + 300,
+				PublicKey:   carol.PubHex, // operator
+			},
+			RequestTxID:      "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+			RequestType:      "erasure",
+			OperatorQuid:     carol.QuidID,
+			CompletedAt:      baseTS + 300,
+			ActionsCategory:  "manifest-generated",
+			CarveOutsApplied: []string{"legal-hold-tax-records"},
+			Nonce:            1,
+		}
+		tx.ID = dsrComplianceTxID(tx)
+		if err := appendDSRCase(&vf, "dsr_compliance_carol_erasure_fulfilled",
+			"Operator-signed DSR_COMPLIANCE attesting fulfilled erasure.",
+			carol, tx); err != nil {
+			return err
+		}
+	}
+
+	return writeJSON(filepath.Join(outDir, "dsr-tx.json"), vf)
+}
+
+// appendDSRCase is a typed-generic helper: marshals the tx,
+// signs, populates the vector case. Uses reflection-free
+// json.Marshal since each DSR type has its own struct.
+func appendDSRCase[T any](vf *dsrVectorFile, name, cmt string, signer *testKey, tx T) error {
+	// Clear Signature before signing. We reach into the
+	// struct via json round-trip to a map so we don't need
+	// reflection; faster than writing per-type sign helpers.
+	signable, err := json.Marshal(tx)
+	if err != nil {
+		return err
+	}
+	// The tx has Signature="" already since we never set it.
+	// But we double-check by parsing + re-serializing if
+	// needed. For structs where Signature is part of embedded
+	// BaseTransaction, the zero value means "" at marshal time.
+	sigHex, err := signer.signIEEE1363(signable)
+	if err != nil {
+		return err
+	}
+
+	// Compute expected ID (already populated on tx, but we
+	// hash from signable bytes to compute SHA-256 of canonical).
+	sum := sha256.Sum256(signable)
+	sigBytes, _ := hex.DecodeString(sigHex)
+
+	// The tx already has its ID filled (caller did this via
+	// xxxTxID()). Extract it from the marshaled bytes.
+	var temp map[string]any
+	_ = json.Unmarshal(signable, &temp)
+	expectedID, _ := temp["id"].(string)
+
+	// Re-marshal with signature for the input field.
+	temp["signature"] = sigHex
+	inputBytes, err := json.Marshal(temp)
+	if err != nil {
+		return err
+	}
+
+	vf.Cases = append(vf.Cases, vectorCase{
+		Name:         name,
+		Comments:     cmt,
+		SignerKeyRef: signer.Name,
+		Input:        inputBytes,
+		Expected: expectedBlock{
+			CanonicalSignableBytesHex:  hex.EncodeToString(signable),
+			CanonicalSignableBytesUTF8: string(signable),
+			SHA256OfCanonicalHex:       hex.EncodeToString(sum[:]),
+			ExpectedID:                 expectedID,
+			ReferenceSignatureHex:      sigHex,
+			SignatureLengthBytes:       len(sigBytes),
+		},
+	})
+	return nil
+}
+

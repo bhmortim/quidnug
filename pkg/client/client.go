@@ -234,6 +234,11 @@ func (c *Client) Nodes(ctx context.Context, limit, offset int) (map[string]any, 
 // --- Identity ------------------------------------------------------------
 
 // RegisterIdentity submits a signed IDENTITY transaction.
+//
+// v1.0 conformant: builds a typed identityTxWire struct whose
+// field order matches core.IdentityTransaction exactly, derives
+// the ID via the same seed fields the server uses, signs with
+// IEEE-1363, submits.
 func (c *Client) RegisterIdentity(ctx context.Context, signer *Quid, p IdentityParams) (map[string]any, error) {
 	if signer == nil || !signer.HasPrivateKey() {
 		return nil, newValidationError("signer must have a private key")
@@ -250,29 +255,30 @@ func (c *Client) RegisterIdentity(ctx context.Context, signer *Quid, p IdentityP
 	if nonce == 0 {
 		nonce = 1
 	}
-	tx := map[string]any{
-		"type":          "IDENTITY",
-		"timestamp":     time.Now().Unix(),
-		"trustDomain":   domain,
-		"signerQuid":    signer.ID,
-		"definerQuid":   signer.ID,
-		"subjectQuid":   subject,
-		"updateNonce":   nonce,
-		"schemaVersion": "1.0",
-		"attributes":    p.Attributes,
+	tx := identityTxWire{
+		Type:        "IDENTITY",
+		TrustDomain: domain,
+		Timestamp:   time.Now().Unix(),
+		Signature:   "",
+		PublicKey:   signer.PublicKeyHex,
+		QuidID:      subject,
+		Name:        p.Name,
+		Description: p.Description,
+		Attributes:  p.Attributes,
+		Creator:     signer.ID,
+		UpdateNonce: nonce,
+		HomeDomain:  p.HomeDomain,
 	}
-	if p.Name != "" {
-		tx["name"] = p.Name
-	}
-	if p.Description != "" {
-		tx["description"] = p.Description
-	}
-	if p.HomeDomain != "" {
-		tx["homeDomain"] = p.HomeDomain
-	}
-	if err := signTx(signer, tx); err != nil {
+	tx.ID = deriveIdentityID(&tx)
+	signable, err := json.Marshal(tx)
+	if err != nil {
 		return nil, err
 	}
+	sig, err := signer.Sign(signable)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
 	var out map[string]any
 	return out, c.do(ctx, http.MethodPost, "transactions/identity", nil, tx, &out)
 }
@@ -297,6 +303,8 @@ func (c *Client) GetIdentity(ctx context.Context, quidID, domain string) (*Ident
 // --- Trust ---------------------------------------------------------------
 
 // GrantTrust submits a signed TRUST transaction from signer → trustee.
+//
+// v1.0 conformant. Uses typed trustTxWire + IEEE-1363 signature.
 func (c *Client) GrantTrust(ctx context.Context, signer *Quid, p TrustParams) (map[string]any, error) {
 	if signer == nil || !signer.HasPrivateKey() {
 		return nil, newValidationError("signer must have a private key")
@@ -315,25 +323,29 @@ func (c *Client) GrantTrust(ctx context.Context, signer *Quid, p TrustParams) (m
 	if nonce == 0 {
 		nonce = 1
 	}
-	tx := map[string]any{
-		"type":        "TRUST",
-		"timestamp":   time.Now().Unix(),
-		"trustDomain": domain,
-		"signerQuid":  signer.ID,
-		"truster":     signer.ID,
-		"trustee":     p.Trustee,
-		"trustLevel":  p.Level,
-		"nonce":       nonce,
+	tx := trustTxWire{
+		Type:        "TRUST",
+		TrustDomain: domain,
+		Timestamp:   time.Now().Unix(),
+		Signature:   "",
+		PublicKey:   signer.PublicKeyHex,
+		Truster:     signer.ID,
+		Trustee:     p.Trustee,
+		TrustLevel:  p.Level,
+		Nonce:       nonce,
+		Description: p.Description,
+		ValidUntil:  p.ValidUntil,
 	}
-	if p.ValidUntil != 0 {
-		tx["validUntil"] = p.ValidUntil
-	}
-	if p.Description != "" {
-		tx["description"] = p.Description
-	}
-	if err := signTx(signer, tx); err != nil {
+	tx.ID = deriveTrustID(&tx)
+	signable, err := json.Marshal(tx)
+	if err != nil {
 		return nil, err
 	}
+	sig, err := signer.Sign(signable)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
 	var out map[string]any
 	return out, c.do(ctx, http.MethodPost, "transactions/trust", nil, tx, &out)
 }
@@ -378,6 +390,13 @@ func (c *Client) GetTrustEdges(ctx context.Context, quidID string) ([]TrustEdge,
 // --- Title ---------------------------------------------------------------
 
 // RegisterTitle submits a signed TITLE transaction.
+//
+// v1.0 conformant. Uses typed titleTxWire + IEEE-1363 signature.
+//
+// NOTE: validates that owner percentages sum to 1.0 (the server
+// checks for exact sum). Callers passing percentages on the
+// 0..100 scale get a validation error pointing at the new
+// 0..1 convention.
 func (c *Client) RegisterTitle(ctx context.Context, signer *Quid, p TitleParams) (map[string]any, error) {
 	if signer == nil || !signer.HasPrivateKey() {
 		return nil, newValidationError("signer must have a private key")
@@ -392,34 +411,67 @@ func (c *Client) RegisterTitle(ctx context.Context, signer *Quid, p TitleParams)
 	for _, s := range p.Owners {
 		total += s.Percentage
 	}
-	if diff := total - 100.0; diff > 0.001 || diff < -0.001 {
-		return nil, newValidationError(fmt.Sprintf("owner percentages must sum to 100 (got %v)", total))
+	// Accept either 1.0 (fraction) or 100.0 (percent) for
+	// caller ergonomics; normalize to fraction before wire.
+	var ownersWire []ownershipStakeWire
+	switch {
+	case total > 0.999 && total < 1.001:
+		// already fractional
+		ownersWire = stakeToWire(p.Owners, 1.0)
+	case total > 99.99 && total < 100.01:
+		// normalize from percent to fraction
+		ownersWire = stakeToWire(p.Owners, 0.01)
+	default:
+		return nil, newValidationError(
+			fmt.Sprintf("owner percentages must sum to 1.0 (or 100.0 for percent); got %v", total))
 	}
 	domain := p.Domain
 	if domain == "" {
 		domain = "default"
 	}
-	tx := map[string]any{
-		"type":         "TITLE",
-		"timestamp":    time.Now().Unix(),
-		"trustDomain":  domain,
-		"signerQuid":   signer.ID,
-		"issuerQuid":   signer.ID,
-		"assetQuid":    p.AssetID,
-		"ownershipMap": p.Owners,
-		"transferSigs": map[string]string{},
+	tx := titleTxWire{
+		Type:        "TITLE",
+		TrustDomain: domain,
+		Timestamp:   time.Now().Unix(),
+		Signature:   "",
+		PublicKey:   signer.PublicKeyHex,
+		AssetID:     p.AssetID,
+		Owners:      ownersWire,
+		Signatures:  map[string]string{},
+		TitleType:   p.TitleType,
 	}
-	if p.TitleType != "" {
-		tx["titleType"] = p.TitleType
-	}
-	if p.PrevTitleTxID != "" {
-		tx["prevTitleTxID"] = p.PrevTitleTxID
-	}
-	if err := signTx(signer, tx); err != nil {
+	// p.PrevTitleTxID has no on-wire counterpart in the v1.0
+	// TitleTransaction struct; transfers use PreviousOwners.
+	// We accept the field for caller backward-compat but omit
+	// it from the signed bytes.
+	_ = p.PrevTitleTxID
+	tx.ID = deriveTitleID(&tx)
+	signable, err := json.Marshal(tx)
+	if err != nil {
 		return nil, err
 	}
+	sig, err := signer.Sign(signable)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
 	var out map[string]any
 	return out, c.do(ctx, http.MethodPost, "transactions/title", nil, tx, &out)
+}
+
+// stakeToWire converts []OwnershipStake (public API) to the
+// wire form, multiplying by normFactor to rescale to the
+// server's 0..1 convention when callers pass percent.
+func stakeToWire(in []OwnershipStake, normFactor float64) []ownershipStakeWire {
+	out := make([]ownershipStakeWire, len(in))
+	for i, s := range in {
+		out[i] = ownershipStakeWire{
+			OwnerID:    s.OwnerID,
+			Percentage: s.Percentage * normFactor,
+			StakeType:  s.StakeType,
+		}
+	}
+	return out
 }
 
 // GetTitle returns current title state or (nil, nil) on 404.
@@ -442,6 +494,8 @@ func (c *Client) GetTitle(ctx context.Context, assetID, domain string) (*Title, 
 // --- Events --------------------------------------------------------------
 
 // EmitEvent submits a signed EVENT transaction.
+//
+// v1.0 conformant. Uses typed eventTxWire + IEEE-1363 signature.
 func (c *Client) EmitEvent(ctx context.Context, signer *Quid, p EventParams) (map[string]any, error) {
 	if signer == nil || !signer.HasPrivateKey() {
 		return nil, newValidationError("signer must have a private key")
@@ -469,22 +523,21 @@ func (c *Client) EmitEvent(ctx context.Context, signer *Quid, p EventParams) (ma
 			}
 		}
 	}
-	tx := map[string]any{
-		"type":        "EVENT",
-		"timestamp":   time.Now().Unix(),
-		"trustDomain": domain,
-		"subjectId":   p.SubjectID,
-		"subjectType": p.SubjectType,
-		"eventType":   p.EventType,
-		"sequence":    sequence,
+	tx := eventTxWire{
+		Type:        "EVENT",
+		TrustDomain: domain,
+		Timestamp:   time.Now().Unix(),
+		Signature:   "",
+		PublicKey:   signer.PublicKeyHex,
+		SubjectID:   p.SubjectID,
+		SubjectType: p.SubjectType,
+		Sequence:    sequence,
+		EventType:   p.EventType,
+		Payload:     p.Payload,
+		PayloadCID:  p.PayloadCID,
 	}
-	if p.Payload != nil {
-		tx["payload"] = p.Payload
-	}
-	if p.PayloadCID != "" {
-		tx["payloadCid"] = p.PayloadCID
-	}
-	signable, err := CanonicalBytes(tx, "signature", "txId", "publicKey")
+	tx.ID = deriveEventID(&tx)
+	signable, err := json.Marshal(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -492,8 +545,7 @@ func (c *Client) EmitEvent(ctx context.Context, signer *Quid, p EventParams) (ma
 	if err != nil {
 		return nil, err
 	}
-	tx["signature"] = sig
-	tx["publicKey"] = signer.PublicKeyHex
+	tx.Signature = sig
 	var out map[string]any
 	return out, c.do(ctx, http.MethodPost, "events", nil, tx, &out)
 }

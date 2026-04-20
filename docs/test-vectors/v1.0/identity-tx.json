@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "IDENTITY",
-  "generated_at": "2026-04-20T21:56:05Z",
-  "generator_commit": "6a79337e45c547d4ec3ad0cb65b04e1472fe980b",
+  "generated_at": "2026-04-20T22:20:35Z",
+  "generator_commit": "4f176423b60f23b1af9e380cdcf357383fd72026",
   "canonical_form_notes": "json.Marshal(txCopy) on typed IdentityTransaction struct with Signature=''",
   "cases": [
     {
@@ -14,7 +14,7 @@
         "type": "IDENTITY",
         "trustDomain": "contractors.home",
         "timestamp": 1729468800,
-        "signature": "2018ce15ae7e518e7596b7af820970bd128d54161fc4725ef803c08fcb0c6a96c71b36124f41e3fff7db4f561e00872d92bac44d9f8f526974c949d0f6f47478",
+        "signature": "b10dfb5afbb3ed7228236add2b92319225ffe6eff07bdea720984c6d4bb4949bbdf28b2eab3bc4a70a4d9afd3020bc68f858c4006026c29dbc6924f17a5938b0",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "quidId": "c31907f180e6e1e0",
         "name": "alice",
@@ -26,7 +26,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"c5b492cd02e4f0945488cc8ddb3e88e3478e811b3414027eeaecbc6966a4b40f\",\"type\":\"IDENTITY\",\"trustDomain\":\"contractors.home\",\"timestamp\":1729468800,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"quidId\":\"c31907f180e6e1e0\",\"name\":\"alice\",\"creator\":\"c31907f180e6e1e0\",\"updateNonce\":1}",
         "sha256_of_canonical_hex": "792e4d4b7a562104f384db1cffb47362689e9b2a5e1bda5e17fa0a28fd8e9e27",
         "expected_id": "c5b492cd02e4f0945488cc8ddb3e88e3478e811b3414027eeaecbc6966a4b40f",
-        "reference_signature_hex": "2018ce15ae7e518e7596b7af820970bd128d54161fc4725ef803c08fcb0c6a96c71b36124f41e3fff7db4f561e00872d92bac44d9f8f526974c949d0f6f47478",
+        "reference_signature_hex": "b10dfb5afbb3ed7228236add2b92319225ffe6eff07bdea720984c6d4bb4949bbdf28b2eab3bc4a70a4d9afd3020bc68f858c4006026c29dbc6924f17a5938b0",
         "signature_length_bytes": 64
       }
     },
@@ -39,7 +39,7 @@
         "type": "IDENTITY",
         "trustDomain": "peering.consortium-a",
         "timestamp": 1729468801,
-        "signature": "186fc55874e387b402c3f19e243e2d52e714d85047cba2244b77c6f1fa97930cfff73a32ced71ef31bfb92a5fd98cda893cfad8d715eb96f3d9a0bf2ae6483e0",
+        "signature": "7561cc81f6622cb9bde23933af25f771bcb27c31852c2a72b7dd2a8146269ab738f0e37b8ab111a1453e54ff79cbe704e0c96619e0821a29b37c799524966a39",
         "publicKey": "04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8",
         "quidId": "4ef5d5d0f15ff46d",
         "name": "bob",
@@ -56,7 +56,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"542e0898797dea7082cdffe6765226b9dd579b93cb005ae726be738c6d0f5adc\",\"type\":\"IDENTITY\",\"trustDomain\":\"peering.consortium-a\",\"timestamp\":1729468801,\"signature\":\"\",\"publicKey\":\"04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8\",\"quidId\":\"4ef5d5d0f15ff46d\",\"name\":\"bob\",\"description\":\"consortium member\",\"attributes\":{\"region\":\"us-east\",\"role\":\"validator\"},\"creator\":\"4ef5d5d0f15ff46d\",\"updateNonce\":1}",
         "sha256_of_canonical_hex": "4216038c36b4ea14108fe2aa42a36aacde1c89508ea5d819bd61b5b7daf6d386",
         "expected_id": "542e0898797dea7082cdffe6765226b9dd579b93cb005ae726be738c6d0f5adc",
-        "reference_signature_hex": "186fc55874e387b402c3f19e243e2d52e714d85047cba2244b77c6f1fa97930cfff73a32ced71ef31bfb92a5fd98cda893cfad8d715eb96f3d9a0bf2ae6483e0",
+        "reference_signature_hex": "7561cc81f6622cb9bde23933af25f771bcb27c31852c2a72b7dd2a8146269ab738f0e37b8ab111a1453e54ff79cbe704e0c96619e0821a29b37c799524966a39",
         "signature_length_bytes": 64
       }
     },
@@ -69,7 +69,7 @@
         "type": "IDENTITY",
         "trustDomain": "reviews.public.technology.laptops",
         "timestamp": 1729555200,
-        "signature": "c19ff83ce24982dbfa30662c3425006a6a1faac5fc3356452c392330f5d2d0c9df30ea9920f586ffc6256fdab5b2ff52fa59afe36d51e263c7b9860dff227451",
+        "signature": "4716f5d352f6a98f3861e25a35a197e9aae21f7f6434c95faf198fac5d2337ddde77cd8451c6447d5538ab068836cb15c4d0bb0e58873251e4df9cd1a6ac6614",
         "publicKey": "04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a",
         "quidId": "aaed0498f455b5ca",
         "name": "carol",
@@ -82,7 +82,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"412032ff76774be4333fc5c781760bb33721f0ebf506340c35e445b7eef9f690\",\"type\":\"IDENTITY\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729555200,\"signature\":\"\",\"publicKey\":\"04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a\",\"quidId\":\"aaed0498f455b5ca\",\"name\":\"carol\",\"creator\":\"aaed0498f455b5ca\",\"updateNonce\":2,\"homeDomain\":\"reviews.public.technology.laptops\"}",
         "sha256_of_canonical_hex": "329538d2519038e7450cc2791dc23a8dcf5dbfb1bc3d1ae0ac7afaa5666357b5",
         "expected_id": "412032ff76774be4333fc5c781760bb33721f0ebf506340c35e445b7eef9f690",
-        "reference_signature_hex": "c19ff83ce24982dbfa30662c3425006a6a1faac5fc3356452c392330f5d2d0c9df30ea9920f586ffc6256fdab5b2ff52fa59afe36d51e263c7b9860dff227451",
+        "reference_signature_hex": "4716f5d352f6a98f3861e25a35a197e9aae21f7f6434c95faf198fac5d2337ddde77cd8451c6447d5538ab068836cb15c4d0bb0e58873251e4df9cd1a6ac6614",
         "signature_length_bytes": 64
       }
     }

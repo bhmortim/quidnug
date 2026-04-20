@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 )
 
 // Quid is a cryptographic identity holding an ECDSA P-256 keypair.
@@ -91,20 +92,35 @@ func quidFromKey(priv *ecdsa.PrivateKey) (*Quid, error) {
 // HasPrivateKey reports whether this quid can sign.
 func (q *Quid) HasPrivateKey() bool { return q.priv != nil }
 
-// Sign signs data with the quid's private key. Returns hex-encoded DER.
+// Sign signs data with the quid's private key.
+//
+// v1.0 canonical form: SHA-256 of data, ECDSA-P256 sign, returns
+// hex-encoded 64-byte IEEE-1363 raw signature (r||s each padded
+// to 32 bytes). This is the format the reference node's
+// VerifySignature accepts. DO NOT change without coordinating
+// with every SDK consumer; cross-SDK test vectors lock this in.
 func (q *Quid) Sign(data []byte) (string, error) {
 	if q.priv == nil {
 		return "", newCryptoError("quid is read-only")
 	}
 	digest := sha256.Sum256(data)
-	sig, err := ecdsa.SignASN1(rand.Reader, q.priv, digest[:])
+	r, s, err := ecdsa.Sign(rand.Reader, q.priv, digest[:])
 	if err != nil {
 		return "", newCryptoError("sign: " + err.Error())
 	}
+	sig := make([]byte, 64)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sig[32-len(rBytes):32], rBytes)
+	copy(sig[64-len(sBytes):64], sBytes)
 	return hex.EncodeToString(sig), nil
 }
 
-// Verify checks a hex-encoded DER signature against the quid's public key.
+// Verify checks a hex-encoded IEEE-1363 raw signature against
+// the quid's public key.
+//
+// v1.0 canonical form: expects exactly 64 bytes (32 for r, 32
+// for s). Anything else is rejected.
 func (q *Quid) Verify(data []byte, sigHex string) bool {
 	if q.pub == nil {
 		return false
@@ -113,8 +129,13 @@ func (q *Quid) Verify(data []byte, sigHex string) bool {
 	if err != nil {
 		return false
 	}
+	if len(sig) != 64 {
+		return false
+	}
+	r := new(big.Int).SetBytes(sig[:32])
+	s := new(big.Int).SetBytes(sig[32:])
 	digest := sha256.Sum256(data)
-	return ecdsa.VerifyASN1(q.pub, digest[:], sig)
+	return ecdsa.Verify(q.pub, digest[:], r, s)
 }
 
 // CanonicalBytes returns the canonical signable encoding of a value.
