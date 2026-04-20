@@ -30,11 +30,13 @@ jobs:
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # The action's major version needs to match the linter's
+        # major version: v6 of the action only accepts v1.x of
+        # golangci-lint, and v1.x was built against Go 1.24 which
+        # can't load a project targeting Go 1.25. v7 of the
+        # action accepts v2.x of the linter, which handles 1.25.
+        uses: golangci/golangci-lint-action@v7
         with:
-          # Pinned to a 2.x release — earlier versions are built
-          # against Go 1.24 and refuse to load a project whose
-          # go.mod targets Go 1.25.
           version: v2.4.0
           args: --timeout=5m
 
