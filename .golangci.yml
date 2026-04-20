@@ -1,15 +1,25 @@
+version: "2"
+
+# golangci-lint v2 config.
+#
+# Migrated from the v1 config as part of the Go 1.25 bump — v1
+# linters are built against Go 1.24 and can't load a project
+# whose go.mod targets Go 1.25. The set of enabled checks below
+# is the v2 equivalent of what the v1 config enabled; a few
+# linters (gosimple) were folded into staticcheck in v2 and are
+# therefore no longer listed separately.
+
 run:
   timeout: 5m
   modules-download-mode: readonly
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
     - misspell
     - contextcheck
@@ -18,37 +28,37 @@ linters:
     - bodyclose
     - rowserrcheck
     - errorlint
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  staticcheck:
-    checks: ["all"]
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-    disabled-checks:
-      - ifElseChain
-      - hugeParam
-  misspell:
-    locale: US
-  nolintlint:
-    require-explanation: true
-    require-specific: true
-    allow-unused: false
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    staticcheck:
+      checks: ["all"]
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - ifElseChain
+        - hugeParam
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
   max-issues-per-linter: 0
   max-same-issues: 0
