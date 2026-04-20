@@ -37,6 +37,13 @@
 > in [`sharding-model.md`](sharding-model.md) (with
 > [QDP-0014](../../docs/design/0014-node-discovery-and-sharding.md)
 > as the formal spec).
+>
+> **Not sure where this fits in the bigger picture?** The
+> [`UseCases/ARCHITECTURE.md`](../../UseCases/ARCHITECTURE.md)
+> doc is a single-document tour of how the protocol substrate,
+> the three architectural pillars (governance / federation /
+> discovery), the operator playbooks, and the use cases all
+> fit together.
 
 ## What lives here
 

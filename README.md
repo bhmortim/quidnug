@@ -110,9 +110,22 @@ That's the whole point.**
 
 ## Use cases
 
-A dozen detailed use-case designs live under [`UseCases/`](UseCases/). Each
-folder is a self-contained implementation plan with problem statement,
-architecture, Quidnug-specific integration, concrete code, and threat model.
+A dozen-plus detailed use-case designs live under
+[`UseCases/`](UseCases/). Each folder is a self-contained
+implementation plan with problem statement, architecture,
+Quidnug-specific integration, concrete code, and threat
+model.
+
+**Two cross-cutting documents you should read first:**
+
+- [`UseCases/ARCHITECTURE.md`](UseCases/ARCHITECTURE.md) —
+  the one-document tour of the protocol substrate, the three
+  architectural pillars (QDPs 0012 / 0013 / 0014), the common
+  shape every use case takes, and the four archetypes
+  (reputation / attestation / coordination / infrastructure).
+- [`UseCases/BUILDING-A-USE-CASE.md`](UseCases/BUILDING-A-USE-CASE.md)
+  — the six-phase recipe for designing a new use case on top
+  of Quidnug. Use when you're ready to add your own.
 
 **FinTech:**
 

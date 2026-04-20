@@ -1,19 +1,44 @@
 # Quidnug Use Cases
 
-Real-world, production-grade implementation designs for building on Quidnug.
-Each folder is self-contained: problem statement, architecture, implementation
-plan with concrete API calls, and threat model.
+Real-world, production-grade implementation designs for building
+on Quidnug. Each folder is self-contained: problem statement,
+architecture, implementation plan with concrete API calls, and
+threat model.
 
-## How to read this
+## Start here
 
-Start with the folder's `README.md` for the high-level design. If you want
-to actually build the thing, `architecture.md` and `implementation.md` are
-the detailed work plans. `threat-model.md` documents what the design
-defends against and where its limits are.
+Two cross-cutting documents anyone building on Quidnug should
+read first:
 
-Each use case is opinionated — it picks a specific way to wire Quidnug's
-primitives together. You don't have to follow it exactly; use it as a
-starting point and adapt to your constraints.
+- **[`ARCHITECTURE.md`](ARCHITECTURE.md)** — the single-document
+  tour of the protocol substrate, the three architectural
+  pillars (QDPs 0012 / 0013 / 0014), and how every use case
+  below fits the same underlying model. If you read one thing,
+  read this.
+- **[`BUILDING-A-USE-CASE.md`](BUILDING-A-USE-CASE.md)** — a
+  concrete six-phase recipe for taking an idea to a shippable
+  design document. Use this when you're ready to add your own.
+
+## How to read the use-case folders
+
+Each use case has four files:
+
+| File | What it covers |
+| --- | --- |
+| `README.md` | Problem, audience, why-Quidnug mapping, high-level architecture |
+| `architecture.md` | Data model, sequence diagrams, API usage patterns |
+| `implementation.md` | Concrete code, integration steps |
+| `threat-model.md` | What it defends against, known limits |
+
+Read `README.md` first for the high-level design. Then
+`architecture.md` + `implementation.md` if you want to build.
+`threat-model.md` documents what the design defends against and
+where its limits are.
+
+Each use case is opinionated — it picks a specific way to wire
+Quidnug's primitives together. You don't have to follow it
+exactly; use it as a starting point and adapt to your
+constraints.
 
 ---
 
@@ -235,6 +260,13 @@ style transparency log for this package").
 
 ---
 
+## Infrastructure / internet plumbing
+
+Use cases that replace or augment foundational internet
+services. Everything in this category load-bears heavily on
+all three architectural pillars (QDP-0012 governance,
+QDP-0013 federation, QDP-0014 discovery).
+
 ### [`dns-replacement/`](dns-replacement/)
 
 **Problem:** DNS has nine structural flaws — centralized root authority,
@@ -274,23 +306,31 @@ TLDs.
 | 12 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
 | 13 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
 | 14 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
+| 15 | **dns-replacement**                    | **Infrastructure** | **Domain governance, federation (alt roots), DANE-integrated TLS, guardian recovery for names** |
 
 ---
 
 ## Contributing a use case
 
-If you'd like to add a use case:
+See [`BUILDING-A-USE-CASE.md`](BUILDING-A-USE-CASE.md) for the
+full recipe: six phases in six hours that produce the four-file
+use-case folder structure. The short version:
 
-1. Create a folder under `UseCases/` with a kebab-case name.
-2. Required files:
-   - `README.md` — problem, audience, why Quidnug, high-level architecture
-   - `architecture.md` — data model, sequence diagrams (ASCII OK), API
-     usage patterns
-   - `implementation.md` — concrete code, integration steps
-   - `threat-model.md` — what it defends against, known limits
-3. Link it from this index and from the top-level README.
-4. Open a PR.
+1. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) first so you know
+   the protocol substrate, the three architectural pillars
+   (governance / federation / discovery), and the shape every
+   use case takes.
+2. Pick an archetype (reputation / attestation / coordination
+   / infrastructure) and crib heavily from the closest
+   existing use case's folder.
+3. Follow the six-phase recipe in
+   [`BUILDING-A-USE-CASE.md`](BUILDING-A-USE-CASE.md) to
+   produce your README.md + architecture.md + implementation.md
+   + threat-model.md.
+4. Link your folder from this index and from the top-level
+   README. Open a PR.
 
-Keep implementation details concrete and grounded in actual Quidnug API
-calls. If your use case would need a protocol change, write it up as a
-QDP under `docs/design/` first.
+Don't bundle protocol changes into a use-case PR. If your
+design needs new on-chain primitives, propose those as a QDP
+under `docs/design/` first, then come back and write the
+use case.
