@@ -59,12 +59,6 @@ const (
 	// from operator → node that validates as a genuine
 	// attestation.
 	MinOperatorTrustWeight = 0.5
-
-	// OperatorAttestationDomainPrefix is the reserved domain
-	// prefix where operator→node TRUST edges live. An operator
-	// publishes edges in "operators.network.<operator-domain>";
-	// the validator scans by prefix.
-	OperatorAttestationDomainPrefix = "operators.network."
 )
 
 // validProtocols is the enumerated set of endpoint protocol
@@ -266,9 +260,8 @@ func (node *QuidnugNode) runAdvertisementGC(stop <-chan struct{}, interval time.
 //  1. Trust-domain must exist + be accepted by this node.
 //  2. Self-sign consistency — the signing pubkey's quid must
 //     equal NodeQuid.
-//  3. Operator attestation — a TRUST edge from OperatorQuid to
-//     NodeQuid at weight ≥ 0.5 must exist in a domain whose
-//     name starts with "operators.network.".
+//  3. Operator attestation — a direct TRUST edge from
+//     OperatorQuid to NodeQuid at weight ≥ 0.5 must exist.
 //  4. Advertisement-nonce monotonic per-node.
 //  5. ExpiresAt > now AND ExpiresAt - now <= 7 days.
 //  6. 1 <= len(Endpoints) <= 10; each URL starts with https://
@@ -504,12 +497,12 @@ func isValidProtocolVersion(v string) bool {
 // NOTE: the reference node's `TrustRegistry` is currently
 // domain-agnostic (it collapses edges across domains to a
 // single truster→trustee weight). The QDP-0014 design calls
-// for a per-domain attestation under
-// "operators.network.<operator-domain>", but enforcing the
-// domain constraint requires a richer registry than currently
-// exists. For this phase we enforce the direct-edge + weight
-// requirements only; a follow-up can add domain scoping once
-// the trust registry tracks domains.
+// for a per-domain attestation under the operator's reserved
+// meta-domain, but enforcing the domain constraint requires a
+// richer registry than currently exists. For this phase we
+// enforce the direct-edge + weight requirements only; a
+// follow-up can add domain scoping once the trust registry
+// tracks domains.
 //
 // We walk the TrustRegistry directly rather than via
 // ComputeRelationalTrust because we want a strict 1-hop edge

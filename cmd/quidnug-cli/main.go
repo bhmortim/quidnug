@@ -103,6 +103,12 @@ func run(args []string) error {
 		return cmdMerkle(rest)
 	case "blocks":
 		return cmdBlocks(rest)
+	case "node":
+		return cmdNode(rest)
+	case "discover":
+		return cmdDiscover(rest)
+	case "well-known":
+		return cmdWellKnown(rest)
 	default:
 		return fmt.Errorf("unknown command %q (try `quidnug-cli help`)", cmd)
 	}
@@ -931,6 +937,20 @@ Commands:
 
   merkle verify --tx FILE --proof FILE --root HEX
   blocks [--limit 50] [--offset 0]
+
+  node advertise --signer FILE --operator-quid Q --domain D \
+                 --endpoints "url|protocol|region|priority|weight,..." \
+                 [--supported-domains glob,...] [--capabilities ...] \
+                 --nonce N                  QDP-0014 self-advertisement
+  node show --quid Q                        Fetch a signed advertisement
+
+  discover domain --domain D                Consortium + endpoint hints + block tip
+  discover operator --quid Q                All nodes an operator runs
+  discover quids --domain D [--sort S] [--observer Q] [--event-type T] ...
+  discover trusted-quids --domain D [--min-trust F]
+
+  well-known generate --operator-key FILE --api-gateway URL --seeds-json JSON \
+                      [--domains-json JSON] [--operator-name ...] [--out FILE]
 
 Global flags (honored everywhere):
   --node URL         (env QUIDNUG_NODE, default http://localhost:8080)

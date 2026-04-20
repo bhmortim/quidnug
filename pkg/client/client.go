@@ -3,6 +3,8 @@ package client
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -494,6 +496,224 @@ func (c *Client) EmitEvent(ctx context.Context, signer *Quid, p EventParams) (ma
 	tx["publicKey"] = signer.PublicKeyHex
 	var out map[string]any
 	return out, c.do(ctx, http.MethodPost, "events", nil, tx, &out)
+}
+
+// --- QDP-0014: Node advertisement -----------------------------------------
+
+// nodeAdvertisementWire is the client-side mirror of
+// core.NodeAdvertisementTransaction. Field order MUST match
+// the server's struct declaration exactly — the server
+// verifies signatures via json.Marshal on the typed struct,
+// so the bytes need to be byte-identical.
+//
+// Do not reorder fields without also updating internal/core.
+type nodeAdvertisementWire struct {
+	// BaseTransaction fields (inlined for control over field order).
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	TrustDomain string `json:"trustDomain"`
+	Timestamp   int64  `json:"timestamp"`
+	Signature   string `json:"signature"`
+	PublicKey   string `json:"publicKey"`
+	// NodeAdvertisementTransaction-specific fields.
+	NodeQuid           string                 `json:"nodeQuid"`
+	OperatorQuid       string                 `json:"operatorQuid"`
+	Endpoints          []NodeAdvertEndpoint   `json:"endpoints"`
+	SupportedDomains   []string               `json:"supportedDomains,omitempty"`
+	Capabilities       NodeAdvertCapabilities `json:"capabilities"`
+	ProtocolVersion    string                 `json:"protocolVersion"`
+	ExpiresAt          int64                  `json:"expiresAt"`
+	AdvertisementNonce int64                  `json:"advertisementNonce"`
+}
+
+// PublishNodeAdvertisement builds, signs, and submits a
+// QDP-0014 NodeAdvertisementTransaction. The signer's
+// keypair is the node's own; NodeQuid is derived from
+// signer.ID. The OperatorQuid must have a current direct
+// TRUST edge (weight ≥ 0.5) to the node, otherwise the
+// node rejects the submission.
+func (c *Client) PublishNodeAdvertisement(
+	ctx context.Context, signer *Quid, p NodeAdvertisementParams,
+) (map[string]any, error) {
+	if signer == nil || !signer.HasPrivateKey() {
+		return nil, newValidationError("signer must have a private key")
+	}
+	if p.OperatorQuid == "" {
+		return nil, newValidationError("operatorQuid is required")
+	}
+	if len(p.Endpoints) == 0 {
+		return nil, newValidationError("at least one endpoint is required")
+	}
+	if p.AdvertisementNonce <= 0 {
+		return nil, newValidationError("advertisementNonce must be positive")
+	}
+	domain := p.Domain
+	if domain == "" {
+		return nil, newValidationError("domain is required (typically operators.network.<your-domain>)")
+	}
+	ttl := p.TTL
+	if ttl == 0 {
+		ttl = 6 * time.Hour
+	}
+	if ttl > 7*24*time.Hour {
+		return nil, newValidationError("ttl must be <= 7 days")
+	}
+	protoVer := p.ProtocolVersion
+	if protoVer == "" {
+		protoVer = "1.0"
+	}
+
+	nowUnix := time.Now().Unix()
+	expires := time.Now().Add(ttl).UnixNano()
+
+	// Assign a random tx ID before signing so the submit path
+	// doesn't re-hash (which would invalidate the signature).
+	var idRaw [16]byte
+	if _, err := cryptorand.Read(idRaw[:]); err != nil {
+		return nil, err
+	}
+	idBytes := hex.EncodeToString(idRaw[:])
+
+	tx := nodeAdvertisementWire{
+		ID:                 idBytes,
+		Type:               "NODE_ADVERTISEMENT",
+		TrustDomain:        domain,
+		Timestamp:          nowUnix,
+		Signature:          "",
+		PublicKey:          signer.PublicKeyHex,
+		NodeQuid:           signer.ID,
+		OperatorQuid:       p.OperatorQuid,
+		Endpoints:          p.Endpoints,
+		SupportedDomains:   p.SupportedDomains,
+		Capabilities:       p.Capabilities,
+		ProtocolVersion:    protoVer,
+		ExpiresAt:          expires,
+		AdvertisementNonce: p.AdvertisementNonce,
+	}
+
+	// Sign the canonical bytes (= json.Marshal of the struct
+	// with Signature cleared). Since we're marshaling a struct,
+	// field order is deterministic by declaration.
+	signable, err := json.Marshal(tx)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := signer.Sign(signable)
+	if err != nil {
+		return nil, err
+	}
+	tx.Signature = sig
+
+	var out map[string]any
+	return out, c.do(ctx, http.MethodPost, "node-advertisements", nil, tx, &out)
+}
+
+// --- QDP-0014: Discovery queries -------------------------------------------
+
+// DiscoverDomain returns the current consortium, endpoint
+// hints, and block tip for a domain.
+func (c *Client) DiscoverDomain(ctx context.Context, domain string) (map[string]any, error) {
+	if domain == "" {
+		return nil, newValidationError("domain is required")
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet,
+		"v2/discovery/domain/"+url.PathEscape(domain), nil, nil, &out)
+	return out, err
+}
+
+// DiscoverNode returns the raw signed advertisement for a quid.
+func (c *Client) DiscoverNode(ctx context.Context, quid string) (map[string]any, error) {
+	if quid == "" {
+		return nil, newValidationError("quid is required")
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet,
+		"v2/discovery/node/"+url.PathEscape(quid), nil, nil, &out)
+	return out, err
+}
+
+// DiscoverOperator lists all advertisements for a given
+// operator quid.
+func (c *Client) DiscoverOperator(ctx context.Context, operatorQuid string) (map[string]any, error) {
+	if operatorQuid == "" {
+		return nil, newValidationError("operatorQuid is required")
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet,
+		"v2/discovery/operator/"+url.PathEscape(operatorQuid), nil, nil, &out)
+	return out, err
+}
+
+// DiscoverQuidsParams is the argument struct for
+// DiscoverQuids. All fields optional except Domain.
+type DiscoverQuidsParams struct {
+	Domain         string
+	Since          int64   // UnixNano
+	Sort           string  // "activity" | "last-seen" | "first-seen" | "trust-weight"
+	Observer       string  // enables trust-weight sort and populates trustWeight
+	EventType      string
+	MinTrustWeight float64
+	ExcludeQuids   []string
+	Limit          int // default 50, max 500
+	Offset         int
+}
+
+// DiscoverQuids queries the per-domain quid index.
+func (c *Client) DiscoverQuids(ctx context.Context, p DiscoverQuidsParams) (map[string]any, error) {
+	if p.Domain == "" {
+		return nil, newValidationError("domain is required")
+	}
+	q := url.Values{}
+	q.Set("domain", p.Domain)
+	if p.Since > 0 {
+		q.Set("since", strconv.FormatInt(p.Since, 10))
+	}
+	if p.Sort != "" {
+		q.Set("sort", p.Sort)
+	}
+	if p.Observer != "" {
+		q.Set("observer", p.Observer)
+	}
+	if p.EventType != "" {
+		q.Set("eventType", p.EventType)
+	}
+	if p.MinTrustWeight > 0 {
+		q.Set("min-trust-weight", strconv.FormatFloat(p.MinTrustWeight, 'f', -1, 64))
+	}
+	if len(p.ExcludeQuids) > 0 {
+		q.Set("excludeQuid", strings.Join(p.ExcludeQuids, ","))
+	}
+	if p.Limit > 0 {
+		q.Set("limit", strconv.Itoa(p.Limit))
+	}
+	if p.Offset > 0 {
+		q.Set("offset", strconv.Itoa(p.Offset))
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet, "v2/discovery/quids", q, nil, &out)
+	return out, err
+}
+
+// DiscoverTrustedQuids returns quids the consortium members
+// have directly TRUSTed above the given threshold.
+func (c *Client) DiscoverTrustedQuids(
+	ctx context.Context, domain string, minTrust float64, limit int,
+) (map[string]any, error) {
+	if domain == "" {
+		return nil, newValidationError("domain is required")
+	}
+	q := url.Values{}
+	q.Set("domain", domain)
+	if minTrust > 0 {
+		q.Set("min-trust", strconv.FormatFloat(minTrust, 'f', -1, 64))
+	}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	var out map[string]any
+	err := c.do(ctx, http.MethodGet, "v2/discovery/trusted-quids", q, nil, &out)
+	return out, err
 }
 
 // GetEventStream returns stream metadata or (nil, nil) on 404.

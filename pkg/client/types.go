@@ -1,5 +1,7 @@
 package client
 
+import "time"
+
 // Wire types exposed to external Go consumers.
 //
 // These must stay JSON-wire-compatible with the node. The server-side
@@ -290,4 +292,46 @@ type EventParams struct {
 	Payload     map[string]any // mutually exclusive with PayloadCID
 	PayloadCID  string         // mutually exclusive with Payload
 	Sequence    int64          // 0 = auto-detect by querying the stream
+}
+
+// NodeAdvertisementParams are the writable fields for
+// PublishNodeAdvertisement (QDP-0014). Signer is the node's
+// own keypair (NodeQuid = signer.ID). OperatorQuid is the
+// operator who's attested this node via a TRUST edge.
+//
+// Endpoints + Capabilities mirror the on-chain struct shapes;
+// their fields are documented in
+// docs/design/0014-node-discovery-and-sharding.md §4.1.
+type NodeAdvertisementParams struct {
+	OperatorQuid       string
+	Domain             string // trustDomain; typically your operator meta-domain
+	Endpoints          []NodeAdvertEndpoint
+	SupportedDomains   []string
+	Capabilities       NodeAdvertCapabilities
+	ProtocolVersion    string // e.g. "1.0"
+	TTL                time.Duration // <= 7d; defaults to 6h
+	AdvertisementNonce int64  // strictly monotonic per NodeQuid
+}
+
+// NodeAdvertEndpoint is the client-side mirror of
+// core.NodeEndpoint. Kept separate so pkg/client stays
+// import-free of internal/core.
+type NodeAdvertEndpoint struct {
+	URL      string `json:"url"`
+	Protocol string `json:"protocol,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Priority int    `json:"priority"`
+	Weight   int    `json:"weight"`
+}
+
+// NodeAdvertCapabilities mirrors core.NodeCapabilities.
+type NodeAdvertCapabilities struct {
+	Validator       bool   `json:"validator,omitempty"`
+	Cache           bool   `json:"cache,omitempty"`
+	Archive         bool   `json:"archive,omitempty"`
+	Bootstrap       bool   `json:"bootstrap,omitempty"`
+	GossipSink      bool   `json:"gossipSink,omitempty"`
+	IPFSGateway     bool   `json:"ipfsGateway,omitempty"`
+	MaxBodyBytes    int    `json:"maxBodyBytes,omitempty"`
+	MinPeerProtocol string `json:"minPeerProtocol,omitempty"`
 }
