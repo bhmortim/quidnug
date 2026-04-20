@@ -334,7 +334,14 @@ class QuidnugClient {
    * @throws {Error} If publicKey is missing: "publicKey is required (Base64-encoded SPKI format). Web Crypto API cannot derive public key from private key."
    * @throws {Error} If key format is invalid: "Failed to import quid: ..."
    */
-  async importQuid({ privateKey, publicKey } = {}) {
+  async importQuid(options = {}) {
+    // Guard against explicit `null` (destructuring null throws
+    // a TypeError before the body runs; the `= {}` default only
+    // applies to `undefined`).
+    if (options == null) {
+      throw new Error('privateKey is required (Base64-encoded PKCS8 format)');
+    }
+    const { privateKey, publicKey } = options;
     if (!privateKey) {
       throw new Error('privateKey is required (Base64-encoded PKCS8 format)');
     }
