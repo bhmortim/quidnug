@@ -413,6 +413,240 @@ func (node *QuidnugNode) AddModerationActionTransaction(tx ModerationActionTrans
 	return tx.ID, nil
 }
 
+// addPrivacyTxToPool is the shared mempool admission path used
+// by every QDP-0017 tx type. Calls the caller-supplied
+// validator; on success appends to PendingTxs and broadcasts.
+// Returns the (possibly just-generated) tx ID.
+//
+// The mempool stores the dereferenced struct value so
+// downstream block serialization matches the other tx types'
+// convention.
+func (node *QuidnugNode) addPrivacyTxToPool(
+	txPtr interface{},
+	validate func() bool,
+	idSeed []byte,
+	txKind string,
+) (string, error) {
+	if err := ensurePrivacyTxID(txPtr, idSeed); err != nil {
+		return "", fmt.Errorf("ensure tx id: %w", err)
+	}
+
+	if !validate() {
+		RecordTransactionProcessed(txKind, false)
+		return "", fmt.Errorf("invalid %s transaction", txKind)
+	}
+
+	// Dereference the pointer back to its struct value so the
+	// mempool entry has the same shape as every other tx type.
+	txValue, err := derefPrivacyTx(txPtr)
+	if err != nil {
+		return "", err
+	}
+
+	node.PendingTxsMutex.Lock()
+	defer node.PendingTxsMutex.Unlock()
+	node.PendingTxs = append(node.PendingTxs, txValue)
+	RecordTransactionProcessed(txKind, true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
+
+	go node.BroadcastTransaction(txValue)
+
+	id, _ := extractPrivacyTxID(txPtr)
+	logger.Info("Added "+txKind+" to pending pool", "txId", id)
+	return id, nil
+}
+
+// derefPrivacyTx unwraps a *PrivacyTx pointer to its value.
+func derefPrivacyTx(txPtr interface{}) (interface{}, error) {
+	switch v := txPtr.(type) {
+	case *DataSubjectRequestTransaction:
+		return *v, nil
+	case *ConsentGrantTransaction:
+		return *v, nil
+	case *ConsentWithdrawTransaction:
+		return *v, nil
+	case *ProcessingRestrictionTransaction:
+		return *v, nil
+	case *DSRComplianceTransaction:
+		return *v, nil
+	}
+	return nil, fmt.Errorf("unknown privacy tx type %T", txPtr)
+}
+
+// ensurePrivacyTxID writes a sha256-derived ID into tx.ID if
+// it's currently empty. Works off a reflective switch so we
+// don't need per-type plumbing.
+func ensurePrivacyTxID(txPtr interface{}, idSeed []byte) error {
+	switch v := txPtr.(type) {
+	case *DataSubjectRequestTransaction:
+		if v.ID == "" {
+			v.ID = hashPrivacyID(idSeed)
+		}
+	case *ConsentGrantTransaction:
+		if v.ID == "" {
+			v.ID = hashPrivacyID(idSeed)
+		}
+	case *ConsentWithdrawTransaction:
+		if v.ID == "" {
+			v.ID = hashPrivacyID(idSeed)
+		}
+	case *ProcessingRestrictionTransaction:
+		if v.ID == "" {
+			v.ID = hashPrivacyID(idSeed)
+		}
+	case *DSRComplianceTransaction:
+		if v.ID == "" {
+			v.ID = hashPrivacyID(idSeed)
+		}
+	default:
+		return fmt.Errorf("unknown privacy tx type %T", txPtr)
+	}
+	return nil
+}
+
+func extractPrivacyTxID(txPtr interface{}) (string, error) {
+	switch v := txPtr.(type) {
+	case *DataSubjectRequestTransaction:
+		return v.ID, nil
+	case *ConsentGrantTransaction:
+		return v.ID, nil
+	case *ConsentWithdrawTransaction:
+		return v.ID, nil
+	case *ProcessingRestrictionTransaction:
+		return v.ID, nil
+	case *DSRComplianceTransaction:
+		return v.ID, nil
+	}
+	return "", fmt.Errorf("unknown privacy tx type %T", txPtr)
+}
+
+func hashPrivacyID(seed []byte) string {
+	h := sha256.Sum256(seed)
+	return hex.EncodeToString(h[:])
+}
+
+// AddDataSubjectRequestTransaction admits a DSR into the pending
+// pool after validation.
+func (node *QuidnugNode) AddDataSubjectRequestTransaction(tx DataSubjectRequestTransaction) (string, error) {
+	signed := tx.Signature != ""
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeDataSubjectRequest
+	}
+	if !signed && tx.Nonce == 0 && node.PrivacyRegistry != nil {
+		tx.Nonce = node.PrivacyRegistry.currentNonce(tx.SubjectQuid, TxTypeDataSubjectRequest) + 1
+	}
+	seed, _ := json.Marshal(struct {
+		Subject     string
+		Controller  string
+		RequestType string
+		Nonce       int64
+		Timestamp   int64
+	}{tx.SubjectQuid, tx.ControllerQuid, tx.RequestType, tx.Nonce, tx.Timestamp})
+	return node.addPrivacyTxToPool(&tx, func() bool {
+		return node.ValidateDataSubjectRequestTransaction(tx)
+	}, seed, "data_subject_request")
+}
+
+// AddConsentGrantTransaction admits a CONSENT_GRANT.
+func (node *QuidnugNode) AddConsentGrantTransaction(tx ConsentGrantTransaction) (string, error) {
+	signed := tx.Signature != ""
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeConsentGrant
+	}
+	if !signed && tx.Nonce == 0 && node.PrivacyRegistry != nil {
+		tx.Nonce = node.PrivacyRegistry.currentNonce(tx.SubjectQuid, TxTypeConsentGrant) + 1
+	}
+	seed, _ := json.Marshal(struct {
+		Subject    string
+		Controller string
+		Scope      []string
+		PolicyHash string
+		Nonce      int64
+		Timestamp  int64
+	}{tx.SubjectQuid, tx.ControllerQuid, tx.Scope, tx.PolicyHash, tx.Nonce, tx.Timestamp})
+	return node.addPrivacyTxToPool(&tx, func() bool {
+		return node.ValidateConsentGrantTransaction(tx)
+	}, seed, "consent_grant")
+}
+
+// AddConsentWithdrawTransaction admits a CONSENT_WITHDRAW.
+func (node *QuidnugNode) AddConsentWithdrawTransaction(tx ConsentWithdrawTransaction) (string, error) {
+	signed := tx.Signature != ""
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeConsentWithdraw
+	}
+	if !signed && tx.Nonce == 0 && node.PrivacyRegistry != nil {
+		tx.Nonce = node.PrivacyRegistry.currentNonce(tx.SubjectQuid, TxTypeConsentWithdraw) + 1
+	}
+	seed, _ := json.Marshal(struct {
+		Subject  string
+		Withdraw string
+		Nonce    int64
+		Timestamp int64
+	}{tx.SubjectQuid, tx.WithdrawsGrantTxID, tx.Nonce, tx.Timestamp})
+	return node.addPrivacyTxToPool(&tx, func() bool {
+		return node.ValidateConsentWithdrawTransaction(tx)
+	}, seed, "consent_withdraw")
+}
+
+// AddProcessingRestrictionTransaction admits a
+// PROCESSING_RESTRICTION.
+func (node *QuidnugNode) AddProcessingRestrictionTransaction(tx ProcessingRestrictionTransaction) (string, error) {
+	signed := tx.Signature != ""
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeProcessingRestriction
+	}
+	if !signed && tx.Nonce == 0 && node.PrivacyRegistry != nil {
+		tx.Nonce = node.PrivacyRegistry.currentNonce(tx.SubjectQuid, TxTypeProcessingRestriction) + 1
+	}
+	seed, _ := json.Marshal(struct {
+		Subject   string
+		Uses      []string
+		Nonce     int64
+		Timestamp int64
+	}{tx.SubjectQuid, tx.RestrictedUses, tx.Nonce, tx.Timestamp})
+	return node.addPrivacyTxToPool(&tx, func() bool {
+		return node.ValidateProcessingRestrictionTransaction(tx)
+	}, seed, "processing_restriction")
+}
+
+// AddDSRComplianceTransaction admits an operator-signed
+// DSR_COMPLIANCE record.
+func (node *QuidnugNode) AddDSRComplianceTransaction(tx DSRComplianceTransaction) (string, error) {
+	signed := tx.Signature != ""
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeDSRCompliance
+	}
+	if !signed && tx.Nonce == 0 && node.PrivacyRegistry != nil {
+		tx.Nonce = node.PrivacyRegistry.currentNonce(tx.OperatorQuid, TxTypeDSRCompliance) + 1
+	}
+	seed, _ := json.Marshal(struct {
+		RequestTxID  string
+		Operator     string
+		CompletedAt  int64
+		Nonce        int64
+		Timestamp    int64
+	}{tx.RequestTxID, tx.OperatorQuid, tx.CompletedAt, tx.Nonce, tx.Timestamp})
+	return node.addPrivacyTxToPool(&tx, func() bool {
+		return node.ValidateDSRComplianceTransaction(tx)
+	}, seed, "dsr_compliance")
+}
+
 // FilterTransactionsForBlock filters pending transactions based on trust.
 // Only includes transactions from sources the node trusts (or sponsored transactions).
 // For each transaction, extracts the creator quid and computes relational trust.

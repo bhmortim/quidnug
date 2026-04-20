@@ -57,6 +57,16 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/moderation/actions", node.CreateModerationActionHandler).Methods("POST")
 	router.HandleFunc("/moderation/actions/{targetType}/{targetId}", node.GetModerationActionsHandler).Methods("GET")
 
+	// QDP-0017 data subject rights / privacy.
+	router.HandleFunc("/privacy/dsr", node.CreateDSRHandler).Methods("POST")
+	router.HandleFunc("/privacy/dsr/{requestTxId}", node.GetDSRStatusHandler).Methods("GET")
+	router.HandleFunc("/privacy/consent/grants", node.CreateConsentGrantHandler).Methods("POST")
+	router.HandleFunc("/privacy/consent/withdraws", node.CreateConsentWithdrawHandler).Methods("POST")
+	router.HandleFunc("/privacy/consent/history", node.GetConsentHistoryHandler).Methods("GET")
+	router.HandleFunc("/privacy/restrictions", node.CreateProcessingRestrictionHandler).Methods("POST")
+	router.HandleFunc("/privacy/restrictions/{subjectQuid}", node.GetRestrictionsForSubjectHandler).Methods("GET")
+	router.HandleFunc("/privacy/compliance", node.CreateDSRComplianceHandler).Methods("POST")
+
 	// IPFS endpoints
 	router.HandleFunc("/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
 	router.HandleFunc("/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
@@ -1143,5 +1153,181 @@ func (node *QuidnugNode) CreateNodeAdvertisementHandler(w http.ResponseWriter, r
 		"operatorQuid":       tx.OperatorQuid,
 		"expiresAt":          tx.ExpiresAt,
 		"advertisementNonce": tx.AdvertisementNonce,
+	})
+}
+
+// ---- QDP-0017 data subject rights / privacy handlers ----------------
+
+// CreateDSRHandler accepts a signed DATA_SUBJECT_REQUEST
+// transaction (QDP-0017 §4). The request must be signed by the
+// subject's quid key — self-signature is the operator's proof
+// that the requester controls the claimed quid.
+func (node *QuidnugNode) CreateDSRHandler(w http.ResponseWriter, r *http.Request) {
+	var tx DataSubjectRequestTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	txID, err := node.AddDataSubjectRequestTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	WriteSuccess(w, map[string]interface{}{
+		"id":           txID,
+		"subjectQuid":  tx.SubjectQuid,
+		"requestType":  tx.RequestType,
+		"jurisdiction": tx.Jurisdiction,
+		"nonce":        tx.Nonce,
+	})
+}
+
+// GetDSRStatusHandler returns the current request + compliance
+// record for a DSR id. 404 if the request id is unknown.
+func (node *QuidnugNode) GetDSRStatusHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	requestTxID := vars["requestTxId"]
+	req, comp, reqOk, compOk := node.GetDSRStatus(requestTxID)
+	if !reqOk {
+		WriteError(w, http.StatusNotFound, "NOT_FOUND", "DSR request not found")
+		return
+	}
+	resp := map[string]interface{}{
+		"request": req,
+	}
+	if compOk {
+		resp["compliance"] = comp
+	}
+	WriteSuccess(w, resp)
+}
+
+// CreateConsentGrantHandler accepts a signed CONSENT_GRANT.
+func (node *QuidnugNode) CreateConsentGrantHandler(w http.ResponseWriter, r *http.Request) {
+	var tx ConsentGrantTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	txID, err := node.AddConsentGrantTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	WriteSuccess(w, map[string]interface{}{
+		"id":             txID,
+		"subjectQuid":    tx.SubjectQuid,
+		"controllerQuid": tx.ControllerQuid,
+		"scope":          tx.Scope,
+		"effectiveUntil": tx.EffectiveUntil,
+		"nonce":          tx.Nonce,
+	})
+}
+
+// CreateConsentWithdrawHandler accepts a signed CONSENT_WITHDRAW.
+func (node *QuidnugNode) CreateConsentWithdrawHandler(w http.ResponseWriter, r *http.Request) {
+	var tx ConsentWithdrawTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	txID, err := node.AddConsentWithdrawTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	WriteSuccess(w, map[string]interface{}{
+		"id":                   txID,
+		"subjectQuid":          tx.SubjectQuid,
+		"withdrawsGrantTxId":   tx.WithdrawsGrantTxID,
+		"nonce":                tx.Nonce,
+	})
+}
+
+// GetConsentHistoryHandler returns every consent grant +
+// withdrawn flag for the subject specified by the `subject`
+// query parameter.
+func (node *QuidnugNode) GetConsentHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	subject := r.URL.Query().Get("subject")
+	if !IsValidQuidID(subject) {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid or missing 'subject' query parameter")
+		return
+	}
+	entries := node.ConsentHistoryFor(subject)
+	WriteSuccess(w, map[string]interface{}{
+		"subjectQuid": subject,
+		"entries":     entries,
+	})
+}
+
+// CreateProcessingRestrictionHandler accepts a signed
+// PROCESSING_RESTRICTION transaction.
+func (node *QuidnugNode) CreateProcessingRestrictionHandler(w http.ResponseWriter, r *http.Request) {
+	var tx ProcessingRestrictionTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	txID, err := node.AddProcessingRestrictionTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	WriteSuccess(w, map[string]interface{}{
+		"id":             txID,
+		"subjectQuid":    tx.SubjectQuid,
+		"restrictedUses": tx.RestrictedUses,
+		"effectiveUntil": tx.EffectiveUntil,
+		"nonce":          tx.Nonce,
+	})
+}
+
+// GetRestrictionsForSubjectHandler returns the union of
+// currently-active restricted uses for the subject quid in the
+// URL path.
+func (node *QuidnugNode) GetRestrictionsForSubjectHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	subject := vars["subjectQuid"]
+	if !IsValidQuidID(subject) {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid subject quid")
+		return
+	}
+	uses := node.RestrictedUsesFor(subject)
+	WriteSuccess(w, map[string]interface{}{
+		"subjectQuid":    subject,
+		"restrictedUses": uses,
+	})
+}
+
+// CreateDSRComplianceHandler accepts an operator-signed
+// DSR_COMPLIANCE attestation.
+func (node *QuidnugNode) CreateDSRComplianceHandler(w http.ResponseWriter, r *http.Request) {
+	var tx DSRComplianceTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	txID, err := node.AddDSRComplianceTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	WriteSuccess(w, map[string]interface{}{
+		"id":               txID,
+		"requestTxId":      tx.RequestTxID,
+		"operatorQuid":     tx.OperatorQuid,
+		"completedAt":      tx.CompletedAt,
+		"actionsCategory":  tx.ActionsCategory,
+		"carveOutsApplied": tx.CarveOutsApplied,
+		"nonce":            tx.Nonce,
 	})
 }

@@ -107,6 +107,10 @@ type QuidnugNode struct {
 	// lock; no QuidnugNode-level mutex needed.
 	ModerationRegistry *ModerationRegistry
 
+	// QDP-0017: privacy registry (consent / restriction / DSR).
+	// Owns its own internal lock.
+	PrivacyRegistry *PrivacyRegistry
+
 	// QDP-0014: per-(domain, quid) activity index, populated
 	// incrementally as blocks commit.
 	QuidDomainIndex *QuidDomainIndex
@@ -422,6 +426,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		EventRegistry:             make(map[string][]EventTransaction),
 		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
 		ModerationRegistry:        NewModerationRegistry(),
+		PrivacyRegistry:           NewPrivacyRegistry(),
 		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,
 		TentativeBlocks:           make(map[string][]Block),

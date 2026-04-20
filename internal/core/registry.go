@@ -230,6 +230,46 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 					tx.TrustDomain, tx.ModeratorQuid, tx.Timestamp)
 			}
 
+		case TxTypeDataSubjectRequest:
+			var tx DataSubjectRequestTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal DSR transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updatePrivacyRegistryDSR(tx)
+
+		case TxTypeConsentGrant:
+			var tx ConsentGrantTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal consent-grant transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updatePrivacyRegistryGrant(tx)
+
+		case TxTypeConsentWithdraw:
+			var tx ConsentWithdrawTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal consent-withdraw transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updatePrivacyRegistryWithdraw(tx)
+
+		case TxTypeProcessingRestriction:
+			var tx ProcessingRestrictionTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal processing-restriction transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updatePrivacyRegistryRestriction(tx)
+
+		case TxTypeDSRCompliance:
+			var tx DSRComplianceTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal DSR-compliance transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updatePrivacyRegistryCompliance(tx)
+
 		case TxTypeAnchor:
 			var tx AnchorTransaction
 			if err := json.Unmarshal(txJson, &tx); err != nil {

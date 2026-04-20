@@ -2,7 +2,7 @@
 
 | Field      | Value                                                            |
 |------------|------------------------------------------------------------------|
-| Status     | Draft — design only                                              |
+| Status     | Phase 1 landed — tx types + validators + registry; Phases 2-5 pending |
 | Track      | Protocol + ops + legal                                           |
 | Author     | The Quidnug Authors                                              |
 | Created    | 2026-04-20                                                       |

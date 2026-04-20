@@ -675,6 +675,31 @@ func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
 			json.Unmarshal(txJson, &tx)
 			isValid = node.ValidateModerationActionTransaction(tx)
 
+		case TxTypeDataSubjectRequest:
+			var tx DataSubjectRequestTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateDataSubjectRequestTransaction(tx)
+
+		case TxTypeConsentGrant:
+			var tx ConsentGrantTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateConsentGrantTransaction(tx)
+
+		case TxTypeConsentWithdraw:
+			var tx ConsentWithdrawTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateConsentWithdrawTransaction(tx)
+
+		case TxTypeProcessingRestriction:
+			var tx ProcessingRestrictionTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateProcessingRestrictionTransaction(tx)
+
+		case TxTypeDSRCompliance:
+			var tx DSRComplianceTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateDSRComplianceTransaction(tx)
+
 		default:
 			isValid = false
 		}

@@ -25,6 +25,27 @@ const (
 	// read time to honor DMCA / court orders / GDPR erasure /
 	// CSAM takedowns / operator policy.
 	TxTypeModerationAction TransactionType = "MODERATION_ACTION"
+	// QDP-0017 data-subject-rights transactions.
+	//
+	// TxTypeDataSubjectRequest is a signed request from a
+	// subject for access / erasure / rectification / etc. under
+	// GDPR / CCPA / LGPD / PIPEDA.
+	TxTypeDataSubjectRequest TransactionType = "DATA_SUBJECT_REQUEST"
+	// TxTypeConsentGrant is a signed opt-in by a subject to
+	// specific processing scopes against a specific policy
+	// version.
+	TxTypeConsentGrant TransactionType = "CONSENT_GRANT"
+	// TxTypeConsentWithdraw revokes a prior CONSENT_GRANT.
+	// Honored immediately by the serving layer.
+	TxTypeConsentWithdraw TransactionType = "CONSENT_WITHDRAW"
+	// TxTypeProcessingRestriction restricts specific processing
+	// uses (reputation computation, recommendations, etc.)
+	// without deleting underlying data.
+	TxTypeProcessingRestriction TransactionType = "PROCESSING_RESTRICTION"
+	// TxTypeDSRCompliance is an operator-signed proof that a
+	// DSR request was fulfilled, including the carve-out
+	// rationale and completion timestamp.
+	TxTypeDSRCompliance TransactionType = "DSR_COMPLIANCE"
 )
 
 // Trust computation resource limits
