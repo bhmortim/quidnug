@@ -132,6 +132,7 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	node.registerGuardianRoutes(v2Router)
 	node.registerCrossDomainRoutes(v2Router)
 	node.RegisterDiscoveryRoutes(v2Router)
+	node.RegisterDNSAttestationRoutes(v2Router)
 
 	// Apply middleware chain (outermost to innermost processing order):
 	//   RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> SecurityHeaders -> RequestID -> Router

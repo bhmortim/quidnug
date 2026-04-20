@@ -46,6 +46,33 @@ const (
 	// DSR request was fulfilled, including the carve-out
 	// rationale and completion timestamp.
 	TxTypeDSRCompliance TransactionType = "DSR_COMPLIANCE"
+	// QDP-0023 DNS-anchored identity attestation types.
+	//
+	// TxTypeDNSClaim declares intent to attest a DNS domain to
+	// a quid. Emitted by the domain owner to a chosen
+	// attestation root.
+	TxTypeDNSClaim TransactionType = "DNS_CLAIM"
+	// TxTypeDNSChallenge is the root's response to a CLAIM
+	// carrying a nonce the owner must publish in DNS + a
+	// well-known file.
+	TxTypeDNSChallenge TransactionType = "DNS_CHALLENGE"
+	// TxTypeDNSAttestation is the root's signed binding from
+	// DNS name to quid after successful verification.
+	TxTypeDNSAttestation TransactionType = "DNS_ATTESTATION"
+	// TxTypeDNSRenewal re-verifies + extends an existing
+	// attestation before its ValidUntil.
+	TxTypeDNSRenewal TransactionType = "DNS_RENEWAL"
+	// TxTypeDNSRevocation revokes an attestation (by owner,
+	// attesting root, or root governor quorum).
+	TxTypeDNSRevocation TransactionType = "DNS_REVOCATION"
+	// TxTypeAuthorityDelegate is the generic authority-
+	// delegation primitive (not DNS-specific). Lets the
+	// subject of any attestation delegate resolution to
+	// specific nodes/domains with per-record-type visibility.
+	TxTypeAuthorityDelegate TransactionType = "AUTHORITY_DELEGATE"
+	// TxTypeAuthorityDelegateRevocation revokes a prior
+	// AUTHORITY_DELEGATE.
+	TxTypeAuthorityDelegateRevocation TransactionType = "AUTHORITY_DELEGATE_REVOCATION"
 )
 
 // Trust computation resource limits
@@ -182,6 +209,153 @@ type NodeAdvertisementTransaction struct {
 	ProtocolVersion    string           `json:"protocolVersion"`
 	ExpiresAt          int64            `json:"expiresAt"`          // UnixNano; rejected if >7d out
 	AdvertisementNonce int64            `json:"advertisementNonce"` // monotonic per NodeQuid
+}
+
+// ---------------------------------------------------------------
+// QDP-0023: DNS-anchored identity attestation (Phase 1)
+// ---------------------------------------------------------------
+
+// DNSClaimTransaction — owner declares intent to attest a DNS
+// domain to their quid. Emitted on the root's
+// attestation.claims.<root-quid> domain.
+type DNSClaimTransaction struct {
+	BaseTransaction
+	Domain              string `json:"domain"`
+	OwnerQuid           string `json:"ownerQuid"`
+	RootQuid            string `json:"rootQuid"`
+	RequestedValidUntil int64  `json:"requestedValidUntil,omitempty"` // Unix ns
+	PaymentMethod       string `json:"paymentMethod,omitempty"`       // "stripe" | "crypto" | "waiver"
+	PaymentReference    string `json:"paymentReference,omitempty"`    // off-chain receipt id
+	ContactEmail        string `json:"contactEmail,omitempty"`
+	Nonce               int64  `json:"nonce"`
+}
+
+// DNSChallengeTransaction — root's challenge back to the
+// claimant. Carries the nonce the owner must publish in DNS
+// + the well-known URL template.
+type DNSChallengeTransaction struct {
+	BaseTransaction
+	ClaimRef                string `json:"claimRef"`
+	Nonce                   string `json:"nonce"`            // 32-byte hex
+	ChallengeExpiresAt      int64  `json:"challengeExpiresAt"` // Unix ns
+	TXTRecordName           string `json:"txtRecordName"`
+	WellKnownURL            string `json:"wellKnownURL"`
+	RequiredContentTemplate string `json:"requiredContentTemplate,omitempty"`
+	TxNonce                 int64  `json:"txNonce"`
+}
+
+// ResolverResult — per-resolver DNS TXT observation captured
+// during verification. Embedded into DNS_ATTESTATION for
+// audit trail.
+type ResolverResult struct {
+	ResolverLabel string `json:"resolverLabel"`
+	TXTValue      string `json:"txtValue"`
+	ObservedAt    int64  `json:"observedAt"`
+}
+
+// DNSAttestationTransaction — the signed binding. Emitted by
+// the root after passing all verification checks.
+type DNSAttestationTransaction struct {
+	BaseTransaction
+	ClaimRef             string           `json:"claimRef"`
+	Domain               string           `json:"domain"`
+	OwnerQuid            string           `json:"ownerQuid"`
+	RootQuid             string           `json:"rootQuid"`
+	TLD                  string           `json:"tld"`
+	TLDTier              string           `json:"tldTier"`     // "free-public" | "standard" | "premium" | "luxury"
+	VerifiedAt           int64            `json:"verifiedAt"`  // Unix ns
+	ValidUntil           int64            `json:"validUntil"`  // Unix ns
+	TLSFingerprintSHA256 string           `json:"tlsFingerprintSha256,omitempty"`
+	WHOISRegisteredSince int64            `json:"whoisRegisteredSince,omitempty"` // Unix seconds
+	BlocklistCheckedAt   int64            `json:"blocklistCheckedAt,omitempty"`
+	BlocklistsChecked    []string         `json:"blocklistsChecked,omitempty"`
+	VerifierNodes        []string         `json:"verifierNodes,omitempty"`
+	ResolverConsensus    []ResolverResult `json:"resolverConsensus,omitempty"`
+	FeePaidUSD           float64          `json:"feePaidUsd,omitempty"`
+	PaymentMethod        string           `json:"paymentMethod,omitempty"`
+	PaymentReference     string           `json:"paymentReference,omitempty"`
+	RigorLevel           string           `json:"rigorLevel,omitempty"` // "basic" | "standard" | "rigorous"
+	Nonce                int64            `json:"nonce"`
+}
+
+// DNSRenewalTransaction — re-verifies an existing attestation
+// before expiry. Submitted within the renewal window
+// (default: 30 days before ValidUntil).
+type DNSRenewalTransaction struct {
+	BaseTransaction
+	PriorAttestationRef      string  `json:"priorAttestationRef"`
+	NewValidUntil            int64   `json:"newValidUntil"`
+	NewTLSFingerprintSHA256  string  `json:"newTlsFingerprintSha256,omitempty"`
+	FingerprintRotationProof string  `json:"fingerprintRotationProof,omitempty"`
+	FeePaidUSD               float64 `json:"feePaidUsd,omitempty"`
+	PaymentReference         string  `json:"paymentReference,omitempty"`
+	Nonce                    int64   `json:"nonce"`
+}
+
+// DNSRevocationTransaction — revokes an attestation. Signable
+// by the attesting root, governor quorum on the root's
+// governance domain, or the domain owner.
+type DNSRevocationTransaction struct {
+	BaseTransaction
+	AttestationRef     string   `json:"attestationRef"`
+	RevokerQuid        string   `json:"revokerQuid"`
+	RevokerRole        string   `json:"revokerRole"` // "root" | "governor-quorum" | "owner"
+	Reason             string   `json:"reason"`      // "fraud-detected" | "owner-request" | "transfer" | "malfeasance" | ...
+	RevokedAt          int64    `json:"revokedAt"`   // Unix ns
+	GovernorSignatures []string `json:"governorSignatures,omitempty"`
+	Nonce              int64    `json:"nonce"`
+}
+
+// ---------------------------------------------------------------
+// QDP-0023 generic authority delegation
+// ---------------------------------------------------------------
+
+// VisibilityPolicy describes how records of specific types
+// should be served: public cache, trust-gated, or private
+// (QDP-0024 encrypted).
+type VisibilityPolicy struct {
+	Class      string  `json:"class"` // "public" | "trust-gated" | "private"
+	GateDomain string  `json:"gateDomain,omitempty"`
+	MinTrust   float64 `json:"minTrust,omitempty"`
+	GroupID    string  `json:"groupId,omitempty"`
+	Encryption string  `json:"encryption,omitempty"` // e.g. "mls-x25519-aes256gcm"
+}
+
+// DelegationVisibility is the record-type -> policy map plus
+// a fallback default.
+type DelegationVisibility struct {
+	RecordTypes map[string]VisibilityPolicy `json:"recordTypes"`
+	Default     VisibilityPolicy            `json:"default"`
+}
+
+// AuthorityDelegateTransaction hands resolution authority for
+// a previously-attested subject back to specific nodes/domain
+// with per-record-type visibility policy.
+type AuthorityDelegateTransaction struct {
+	BaseTransaction
+	AttestationRef  string               `json:"attestationRef"`
+	AttestationKind string               `json:"attestationKind"` // "dns" | "review" | "credential" | ...
+	Subject         string               `json:"subject"`         // e.g. "chase.com"
+	DelegateNodes   []string             `json:"delegateNodes"`   // quids
+	DelegateDomain  string               `json:"delegateDomain"`
+	Visibility      DelegationVisibility `json:"visibility"`
+	FallbackPublic  bool                 `json:"fallbackPublic,omitempty"`
+	EffectiveAt     int64                `json:"effectiveAt,omitempty"` // Unix ns
+	ValidUntil      int64                `json:"validUntil,omitempty"`  // Unix ns
+	Nonce           int64                `json:"nonce"`
+}
+
+// AuthorityDelegateRevocationTransaction revokes a prior
+// delegation. Signable by the attestation owner or (for
+// abuse cases) the attesting root.
+type AuthorityDelegateRevocationTransaction struct {
+	BaseTransaction
+	DelegationRef string `json:"delegationRef"`
+	RevokerQuid   string `json:"revokerQuid"`
+	RevokerRole   string `json:"revokerRole"` // "owner" | "root"
+	Reason        string `json:"reason,omitempty"`
+	RevokedAt     int64  `json:"revokedAt"`
+	Nonce         int64  `json:"nonce"`
 }
 
 // AnchorTransaction carries a NonceAnchor through the block transaction

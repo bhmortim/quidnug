@@ -121,6 +121,10 @@ type QuidnugNode struct {
 	// Owns its own internal lock.
 	PrivacyRegistry *PrivacyRegistry
 
+	// QDP-0023: DNS attestation registry. Owns its own
+	// internal lock.
+	DNSAttestationRegistry *DNSAttestationRegistry
+
 	// QDP-0016: multi-layer write-admission rate limiter. Fires
 	// at the mempool-admission layer, after signature verification.
 	// The existing HTTP-ingress IP limiter (configured via
@@ -449,6 +453,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
 		ModerationRegistry:        NewModerationRegistry(),
 		PrivacyRegistry:           NewPrivacyRegistry(),
+		DNSAttestationRegistry:    NewDNSAttestationRegistry(),
 		WriteLimiter:              ratelimit.NewMultiLayerLimiter(ratelimit.DefaultWriteLimits()),
 		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,
