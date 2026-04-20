@@ -153,6 +153,14 @@ architecture, Quidnug-specific integration, concrete code, and threat model.
   no central bureau, no universal number, no state-capturable
   citizen-score infrastructure. Encrypted access grants give
   the subject control over who sees what.
+- [`examples/reviews-and-comments/`](examples/reviews-and-comments/)
+  — Trust-weighted reviews at web scale. The full QRP-0001
+  spec, a reference rating algorithm, a working end-to-end
+  demo against a live node (showing the same 5 raw reviews
+  producing three divergent per-observer ratings), and drop-in
+  widgets for every major web framework. Replaces "one star
+  rating for everyone" with "the rating your trust graph
+  justifies."
 
 **Government / Elections:**
 
@@ -308,7 +316,8 @@ or retired:
 
 ### Build & run
 
-Prerequisites: **Go 1.23+**.
+Prerequisites: **Go 1.25+** (the module targets Go 1.25; earlier
+toolchains cannot build it).
 
 ```bash
 git clone https://github.com/bhmortim/quidnug.git
@@ -372,9 +381,9 @@ Full API reference: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3.0).
 ## Architecture at a glance
 
 ```
-               ┌──────────── Client SDKs (JS, Go) ─────────────┐
-               │                                                │
-               ▼                                                ▼
+          ┌───── Client SDKs (Go, Python, JS, Rust) ────────────┐
+          │  + framework adapters (React, Vue, Astro, WP, …)    │
+          ▼                                                     ▼
         ┌──────────────────────────────────────────────────────────┐
         │                     HTTP REST API                         │
         │  /api/v1 (core)   /api/v2 (guardian + gossip + bootstrap) │
@@ -459,7 +468,7 @@ Protocol evolution is tracked in versioned design docs under
 
 ### Dependencies
 
-Go 1.23+, optional IPFS node for large-payload event streams.
+Go 1.25+, optional IPFS node for large-payload event streams.
 
 ### Binary
 
@@ -513,20 +522,39 @@ side-by-side examples of the same workflow in every language.
 
 ### Client SDKs
 
+Core protocol SDKs:
+
 | Language | Path | Status | Package |
 | --- | --- | --- | --- |
-| Python 3.9+ | [`clients/python/`](clients/python/) | **full** — 42 tests passing | `pip install quidnug` |
-| Go 1.22+ | [`pkg/client/`](pkg/client/) | **full** — context-aware, typed, tested | `go get github.com/quidnug/quidnug/pkg/client` |
+| Python 3.9+ | [`clients/python/`](clients/python/) | **full** — typed dataclasses, ECDSA P-256, Merkle verifier | `pip install quidnug` |
+| Go 1.25+ | [`pkg/client/`](pkg/client/) | **full** — context-aware, typed, OTel hooks | `go get github.com/quidnug/quidnug/pkg/client` |
 | JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin for guardians/gossip/merkle | `npm install @quidnug/client` |
-| Rust 1.74+ | [`clients/rust/`](clients/rust/) | **full** — async reqwest, wiremock-tested | `cargo add quidnug` |
+| Rust stable | [`clients/rust/`](clients/rust/) | **full** — async reqwest, wiremock-tested | `cargo add quidnug` |
 | Java 17+ / Kotlin | [`clients/java/`](clients/java/) | scaffold — keypair + signing | — |
 | C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | scaffold — keypair + signing | — |
 | Swift iOS/macOS | [`clients/swift/`](clients/swift/) | scaffold — CryptoKit-based | — |
 | Android (Kotlin) | [`clients/android/`](clients/android/) | scaffold — planned Android Keystore integration | — |
-| React | [`clients/react/`](clients/react/) | scaffold — hooks + components | — |
 | Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | scaffold | — |
 | ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | scaffold | — |
 | CLI | [`cmd/quidnug-cli/`](cmd/quidnug-cli/) | **full** — wraps the Go SDK | `go install .../cmd/quidnug-cli@latest` |
+
+Reviews use case (QRP-0001) drop-in packages:
+
+| Package | Path | Status | Install |
+| --- | --- | --- | --- |
+| `@quidnug/web-components` | [`clients/web-components/`](clients/web-components/) | **full** — custom elements + `<qn-aurora>` / `<qn-constellation>` / `<qn-trace>` visualization primitives | `npm install @quidnug/web-components` |
+| `@quidnug/reviews-widget` | [`clients/reviews-widget/`](clients/reviews-widget/) | **full** — one-line HTML embed | `<script src=".../loader.js">` |
+| `@quidnug/react-reviews` | [`clients/react-reviews/`](clients/react-reviews/) | **full** — hooks + components + React primitive wrappers | `npm install @quidnug/react-reviews` |
+| `@quidnug/vue-reviews` | [`clients/vue-reviews/`](clients/vue-reviews/) | **full** — Vue 3 primitive wrappers | `npm install @quidnug/vue-reviews` |
+| `@quidnug/astro-reviews` | [`clients/astro-reviews/`](clients/astro-reviews/) | **full** — SSR-first, emits real SVG at build time | `npm install @quidnug/astro-reviews` |
+| WordPress plugin | [`clients/wordpress-plugin/`](clients/wordpress-plugin/) | **full** — WooCommerce integration | WP plugin upload |
+| Shopify app | [`clients/shopify-app/`](clients/shopify-app/) | scaffold | — |
+
+See [`examples/reviews-and-comments/`](examples/reviews-and-comments/)
+for the end-to-end working demo (16 identities, 15 reviews,
+3 divergent per-observer ratings rendered in-browser against a
+live node) and [`docs/reviews/rating-visualization.md`](docs/reviews/rating-visualization.md)
+for the rating-visualization design.
 
 All canonical-bytes signing (the operation the node verifies) is
 **byte-for-byte compatible across every SDK**. A signature produced
@@ -538,21 +566,24 @@ See [`schemas/types/canonicalization.md`](schemas/types/canonicalization.md).
 Turn-key adapters that bring Quidnug's per-observer trust into a
 specific ecosystem.
 
-| Integration | Path | Purpose |
+| Integration | Path | Status |
 | --- | --- | --- |
-| Sigstore / cosign | [`integrations/sigstore/`](integrations/sigstore/) | Record verified cosign bundles on artifact titles. |
-| C2PA | [`integrations/c2pa/`](integrations/c2pa/) | Record verified C2PA manifests on media-asset titles. |
-| HL7 FHIR | [`integrations/fhir/`](integrations/fhir/) | Record FHIR R4/R5 resources on patient / practitioner / org titles. |
-| Chainlink External Adapter | [`integrations/chainlink/`](integrations/chainlink/) | Expose relational-trust to on-chain smart contracts. |
-| OIDC bridge | [`cmd/quidnug-oidc/`](cmd/quidnug-oidc/) | Bind IdP subjects (Okta/Auth0/Azure/Keycloak) to Quidnug quids. |
-| gRPC gateway | [`integrations/grpc/`](integrations/grpc/) | Planned proto schemas + grpc-gateway wiring. |
-| GraphQL gateway | [`integrations/graphql/`](integrations/graphql/) | Planned single-round-trip query surface. |
-| WebSocket push | [`integrations/websocket/`](integrations/websocket/) | Planned real-time event subscription protocol. |
-| Terraform provider | [`integrations/terraform/`](integrations/terraform/) | Planned declarative management of domains + guardian sets. |
-| Ledger Nano app | [`integrations/ledger/`](integrations/ledger/) | Planned hardware-wallet signing app. |
-| MQTT bridge | [`integrations/mqtt/`](integrations/mqtt/) | Planned IoT-device event bridge. |
-| Postgres extension | [`integrations/postgres/`](integrations/postgres/) | Planned SQL function exposing relational trust. |
-| Elastic / OpenSearch | [`integrations/elastic/`](integrations/elastic/) | Planned event ingester. |
+| Sigstore / cosign | [`integrations/sigstore/`](integrations/sigstore/) | **shipping** — record verified cosign bundles on artifact titles |
+| C2PA | [`integrations/c2pa/`](integrations/c2pa/) | **shipping** — record verified C2PA manifests on media-asset titles |
+| HL7 FHIR | [`integrations/fhir/`](integrations/fhir/) | **shipping** — record FHIR R4/R5 resources on patient / practitioner / org titles |
+| Chainlink External Adapter | [`integrations/chainlink/`](integrations/chainlink/) | **shipping** — expose relational-trust to on-chain smart contracts |
+| Kafka bridge | [`integrations/kafka/`](integrations/kafka/) | **shipping** — event-stream mirror into Kafka topics |
+| ISO 20022 | [`integrations/iso20022/`](integrations/iso20022/) | **shipping** — convert SWIFT MX / pacs.008 to Quidnug wire-approval titles |
+| Schema.org reviews | [`integrations/schema-org/`](integrations/schema-org/) | **shipping** — emit `Review` / `AggregateRating` JSON-LD for SEO |
+| OIDC bridge | [`cmd/quidnug-oidc/`](cmd/quidnug-oidc/) | **shipping** — bind IdP subjects (Okta/Auth0/Azure/Keycloak) to Quidnug quids |
+| gRPC gateway | [`integrations/grpc/`](integrations/grpc/) | scaffold — proto schemas + grpc-gateway wiring |
+| GraphQL gateway | [`integrations/graphql/`](integrations/graphql/) | scaffold — single-round-trip query surface |
+| WebSocket push | [`integrations/websocket/`](integrations/websocket/) | scaffold — real-time event subscription protocol |
+| Terraform provider | [`integrations/terraform/`](integrations/terraform/) | scaffold — declarative management of domains + guardian sets |
+| Ledger Nano app | [`integrations/ledger/`](integrations/ledger/) | scaffold — hardware-wallet signing app |
+| MQTT bridge | [`integrations/mqtt/`](integrations/mqtt/) | scaffold — IoT-device event bridge |
+| Postgres extension | [`integrations/postgres/`](integrations/postgres/) | scaffold — SQL function exposing relational trust |
+| Elastic / OpenSearch | [`integrations/elastic/`](integrations/elastic/) | scaffold — event ingester |
 
 ### Signing backends
 

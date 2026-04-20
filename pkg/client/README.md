@@ -15,7 +15,7 @@ compact Merkle inclusion proofs (QDPs 0001–0010).
 go get github.com/quidnug/quidnug/pkg/client@latest
 ```
 
-Requires Go 1.22+.
+Requires Go 1.25+ (matches the module's `go.mod` toolchain line).
 
 ## Thirty-second example
 

@@ -101,6 +101,70 @@ const { mutate, loading, error } = useWriteReview();
 await mutate({ product, topic, rating: 4.5, title, body });
 ```
 
+## Primitives (from `@quidnug/react-reviews/primitives`)
+
+Thin React wrappers over the zero-dependency SVG visualization
+primitives in `@quidnug/web-components`. Import these when you
+already have rating state computed (for example via
+`useTrustWeightedRating` above) and just want to render.
+
+### `<QnAurora />`
+
+The headline rating glyph.
+
+```jsx
+import { QnAurora } from "@quidnug/react-reviews";
+
+<QnAurora
+    size="standard"
+    rating={4.5}
+    crowd={4.1}
+    contributors={7}
+    direct={5}
+    observerName="alice"
+    showDelta
+    showHistogram
+    contributorRatings={[4.5, 4.8, 4.2, 5, 4, 4.3, 4.7]}
+    onAuroraClick={(detail) => openDrilldown(detail)}
+/>
+```
+
+### `<QnConstellation />`
+
+Bullseye drilldown — every contributor as a dot on a tier
+keyed to their trust-hop distance.
+
+```jsx
+<QnConstellation
+    size="standard"
+    observerName="alice"
+    titleText="Your trust map for this rating"
+    contributors={[
+        { id: "v", name: "veteran", rating: 4.8, weight: 0.33, hops: 1 },
+        { id: "s", name: "sam",     rating: 4.5, weight: 0.22, hops: 2 },
+    ]}
+    onSelect={(c) => showTrustPath(c.id)}
+/>
+```
+
+### `<QnTrace />`
+
+Horizontal stacked weight bar — useful in product grids.
+
+```jsx
+<QnTrace
+    contributors={[
+        { id: "v", name: "veteran", rating: 4.8, weight: 0.6, direct: true },
+        { id: "s", name: "sam",     rating: 4.5, weight: 0.2, direct: true },
+    ]}
+    showLabels
+/>
+```
+
+See the design doc at [`docs/reviews/rating-visualization.md`](../../docs/reviews/rating-visualization.md)
+for the visual vocabulary and a [storybook](../web-components/stories/index.html)
+with every state variant.
+
 ## Examples
 
 See [`examples/`](examples/) for full pages:

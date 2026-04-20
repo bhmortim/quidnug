@@ -1,250 +1,237 @@
 # Quidnug Project Roadmap
 
-This document outlines the strategic roadmap for the Quidnug platform development, focusing on building a decentralized trust, identity, and ownership system.
+The strategic view of where Quidnug is going. Updated to reflect
+ground truth as of Q2 2026.
 
-## Current State: Core Foundation (Q1-Q2 2025)
+For the per-feature implementation history, see the numbered
+design docs under [`design/`](design/), the unreleased block in
+[`../CHANGELOG.md`](../CHANGELOG.md), and the individual
+`README.md` files under `clients/`, `integrations/`, and
+`UseCases/`.
 
-- ✅ **Quidnug Node Implementation**
-  - Basic node server functionality with proper cryptographic support
-  - Transaction validation and processing
-  - Trust domain management
-  - Hierarchical domain structure
-  - Proof of Trust consensus mechanism
+---
 
-- ✅ **Core Transaction Types**
-  - Trust transactions
-  - Identity transactions
-  - Title transactions
+## Where we actually are
 
-- ✅ **API and Client SDK**
-  - RESTful API for node interaction
-  - Basic client JavaScript SDK
-  - Documentation and integration guide
+The protocol is stable. The reference node, full multi-language
+SDK surface, and first-wave integrations are all shipped. The
+current frontier is in **usability and ecosystem**, not in
+protocol gaps.
 
-## Phase 1: Network and Ecosystem (Q3-Q4 2025)
+### Protocol (done)
 
-### Network Enhancement
+All ten core design proposals have landed and are reflected in
+the live code:
 
-- [ ] **Node Communication Protocol**
-  - Standardized P2P protocol for inter-node communication
-  - Transaction and block propagation
-  - Network discovery mechanisms
-  - Efficient route finding for cross-domain queries
+| QDP | Title | Status |
+| --- | --- | --- |
+| 0001 | Global Nonce Ledger | Landed |
+| 0002 | Guardian-Based Recovery | Landed |
+| 0003 | Cross-Domain Nonce Scoping | Landed |
+| 0004 | Phase H Roadmap | Landed |
+| 0005 | Push-Based Gossip (H1) | Landed |
+| 0006 | Guardian Resignation (H6) | Landed |
+| 0007 | Lazy Epoch Propagation (H4) | Landed |
+| 0008 | K-of-K Snapshot Bootstrap (H3) | Landed |
+| 0009 | Fork-Block Migration Trigger (H5) | Landed |
+| 0010 | Compact Merkle Proofs (H2) | Landed |
+| 0011 | Client Libraries & Integrations roadmap | Landed (all four tiers shipped) |
 
-- [ ] **Trust Propagation System**
-  - Advanced algorithms for trust path discovery
-  - Domain-specific trust calculation
-  - Trust decay and expiration handling
-  - Transitive trust optimization
+### Client SDKs (done)
 
-- [ ] **Scalability Improvements**
-  - Domain sharding mechanism
-  - Trust graph optimization
-  - Parallel transaction processing
-  - Database optimization for large-scale deployments
+Four tier-1 SDKs are feature-complete with byte-compatible
+signatures across the network. Seven additional-language scaffolds
+ship a keypair + sign + verify foundation.
 
-### Security and Governance
+- Full: Python 3.9+, Go 1.25+, JavaScript/TypeScript (v1 + v2
+  mixin), Rust stable, Quidnug CLI (Go).
+- Scaffolds: Java / Kotlin, C# / .NET 8, Swift, Android, browser
+  extension, ISO 20022 mapping.
 
-- [ ] **Domain Governance System**
-  - On-chain governance for domain parameters
-  - Voting mechanisms for trusted quids
-  - Parameter updates (thresholds, limits, etc.)
-  - Domain creation and registration protocols
+See the root [`README.md`](../README.md) "Client SDKs" table for
+install paths.
 
-- [ ] **Security Hardening**
-  - Penetration testing and vulnerability assessment
-  - Formal verification of cryptographic implementations
-  - Security audits and third-party reviews
-  - Attack vector mitigation strategies
+### Reviews use case (done)
 
-### Developer Experience
+QRP-0001 (the Quidnug Reviews Protocol) is specified, implemented,
+and has a live end-to-end demo:
 
-- [ ] **Client Libraries**
-  - Enhanced JavaScript SDK
-  - Mobile SDK (iOS/Android)
-  - Python client library
-  - Go client library
-  - Smart contract integration libraries
+- Full protocol spec and four-factor rating algorithm with
+  reference implementations in Python and Go.
+- Drop-in packages for every major web framework: web-components,
+  React, Vue, Astro, WordPress; Shopify scaffold.
+- Three SVG visualization primitives (`<qn-aurora>`,
+  `<qn-constellation>`, `<qn-trace>`) used across all framework
+  adapters — see [`reviews/rating-visualization.md`](reviews/rating-visualization.md).
+- Schema.org JSON-LD integration so SEO-aware search engines
+  still get rich-result stars.
+- Working end-to-end demo against a live node with three
+  divergent per-observer ratings.
 
-- [ ] **Developer Tools**
-  - Local development environment
-  - Testing and simulation tools
-  - Transaction debugging utilities
-  - Network visualization tools
+### Integrations (done)
 
-## Phase 2: Advanced Features (Q1-Q2 2026)
+Tier-3 domain integrations are shipped:
 
-### Advanced Cryptography
+- Sigstore / cosign (artifact signing)
+- C2PA (media provenance)
+- HL7 FHIR (healthcare records)
+- Chainlink External Adapter (on-chain trust queries)
+- Kafka bridge (event streaming)
+- ISO 20022 (bank wire messaging)
+- Schema.org reviews (SEO)
 
-- [ ] **Zero-Knowledge Proofs**
-  - Privacy-preserving trust verification
-  - Selective disclosure of trust relationships
-  - ZK-SNARKs for confidential transactions
-  - Verifiable computations on trust data
+### Deployment / enterprise identity (done)
 
-- [ ] **Multi-signature Support**
-  - Threshold signatures for high-value assets
-  - Multi-party transaction validation
-  - Split key management systems
-  - M-of-N signature schemes
+- Production-grade Helm chart with StatefulSet, PVCs, PDB, anti-affinity
+- Docker Compose dev cluster (three-node + IPFS + Prometheus + Grafana)
+- PKCS#11 / HSM signing backend (SoftHSM, YubiHSM, CloudHSM, Azure Key Vault, GCP HSM)
+- WebAuthn / FIDO2 bridge (Touch ID, Windows Hello, passkeys, YubiKey)
+- OIDC bridge (Okta, Auth0, Azure AD, Keycloak, Google Workspace)
+- Grafana dashboard + Prometheus alert rules over the `quidnug_*` metric family
+- Postman collection covering every endpoint
 
-- [ ] **Key Recovery Mechanisms**
-  - Social recovery of quid private keys
-  - Threshold key recovery
-  - Time-locked recovery protocols
-  - Guardian-based recovery systems
+---
 
-### Trust Applications
+## Where we're going
 
-- [ ] **Trust-Based Authentication**
-  - Quidnug-based SSO systems
-  - Trust-level access control
-  - Context-aware authorization
-  - Integration with existing identity providers
+The remaining scaffolds + roadmap items, grouped by what they
+unlock.
 
-- [ ] **Reputation Systems**
-  - Trust-derived reputation metrics
-  - Domain-specific reputation aggregation
-  - Reputation transfer protocols
-  - Anti-Sybil mechanisms
+### Near-term: close the scaffold gap
 
-- [ ] **Credential Management**
-  - Verifiable credential issuance
-  - Credential verification protocols
-  - Credential revocation mechanisms
-  - Portable trust credentials
+Currently scaffolded but not production-complete. Each needs a
+feature-parity sweep.
 
-## Phase 3: Ecosystem Growth (Q3-Q4 2026)
+- **Mobile SDKs** (Swift iOS / Kotlin Android) — full protocol
+  parity + platform keystore integration. Target: a mobile
+  reviewer / patient / voter app experience on par with the JS SDK.
+- **Additional-language SDKs** (Java/Kotlin, C#/.NET) — feature
+  parity with Python/Go/JS. Driven by enterprise FinTech + public-
+  sector adoption.
+- **Browser extension wallet** — MetaMask-style quid manager with
+  per-site signing prompts.
+- **ISO 20022 mapping** — full SWIFT MX / pacs.008 round-trip.
 
-### Interoperability
+### Near-term: additional interface surfaces
 
-- [ ] **Cross-Protocol Bridges**
-  - Integration with other identity systems (DID, SSI)
-  - Blockchain bridge capabilities
-  - Interoperability with existing trust frameworks
-  - API gateways for legacy systems
+Building on the REST API + JSON schemas:
 
-- [ ] **Standards Development**
-  - Formal specifications for Quidnug protocols
-  - Standardization of trust domain structure
-  - Data interchange formats
-  - Compliance with emerging identity standards
+- **gRPC gateway** — higher-throughput consortium ops
+- **GraphQL gateway** — joined queries for application integration
+- **WebSocket push subscriptions** — real-time event streams
+- **Terraform provider** — IaC management of domains + guardian sets
+- **MQTT bridge** — IoT-device event mirroring
+- **PostgreSQL extension** — SQL-exposed relational trust for BI
+- **Elasticsearch ingester** — full-text search over events
 
-### Industry Applications
+### Near-term: additional frontend framework adapters
 
-- [ ] **Vertical Solutions**
-  - Supply chain trust solution
-  - Healthcare credential system
-  - Educational certification framework
-  - Professional licensing platform
-  - Real estate title management
+Mirror the Vue/Astro pattern for:
 
-- [ ] **Enterprise Integration**
-  - Enterprise deployment patterns
-  - Integration with enterprise IAM systems
-  - Compliance and audit frameworks
-  - Service level guarantees
+- Svelte / SvelteKit
+- SolidJS
+- Angular
+- Ember
+- Qwik
 
-### Governance and Sustainability
+Each adapter is ~2 days of work now that the SVG primitives exist.
 
-- [ ] **Network Sustainability**
-  - Economic incentive mechanisms
-  - Trust credit markets
-  - Resource allocation models
-  - Long-term network governance
+### Medium-term: zero-knowledge + advanced crypto
 
-- [ ] **Trust Domain Standards**
-  - Domain naming conventions
-  - Trust domain certification framework
-  - Domain interoperability protocols
-  - Domain migration capabilities
+- **Selective disclosure** — privacy-preserving trust-path proofs;
+  prove "I'm trusted at ≥ L without revealing my intermediaries"
+- **ZK-SNARKs for confidential transactions** — especially for
+  the credit-reputation and elections use cases
+- **Post-quantum signature migration** — track NIST PQC finalists,
+  plan a migration path via fork-block (QDP-0009)
+- **Threshold signatures** — single-shot M-of-N signing with no
+  distinguishable participants (useful for guardian recovery that
+  hides which guardians participated)
 
-## Phase 4: Global Scale (2027 and beyond)
+### Medium-term: additional vertical integrations
 
-### Global Infrastructure
+- **Yotpo / Trustpilot / Bazaarvoice** — enrichment layer on
+  imported reviews
+- **Judge.me / Product Reviews Shopify apps** — trust-weighting overlay
+- **LinkedIn-style skill endorsements** — expert credibility
+- **Yelp / TripAdvisor / Google Maps** — via browser extension
+- **Healthgrades / Zocdoc** — practitioner trust
+- **Upwork / Fiverr / TaskRabbit** — freelancer reputation
+- **Reddit / Lemmy / Mastodon** — comment-quality weighting
+- **Debezium CDC schema** — downstream ETL
+- **Ruby / PHP SDKs** — smaller ecosystems
 
-- [ ] **Distributed Node Infrastructure**
-  - Edge deployment strategies
-  - Geographic distribution
-  - Jurisdiction-specific nodes
-  - High-performance validator networks
+### Medium-term: governance
 
-- [ ] **Trust Network Analytics**
-  - Network health monitoring
-  - Trust flow visualization
-  - Anomaly detection
-  - Network growth metrics
+- **Domain governance transactions** — on-chain voting for domain
+  parameters (thresholds, validator sets)
+- **Trust-weighted DAO frameworks** — reference library for apps
+  built on Quidnug
 
-### Advanced Applications
+### Long-term: research
 
-- [ ] **Decentralized Governance**
-  - DAO frameworks built on Quidnug
-  - Voting systems using trust weights
-  - Delegation mechanisms
-  - Reputation-based governance
+- **Mathematical modeling of trust propagation** — formal bounds
+  on decay functions, Sybil resistance, path-selection strategies
+- **Cognitive trust modeling** — user-study-driven refinements to
+  the four-factor rating algorithm
+- **Homomorphic trust computation** — ciphertext-preserving trust
+  queries so a node can answer queries without decrypting edges
 
-- [ ] **Resource Allocation**
-  - Trust-based resource distribution
-  - Reputation-weighted access systems
-  - Trust-bounded marketplaces
-  - Fair allocation mechanisms
+### Long-term: scale
 
-### Research Initiatives
+- **Edge / geo-distributed deployment** — jurisdiction-scoped
+  nodes with cross-domain gossip
+- **High-performance validator networks** — specialized validator
+  deployments for high-volume domains
 
-- [ ] **Trust Research**
-  - Mathematical models of trust propagation
-  - Novel trust metrics and calculations
-  - Cross-domain trust evaluation
-  - Cognitive trust modeling
+---
 
-- [ ] **Advanced Cryptography**
-  - Post-quantum cryptographic solutions
-  - Homomorphic encryption applications
-  - Secure multi-party computation
-  - Future-proof cryptographic infrastructure
+## Success metrics
 
-## Success Metrics
+Technical:
 
-### Technical Performance
+- Transaction validation latency (target: < 10 ms on average)
+- Cross-domain query performance (target: < 50 ms for depth-5)
+- Trust-path calculation time (target: < 100 ms for 10k-node graphs)
 
-- Network throughput (transactions per second)
-- Transaction validation latency
-- Cross-domain query performance
-- Node discovery efficiency
-- Trust path calculation time
+Adoption:
 
-### Adoption Metrics
-
-- Number of active nodes
-- Number of unique quids
-- Transaction volume by type
+- Number of public nodes
+- Number of unique quids across all public domains
 - Number of active trust domains
-- Developer community growth
+- Transaction volume split by type
+- Reviews written under `reviews.public.*`
+- Active developer community (issues, PRs, discussions, SDK downloads)
 
-### Developer Experience
+Security:
 
-- SDK adoption rates
-- API call volume
-- Developer satisfaction metrics
-- Application integration success
-- Time to first successful integration
+- Days since last critical advisory
+- CVE response time (target: < 72h to patch, < 7d to disclose)
+- Formal verification coverage of crypto primitives
+- Third-party audit cadence
 
-### Security and Resilience
+---
 
-- Security audit success rate
-- Vulnerability responsiveness
-- Network uptime percentage
-- Attack resistance metrics
-- Recovery time objectives
+## How to propose changes
 
-## Contributing to the Roadmap
+Two paths:
 
-This roadmap is a living document that will evolve as the Quidnug project progresses. We welcome contributions and suggestions from the community. To contribute:
+1. **New QDP.** For anything that changes the protocol wire
+   format, consensus rules, or node behavior. Submit as a
+   numbered proposal under `docs/design/`. Template: copy any
+   existing QDP.
+2. **Feature PR.** For everything else — SDK additions, new
+   framework adapters, new integrations. Open a PR with the
+   code + tests + README. The review pass confirms scope and
+   naming conventions.
 
-1. Review the current roadmap and identify areas for improvement
-2. Submit detailed proposals for new features or modifications
-3. Participate in community discussions about prioritization
-4. Help implement items from the roadmap
-5. Test and provide feedback on implementations
+Things we're explicitly **not** pursuing:
 
-Together, we can build a robust, decentralized trust infrastructure that serves a broad range of applications and use cases.
+- High-TPS payment-chain optimization — the protocol prioritizes
+  auditability over raw throughput.
+- A universal reputation score — by design, Quidnug refuses to
+  produce one.
+- Single-signer key-recovery via email/SMS — recovery is
+  cryptographic (guardian M-of-N) by design.
+
+See [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for process details.

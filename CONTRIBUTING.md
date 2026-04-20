@@ -28,7 +28,7 @@ sign-off requirement later; if that happens, we will update this file.
 
 Prerequisites:
 
-- Go 1.23 or later (matching `go.mod`).
+- Go 1.25 or later (matching `go.mod`'s toolchain line).
 - Node.js 18 or later (for the JavaScript client).
 - `make`, `git`, and optionally `docker`.
 

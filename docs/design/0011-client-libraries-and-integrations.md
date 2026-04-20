@@ -2,13 +2,19 @@
 
 | Field      | Value                                                         |
 |------------|---------------------------------------------------------------|
-| Status     | Draft — research memo, no code impact                         |
+| Status     | **Landed** — all four tiers shipped; see §9 for ship status   |
 | Track      | Ecosystem                                                     |
 | Author     | The Quidnug Authors                                           |
 | Created    | 2026-04-19                                                    |
+| Updated    | 2026-04-20 (post-implementation status)                       |
 | Supersedes | —                                                             |
 | Requires   | QDPs 0001–0010 (landed)                                       |
-| Implements | Ecosystem roadmap (pre-implementation research)               |
+| Implements | Ecosystem roadmap (shipped)                                   |
+
+> **Note on this document's role.** This was originally a
+> pre-implementation research memo. The work it describes has
+> since been executed. The memo is kept as-is for historical
+> context; the §9 ship-status section below is the live view.
 
 ## 1. Summary
 
@@ -747,24 +753,99 @@ existing endpoints. CLI should get a QDP because it needs
 a subcommand taxonomy. Grafana dashboards don't need a
 QDP — just ship them.
 
-## 11. Review status
+## 9. Ship status (post-implementation)
 
-Draft. Intended as a research memo, not a commitment. Open
-for:
+All four tiers are now in-tree. This section is the live
+status summary; the research-memo sections above are preserved
+unchanged for historical context.
 
-- Community input on priorities.
-- Use-case-specific feedback — are there Tier-3 items that
-  are actually Tier-1 for specific industries?
-- Estimate validation — person-weeks are rough.
-- Staffing discussion — who owns which pieces?
+### Tier 1 — essential (shipped)
 
-## 12. References
+| Item | Status | Landed as |
+| --- | --- | --- |
+| Python client SDK | ✅ full | [`clients/python/`](../../clients/python/) |
+| Go client package | ✅ full | [`pkg/client/`](../../pkg/client/) |
+| JS client v2 (guardian/gossip/merkle mixin) | ✅ full | [`clients/js/quidnug-client-v2.js`](../../clients/js/) |
+| Quidnug CLI binary | ✅ full | [`cmd/quidnug-cli/`](../../cmd/quidnug-cli/) |
+| Grafana dashboards + Prometheus alerting | ✅ full | [`deploy/observability/`](../../deploy/observability/) |
 
-- [Repo README](../../README.md) — capability table
-- [JS client source](../../clients/js/) — current v1.0
-- [OpenAPI spec](../openapi.yaml) — v1 API surface
-- [`UseCases/README.md`](../../UseCases/README.md) — 14
+### Tier 2 — production-readiness (shipped)
+
+| Item | Status | Landed as |
+| --- | --- | --- |
+| PKCS#11 / HSM bindings | ✅ full | [`pkg/signer/hsm/`](../../pkg/signer/hsm/) |
+| Kubernetes Helm chart | ✅ full | [`deploy/helm/quidnug/`](../../deploy/helm/quidnug/) |
+| WebAuthn / FIDO2 integration | ✅ full | [`pkg/signer/webauthn/`](../../pkg/signer/webauthn/) |
+| Rust client | ✅ full | [`clients/rust/`](../../clients/rust/) |
+| OIDC identity-provider bridge | ✅ full | [`cmd/quidnug-oidc/`](../../cmd/quidnug-oidc/) |
+
+### Tier 3 — vertical integrations (shipped)
+
+| Item | Status | Landed as |
+| --- | --- | --- |
+| Sigstore / cosign | ✅ full | [`integrations/sigstore/`](../../integrations/sigstore/) |
+| C2PA plugin | ✅ full | [`integrations/c2pa/`](../../integrations/c2pa/) |
+| HL7 FHIR bridge | ✅ full | [`integrations/fhir/`](../../integrations/fhir/) |
+| Chainlink external adapter | ✅ full | [`integrations/chainlink/`](../../integrations/chainlink/) |
+| Kafka bridge | ✅ full | [`integrations/kafka/`](../../integrations/kafka/) |
+| ISO 20022 mapping | ✅ full | [`integrations/iso20022/`](../../integrations/iso20022/) |
+| Java / Kotlin SDK scaffold | ✅ scaffold | [`clients/java/`](../../clients/java/) |
+| C# / .NET SDK scaffold | ✅ scaffold | [`clients/dotnet/`](../../clients/dotnet/) |
+
+### Tier 4 — platform + framework (mixed)
+
+| Item | Status | Landed as |
+| --- | --- | --- |
+| Swift iOS/macOS SDK | scaffold | [`clients/swift/`](../../clients/swift/) |
+| Kotlin Android SDK | scaffold | [`clients/android/`](../../clients/android/) |
+| Browser extension | scaffold | [`clients/browser-extension/`](../../clients/browser-extension/) |
+| React component library | ✅ full | [`clients/react-reviews/`](../../clients/react-reviews/) |
+| Vue component library | ✅ full | [`clients/vue-reviews/`](../../clients/vue-reviews/) |
+| Astro SSR components | ✅ full | [`clients/astro-reviews/`](../../clients/astro-reviews/) |
+| Web Components | ✅ full | [`clients/web-components/`](../../clients/web-components/) |
+| Reviews widget (1-line embed) | ✅ full | [`clients/reviews-widget/`](../../clients/reviews-widget/) |
+| WordPress plugin | ✅ full | [`clients/wordpress-plugin/`](../../clients/wordpress-plugin/) |
+| Shopify app | scaffold | [`clients/shopify-app/`](../../clients/shopify-app/) |
+| Schema.org reviews integration | ✅ full | [`integrations/schema-org/`](../../integrations/schema-org/) |
+| gRPC / GraphQL / WebSocket / Terraform / Ledger / MQTT / Postgres / Elastic | scaffold | [`integrations/`](../../integrations/) |
+| Svelte / SolidJS / Angular / Ember / Qwik adapters | not yet started | — |
+
+### New work beyond the original 0011 scope
+
+Executed in parallel with the 0011 rollout:
+
+- **QRP-0001 Reviews Protocol** — a domain-level protocol spec
+  (separate from the infrastructure QDPs) defining event types,
+  topic tree, and trust-weighted rating algorithm. See
+  [`../../examples/reviews-and-comments/`](../../examples/reviews-and-comments/).
+- **Rating visualization primitives** — `<qn-aurora>`,
+  `<qn-constellation>`, `<qn-trace>` — three zero-dependency
+  SVG custom elements used across every framework adapter above.
+  See [`../reviews/rating-visualization.md`](../reviews/rating-visualization.md).
+
+## 10. Review status
+
+Landed. Historical notes:
+
+- Initial draft as a research memo and prioritization exercise.
+- Tier 1 / 2 / 3 implemented in sequence without scope changes.
+- Tier 4 partially shipped (all framework adapters done for the
+  reviews use case) with the remaining platform scaffolds
+  tracked in the main roadmap (`docs/roadmap.md`).
+- Lessons learned are folded into the roadmap's "near-term"
+  section.
+
+## 11. References
+
+- [Repo README](../../README.md) — capability table (current)
+- [`../roadmap.md`](../roadmap.md) — live strategic roadmap
+- [Python client](../../clients/python/) — `clients/python/`
+- [Go client package](../../pkg/client/) — `pkg/client/`
+- [JS client v1 + v2](../../clients/js/) — `clients/js/`
+- [Rust client](../../clients/rust/) — `clients/rust/`
+- [OpenAPI spec](../openapi.yaml) — v1 + v2 API surface
+- [`../../UseCases/README.md`](../../UseCases/README.md) — 14
   use-case designs
-- QDPs 0001–0010 — protocol features to be client-exposed
-- [Integration Guide](../integration-guide.md) — current
-  JS-only client tutorial
+- QDPs 0001–0010 — protocol features exposed by the clients
+- [Integration Guide](../integration-guide.md) — multi-language
+  client tutorials

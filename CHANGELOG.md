@@ -7,6 +7,101 @@ onward.
 
 ## [Unreleased]
 
+### QRP-0001 trust-weighted reviews protocol + rating visualization
+
+The first domain-level protocol built on top of the Quidnug
+infrastructure QDPs. Ships as a complete drop-in library
+across every major web framework.
+
+**Protocol + algorithm**
+
+- `examples/reviews-and-comments/PROTOCOL.md` — QRP-0001 spec:
+  six event types (REVIEW, HELPFUL_VOTE, UNHELPFUL_VOTE, REPLY,
+  FLAG, PURCHASE), topic tree (`reviews.public.*`), domain
+  inheritance with 0.8-per-hop decay.
+- `examples/reviews-and-comments/algorithm.md` + `algorithm.py`
+  — four-factor rating (T, H, A, R: topical trust, helpfulness,
+  activity, recency) with 12 passing reference tests.
+- `examples/reviews-and-comments/bootstrap-trust.md` — four
+  mechanisms for new users to enter the trust graph (OIDC
+  binding, cross-site import, social bootstrap, domain validator
+  opt-in).
+
+**Reference Go node fixes surfaced during QRP-0001 work**
+
+- `GenerateBlock` now includes `EventTransaction` in its
+  domain-extraction switch (previously events lingered in the
+  pending pool indefinitely).
+- `ValidateBlockTiered` now validates `EventTransaction` in its
+  per-tx switch (previously blocks containing events were
+  rejected as `BlockInvalid`).
+- `cmd/quidnug/main.go` startup now passes
+  `cfg.RateLimitPerMinute` and `cfg.MaxBodySizeBytes` to
+  `StartServerWithConfig` instead of discarding them for the
+  hardcoded defaults.
+- `internal/core/reviews_integration_test.go` guards all three
+  of the above against silent regression with an end-to-end
+  in-process test of the full QRP-0001 round-trip.
+
+**Rating visualization primitives** (`clients/web-components/src/primitives/`)
+
+Three zero-dependency SVG custom elements that carry substantially
+more signal than five stars while staying SEO-safe:
+
+- `<qn-aurora>` — sentiment dot + confidence ring + delta chip
+  + optional radial histogram. Three sizes (nano / standard /
+  large) sharing one visual vocabulary so product grids and
+  detail pages feel continuous.
+- `<qn-constellation>` — bullseye drilldown. Concentric tiers
+  encode trust-hop distance; each dot is one contributing
+  reviewer (color = rating, size = weight, outline = direct vs.
+  transitive).
+- `<qn-trace>` — horizontal stacked weight bar. One segment per
+  contributor. Good for side-by-side comparison.
+
+All three expose pure `render*SVG()` functions used by the SSR
+Astro adapter. Design tokens live in a single
+`design-tokens.js` module overridable via CSS custom properties.
+20 node:test cases cover the token bucket boundaries and the
+pure renderer outputs. Accessibility guarantees (shape-redundant
+sentiment encoding, aria-labels, keyboard focus) documented in
+`docs/reviews/rating-visualization.md`.
+
+**Framework adapters**
+
+- `@quidnug/web-components` — custom elements + primitive exports
+- `@quidnug/reviews-widget` — one-line HTML embed
+- `@quidnug/react-reviews` — React hooks + components + primitive
+  React wrappers
+- `@quidnug/vue-reviews` (new package) — Vue 3 primitive wrappers
+  with `isCustomElement` setup docs
+- `@quidnug/astro-reviews` (new package) — SSR-first Astro
+  components that emit real SVG at build time and hydrate the
+  custom element on the client
+- `clients/wordpress-plugin/` — WooCommerce integration
+- `clients/shopify-app/` — Shopify scaffold
+
+**Working end-to-end demo** (`examples/reviews-and-comments/demo/`)
+
+- `demo.py` — posts 16 identities, product + title, 14 trust
+  edges, 5 reviews, 8 helpfulness votes, and 10 activity fillers
+  against a live Quidnug node, then computes three divergent
+  per-observer ratings (Alice 4.53, Bob 4.34, Carol 4.50) from
+  the same 5 raw reviews whose unweighted average is 3.96.
+- `sign_helper/main.go` — Go subprocess that produces byte-compatible
+  IEEE-1363 + SEC1 signatures, invoked from Python via stdin/stdout
+  JSON lines. Closes the Python-DER vs Go-1363 incompatibility
+  without reimplementing ECDSA.
+- `index.html` — clickable per-observer UI with the full T/H/A/R
+  factor breakdown.
+
+**Go toolchain bump**
+
+- `go.mod` now requires Go 1.25. Dockerfile, CI matrix, and
+  `ci.yml` lint runner updated to match (`golangci-lint` bumped
+  to v2.4.0 via `golangci-lint-action@v7`, config migrated to
+  `version: "2"` format).
+
 ### QDP-0011 client libraries & integrations
 
 The client/integration surface lands in a tiered rollout:

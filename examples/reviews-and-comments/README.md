@@ -78,8 +78,14 @@ cross-site reputation automatically.
 | Package | Language/Platform | Effort | Status |
 | --- | --- | --- | --- |
 | [`@quidnug/reviews-widget`](../../clients/reviews-widget/) | Pure-JS iframe widget | 1 line of HTML | shipping |
-| [`@quidnug/web-components`](../../clients/web-components/) | Custom elements (`<quidnug-review>`, `<quidnug-stars>`, `<quidnug-write-review>`) | Framework-agnostic | shipping |
-| [`@quidnug/react-reviews`](../../clients/react-reviews/) | React component library | `npm install` | shipping |
+| [`@quidnug/web-components`](../../clients/web-components/) | Custom elements (`<quidnug-review>`, `<quidnug-stars>`, `<quidnug-write-review>`) + visualization primitives (`<qn-aurora>`, `<qn-constellation>`, `<qn-trace>`) | Framework-agnostic | shipping |
+| [`@quidnug/react-reviews`](../../clients/react-reviews/) | React hooks + components + primitive wrappers | `npm install` | shipping |
+| [`@quidnug/vue-reviews`](../../clients/vue-reviews/) | Vue 3 primitive wrappers | `npm install` | shipping |
+| [`@quidnug/astro-reviews`](../../clients/astro-reviews/) | Astro SSR-first components (real SVG at build time) | `npm install` | shipping |
+
+See [`../../docs/reviews/rating-visualization.md`](../../docs/reviews/rating-visualization.md)
+for the design behind the three SVG primitives shared across
+all adapters.
 
 ### For major e-commerce / CMS platforms
 
