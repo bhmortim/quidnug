@@ -61,6 +61,14 @@ type Config struct {
 	EpochRecencyWindow   time.Duration `json:"epochRecencyWindow" yaml:"-"`
 	EpochProbeTimeout    time.Duration `json:"epochProbeTimeout" yaml:"-"`
 	ProbeTimeoutPolicy   string        `json:"probeTimeoutPolicy" yaml:"probe_timeout_policy"`
+
+	// QDP-0018 tamper-evident operator audit log.
+	//
+	// AuditLogPath, if set, points at a file the node opens in
+	// append-only mode to persist audit entries. Empty means the
+	// log is in-memory only (fine for dev + tests, not recommended
+	// for production). Relative paths resolve against DataDir.
+	AuditLogPath string `json:"auditLogPath" yaml:"audit_log_path"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -85,6 +93,7 @@ type fileConfig struct {
 	TrustCacheTTL           string   `json:"trustCacheTTL" yaml:"trust_cache_ttl"`
 	DomainGossipInterval    string   `json:"domainGossipInterval" yaml:"domain_gossip_interval"`
 	DomainGossipTTL         int      `json:"domainGossipTTL" yaml:"domain_gossip_ttl"`
+	AuditLogPath            string   `json:"auditLogPath" yaml:"audit_log_path"`
 }
 
 // Default values
@@ -219,6 +228,10 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		cfg.DomainGossipTTL = fc.DomainGossipTTL
 	}
 
+	if fc.AuditLogPath != "" {
+		cfg.AuditLogPath = fc.AuditLogPath
+	}
+
 	return cfg, nil
 }
 
@@ -328,6 +341,9 @@ func LoadConfig() *Config {
 			if fileCfg.DomainGossipTTL > 0 {
 				cfg.DomainGossipTTL = fileCfg.DomainGossipTTL
 			}
+			if fileCfg.AuditLogPath != "" {
+				cfg.AuditLogPath = fileCfg.AuditLogPath
+			}
 		}
 	}
 
@@ -436,6 +452,10 @@ func LoadConfig() *Config {
 		if ttl, err := strconv.Atoi(domainGossipTTL); err == nil && ttl > 0 {
 			cfg.DomainGossipTTL = ttl
 		}
+	}
+
+	if auditLogPath := os.Getenv("AUDIT_LOG_PATH"); auditLogPath != "" {
+		cfg.AuditLogPath = auditLogPath
 	}
 
 	if enablePushGossip := os.Getenv("ENABLE_PUSH_GOSSIP"); enablePushGossip != "" {

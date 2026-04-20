@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/quidnug/quidnug/internal/audit"
 	"github.com/quidnug/quidnug/internal/config"
 	"github.com/quidnug/quidnug/internal/ipfsclient"
 	"github.com/quidnug/quidnug/internal/ratelimit"
@@ -117,6 +119,11 @@ type QuidnugNode struct {
 	// The existing HTTP-ingress IP limiter (configured via
 	// middleware.go) is independent and complementary.
 	WriteLimiter *ratelimit.MultiLayerLimiter
+
+	// QDP-0018 Phase 1: tamper-evident operator audit log. Owns
+	// its own internal lock. Nil if the operator has disabled
+	// audit logging via config.
+	AuditLog *audit.Log
 
 	// QDP-0014: per-(domain, quid) activity index, populated
 	// incrementally as blocks commit.
@@ -482,6 +489,43 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 
 	// Set node's quid identity from its public key
 	node.NodeQuidID = node.GetPublicKeyHex()
+
+	// QDP-0018 Phase 1: initialize the operator audit log.
+	// If the config supplies a path, open a disk-backed store;
+	// otherwise fall back to an in-memory-only log. Failure to
+	// open the disk store is not fatal — we log and continue
+	// with an in-memory log so a misconfigured audit path can't
+	// prevent the node from starting.
+	if cfg.AuditLogPath != "" {
+		resolvedPath := cfg.AuditLogPath
+		if !filepath.IsAbs(resolvedPath) && cfg.DataDir != "" {
+			resolvedPath = filepath.Join(cfg.DataDir, resolvedPath)
+		}
+		store, err := audit.NewFileStore(resolvedPath)
+		if err != nil {
+			logger.Warn("Failed to open audit log file, falling back to in-memory log",
+				"path", resolvedPath, "err", err)
+			node.AuditLog = audit.NewLog(nodeID)
+		} else if log, err := audit.NewLogWithStore(nodeID, store); err != nil {
+			logger.Warn("Failed to replay audit log file, falling back to in-memory log",
+				"path", resolvedPath, "err", err)
+			_ = store.Close()
+			node.AuditLog = audit.NewLog(nodeID)
+		} else {
+			node.AuditLog = log
+			logger.Info("Opened operator audit log",
+				"path", resolvedPath, "height", log.Height())
+		}
+	} else {
+		node.AuditLog = audit.NewLog(nodeID)
+	}
+
+	// Record the node-lifecycle event so external auditors can
+	// see every startup in the log.
+	node.emitAudit(audit.CategoryNodeLifecycle, map[string]interface{}{
+		"event":   "node_start",
+		"node_id": nodeID,
+	}, "node initialized")
 
 	if logger != nil {
 		logger.Info("Initialized quidnug node", "nodeId", nodeID)

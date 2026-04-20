@@ -42,11 +42,13 @@ the live code:
 | 0015 | Content Moderation & Takedowns | **Phase 1 landed** — `MODERATION_ACTION` tx type + full 12-rule validator, per-target registry with supersede-chain resolution, max-severity scope composition (suppress > hide > annotate), serving-time filter on event streams (both subject-QUID and per-event TX targets), `?includeHidden=true` admin escape hatch, `POST /moderation/actions` + `GET /moderation/actions/{targetType}/{targetId}` endpoints. Phases 2-5 (CLI, federation import, dashboard, transparency report generator) pending. |
 | 0016 | Abuse Prevention & Resource Limits | **Phase 1 landed** — `MultiLayerLimiter` in `internal/ratelimit` composing per-quid / per-operator / per-domain token buckets (the pre-existing per-IP layer stays at the HTTP-ingress middleware); wired into every mempool admission path (TRUST, EVENT, MODERATION_ACTION, DSR/consent/restriction/compliance) with per-layer denial attribution; `quidnug_ratelimit_denials_total` Prometheus counter. Phases 2-6 (progressive slowdown, PoW challenges, reputation graduation, federation abuse signals, alert rules) pending. |
 | 0017 | Data Subject Rights & Privacy | **Phase 1 landed** — five new tx types (`DATA_SUBJECT_REQUEST`, `CONSENT_GRANT`, `CONSENT_WITHDRAW`, `PROCESSING_RESTRICTION`, `DSR_COMPLIANCE`) + validators (enum + self-sign + nonce monotonic + effective-range sanity + validator-only for compliance records) + `PrivacyRegistry` with grant/withdraw/restriction/DSR/compliance indices + read helpers (`HasActiveConsent`, `IsProcessingRestricted`, `RestrictedUsesFor`, `ConsentHistoryFor`, `GetDSRStatus`) + HTTP endpoints for DSR intake, consent history, restriction query, and compliance publish. Phases 2-5 (CLI auto-fulfill, manifest generators, erasure integration, transparency reporting) pending. |
-| 0018 | Observability + Tamper-Evident Operator Log | Draft — per-operator hash-chained audit log, periodic on-chain anchoring, five verification endpoints, standardized metric label set |
+| 0018 | Observability + Tamper-Evident Operator Log | **Phase 1 landed** — new `internal/audit` package with `Entry` / `Log` / `FileStore` and 12-category enum; per-entry hash chain + self-hash for tamper-evidence; disk-backed JSON-lines store with replay on startup; `AuditLog` field on `QuidnugNode` auto-initialized (in-memory fallback if no `audit_log_path` config); `emitAudit` helper hooked into moderation, DSR, consent, withdrawal, restriction, and compliance admission paths plus node-lifecycle `node_start`; `GET /audit/head` + `/audit/entries?since=&limit=` + `/audit/entry/{sequence}` HTTP endpoints. Phases 3-6 (on-chain `AUDIT_ANCHOR` event, Merkle proofs, verifier CLI, Grafana dashboard) pending. |
 | 0019 | Reputation Decay & Time-Weighted Trust | Draft — two-layer decay (edge-level exponential + quid dormancy), observer-configurable per-domain, passive re-endorsement detection |
 | 0020 | Protocol Versioning & Deprecation | Draft — SemVer-based protocol version, capability negotiation, 18-month deprecation timeline, release workflow |
 | 0021 | Blind Signatures for Anonymous Ballot Issuance | Draft — RSA-FDH-3072 auxiliary scheme, `BLIND_KEY_ATTESTATION` event, ballot-proof extension to TRUST tx, governance-bound RSA key, end-to-end universal verifiability. Unblocks the elections use case's ballot-anonymity requirement. |
 | 0022 | Timed Trust & TTL Semantics | **Landed** — `ValidUntil` enforcement on TRUST edges + `expiresAt` on EventTransaction payloads; parallel `TrustExpiryRegistry` on node; submission-time rejection of already-expired edges; graph-walk filter in `GetTrustLevel` / `GetDirectTrustees` / `GetTrustEdges`; `FilterExpiredEvents` + `?include_expired=true` on the stream-events endpoint; test-friendly clock override. Unblocks QDP-0017 consent expiry. |
+| 0023 | DNS-Anchored Identity Attestation | Draft — federated attestation roots binding existing DNS domains to Quidnug quids; five event types (`DNS_CLAIM`, `DNS_CHALLENGE`, `DNS_ATTESTATION`, `DNS_RENEWAL`, `DNS_REVOCATION`) + generic `AUTHORITY_DELEGATE`; transitive trust weighting via existing graph primitives; tiered fee schedule (free `.gov`/`.edu`, $5 `.com`, $25 premium, $100 luxury); client-side root-preference list with transparency report. Unlocks DNS ownership as a trust signal for every downstream use case. |
+| 0024 | Private Communications & Group-Keyed Encryption | Draft — MLS-based (RFC 9420) group encryption for stored on-chain records; TreeKEM for O(log n) membership operations; epoch rotation for post-compromise security; X25519 + AES-GCM-256 + HKDF-SHA256; six event types (`GROUP_CREATE`, `EPOCH_ADVANCE`, `MEMBER_KEY_PACKAGE`, `ENCRYPTED_RECORD`, `MEMBER_INVITE`, `MEMBER_KEY_RECOVERY`); guardian-recovery compatible; GDPR erasure via cryptographic shredding. Backs the `private:*` visibility class in QDP-0023's `AUTHORITY_DELEGATE`. |
 
 ### Client SDKs (done)
 
@@ -131,6 +133,38 @@ for per-phase status.
 Follow-up phases of each QDP (approximately ~3 person-weeks of
 operational tooling + CLI + transparency reports) remain open
 but no longer gate the initial launch.
+
+### Adoption-driving: implement QDPs 0023 / 0024
+
+**DNS-anchored attestation is the adoption flywheel.** Any
+existing DNS domain owner can bind their name to a Quidnug
+quid via a standardized, fee-paid verification flow. Every
+downstream use case (reviews, interbank wires, credential
+verification, agent authorization, content authenticity)
+immediately benefits from "verified DNS owner" as a trust
+signal, and the generic `AUTHORITY_DELEGATE` primitive lets
+enterprises take over resolution authority for their own
+domains with split-horizon visibility.
+
+- **QDP-0023 (DNS-Anchored Identity Attestation)** —
+  federated attestation roots, transitive trust weighting as
+  client convention, tiered fee model. Phase 1
+  implementation is ~3 person-weeks (core transaction types
+  + validation). Phase 2 reference verifier ~2 weeks. Phase
+  3 owner CLI ~1 week. Phase 4 public verification UI ~2
+  weeks. Phase 5 federation hardening ~2 weeks. Total ~10
+  person-weeks to full deployment.
+- **QDP-0024 (Private Communications & Group-Keyed
+  Encryption)** — MLS-based encryption backing the
+  `private:*` visibility class + general-purpose private
+  records use cases. Phase 1 core crypto ~2 weeks. Phase 2
+  event types ~1 week. Phase 3 SDK helpers ~2 weeks. Phase
+  4 query endpoints ~1 week. Phase 5 docs + examples ~1
+  week. Total ~7 person-weeks.
+
+Sequenced after the launch-gating QDPs (0015/0016/0017)
+follow-up phases. Design docs are complete; implementation
+target is 2026-Q3.
 
 ### Near-term: close the scaffold gap
 

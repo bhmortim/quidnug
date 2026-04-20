@@ -465,6 +465,20 @@ func (node *QuidnugNode) AddModerationActionTransaction(tx ModerationActionTrans
 		"scope", tx.Scope,
 		"reason", tx.ReasonCode,
 		"domain", tx.TrustDomain)
+
+	// QDP-0018: audit log entry. Category matches QDP-0015's
+	// cross-reference pattern (on-chain tx id + local operator
+	// context).
+	node.emitAudit("MODERATION_ACTION", map[string]interface{}{
+		"moderation_tx_id": tx.ID,
+		"moderator":        tx.ModeratorQuid,
+		"target_type":      tx.TargetType,
+		"target_id":        tx.TargetID,
+		"scope":            tx.Scope,
+		"reason_code":      tx.ReasonCode,
+		"domain":           tx.TrustDomain,
+	}, "moderation action admitted to pending pool")
+
 	return tx.ID, nil
 }
 
@@ -508,16 +522,76 @@ func (node *QuidnugNode) addPrivacyTxToPool(
 	}
 
 	node.PendingTxsMutex.Lock()
-	defer node.PendingTxsMutex.Unlock()
 	node.PendingTxs = append(node.PendingTxs, txValue)
 	RecordTransactionProcessed(txKind, true)
 	UpdatePendingTransactionsGauge(len(node.PendingTxs))
+	node.PendingTxsMutex.Unlock()
 
 	go node.BroadcastTransaction(txValue)
 
 	id, _ := extractPrivacyTxID(txPtr)
 	logger.Info("Added "+txKind+" to pending pool", "txId", id)
+
+	// QDP-0018: audit hook for every privacy tx. The
+	// per-type payload shape is picked by privacyAuditPayload.
+	if cat, payload, note := privacyAuditPayload(txPtr); cat != "" {
+		node.emitAudit(cat, payload, note)
+	}
+
 	return id, nil
+}
+
+// privacyAuditPayload selects the right QDP-0018 category +
+// payload for each QDP-0017 tx type. Returns an empty category
+// when the type has no audit hook (currently all five types
+// produce an entry, but the selector keeps the shape future-
+// proof).
+func privacyAuditPayload(txPtr interface{}) (category string, payload map[string]interface{}, note string) {
+	switch v := txPtr.(type) {
+	case *DataSubjectRequestTransaction:
+		return "DSR_FULFILLMENT", map[string]interface{}{
+			"request_tx_id": v.ID,
+			"subject":       v.SubjectQuid,
+			"request_type":  v.RequestType,
+			"jurisdiction":  v.Jurisdiction,
+			"phase":         "received",
+		}, "DSR request admitted"
+	case *ConsentGrantTransaction:
+		return "DSR_FULFILLMENT", map[string]interface{}{
+			"event":         "consent_grant",
+			"grant_tx_id":   v.ID,
+			"subject":       v.SubjectQuid,
+			"controller":    v.ControllerQuid,
+			"scope":         v.Scope,
+			"policy_hash":   v.PolicyHash,
+		}, "consent grant admitted"
+	case *ConsentWithdrawTransaction:
+		return "DSR_FULFILLMENT", map[string]interface{}{
+			"event":                "consent_withdraw",
+			"withdraw_tx_id":       v.ID,
+			"subject":              v.SubjectQuid,
+			"withdraws_grant_tx_id": v.WithdrawsGrantTxID,
+		}, "consent withdraw admitted"
+	case *ProcessingRestrictionTransaction:
+		return "DSR_FULFILLMENT", map[string]interface{}{
+			"event":            "processing_restriction",
+			"restriction_tx_id": v.ID,
+			"subject":          v.SubjectQuid,
+			"restricted_uses":  v.RestrictedUses,
+		}, "processing restriction admitted"
+	case *DSRComplianceTransaction:
+		return "DSR_FULFILLMENT", map[string]interface{}{
+			"event":             "dsr_compliance",
+			"compliance_tx_id":  v.ID,
+			"request_tx_id":     v.RequestTxID,
+			"operator":          v.OperatorQuid,
+			"request_type":      v.RequestType,
+			"completed_at":      v.CompletedAt,
+			"actions_category":  v.ActionsCategory,
+			"carve_outs_applied": v.CarveOutsApplied,
+		}, "DSR compliance record published"
+	}
+	return "", nil, ""
 }
 
 // privacyActorKeys pulls (quid, domain) out of a privacy tx

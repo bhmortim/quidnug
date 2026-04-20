@@ -2,7 +2,7 @@
 
 | Field      | Value                                                            |
 |------------|------------------------------------------------------------------|
-| Status     | Draft — design only                                              |
+| Status     | Phase 1 landed — audit log + query endpoints + automatic emission; Phases 3-6 pending |
 | Track      | Protocol + ops                                                   |
 | Author     | The Quidnug Authors                                              |
 | Created    | 2026-04-20                                                       |

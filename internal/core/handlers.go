@@ -57,6 +57,11 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/moderation/actions", node.CreateModerationActionHandler).Methods("POST")
 	router.HandleFunc("/moderation/actions/{targetType}/{targetId}", node.GetModerationActionsHandler).Methods("GET")
 
+	// QDP-0018 operator audit log.
+	router.HandleFunc("/audit/head", node.AuditHeadHandler).Methods("GET")
+	router.HandleFunc("/audit/entries", node.AuditEntriesHandler).Methods("GET")
+	router.HandleFunc("/audit/entry/{sequence}", node.AuditEntryHandler).Methods("GET")
+
 	// QDP-0017 data subject rights / privacy.
 	router.HandleFunc("/privacy/dsr", node.CreateDSRHandler).Methods("POST")
 	router.HandleFunc("/privacy/dsr/{requestTxId}", node.GetDSRStatusHandler).Methods("GET")
