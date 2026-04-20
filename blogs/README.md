@@ -9,6 +9,7 @@ opinionated. References are footnoted with primary sources.
 | Date | Title | Tags |
 |------|-------|------|
 | 2026-04-20 | [Proof of Trust vs Nakamoto, BFT, FBA, and DAG Consensus](2026-04-20-proof-of-trust-vs-consensus-mechanisms.md) | consensus, cryptography, comparative-analysis, theory |
+| 2026-04-20 | [Relativistic Ratings: The End of Review Spam and the Social Science of Personal Reputation](2026-04-20-relativistic-ratings-end-of-review-spam.md) | reviews, reputation, social-science, visualization, QRP-0001 |
 
 ## Style guide for contributors
 
