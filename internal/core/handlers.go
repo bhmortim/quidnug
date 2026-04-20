@@ -850,14 +850,24 @@ func (node *QuidnugNode) GetEventStreamHandler(w http.ResponseWriter, r *http.Re
 	WriteSuccess(w, stream)
 }
 
-// GetStreamEventsHandler returns paginated events for a stream
+// GetStreamEventsHandler returns paginated events for a stream.
+//
+// QDP-0022: events whose payload contains an `expiresAt` field
+// (Unix nanoseconds) in the past are hidden from the default
+// response. Pass `?include_expired=true` to bypass the filter
+// — useful for audit tooling or incident forensics, not for
+// application traffic.
 func (node *QuidnugNode) GetStreamEventsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	subjectID := vars["subjectId"]
 
 	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
+	includeExpired := r.URL.Query().Get("include_expired") == "true"
 
 	events, total := node.GetStreamEvents(subjectID, params.Limit, params.Offset)
+	if !includeExpired {
+		events = FilterExpiredEvents(events)
+	}
 
 	WriteSuccess(w, map[string]interface{}{
 		"data": events,

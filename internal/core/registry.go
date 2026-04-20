@@ -310,6 +310,16 @@ func (node *QuidnugNode) updateTrustRegistry(tx TrustTransaction) {
 	}
 	node.TrustNonceRegistry[tx.Truster][tx.Trustee] = tx.Nonce
 
+	// QDP-0022: record ValidUntil (TTL) for this edge. Zero
+	// means no expiry; a fresh non-zero value replaces any
+	// prior expiry for the same edge (handles renewals).
+	if node.TrustExpiryRegistry != nil {
+		if _, exists := node.TrustExpiryRegistry[tx.Truster]; !exists {
+			node.TrustExpiryRegistry[tx.Truster] = make(map[string]int64)
+		}
+		node.TrustExpiryRegistry[tx.Truster][tx.Trustee] = tx.ValidUntil
+	}
+
 	// Invalidate trust cache since trust graph has changed
 	if node.TrustCache != nil {
 		node.TrustCache.Invalidate()
@@ -353,7 +363,9 @@ func (node *QuidnugNode) updateTitleRegistry(tx TitleTransaction) {
 	logger.Debug("Updated title registry", "assetId", tx.AssetID, "ownerCount", len(tx.Owners))
 }
 
-// GetTrustLevel returns the trust level between two quids
+// GetTrustLevel returns the trust level between two quids.
+// Returns 0 if the edge has expired (QDP-0022): an expired edge
+// is indistinguishable from "no trust" at query time.
 func (node *QuidnugNode) GetTrustLevel(truster, trustee string) float64 {
 	node.TrustRegistryMutex.RLock()
 	defer node.TrustRegistryMutex.RUnlock()
@@ -361,6 +373,10 @@ func (node *QuidnugNode) GetTrustLevel(truster, trustee string) float64 {
 	// Check if truster has a trust relationship with trustee
 	if trustMap, exists := node.TrustRegistry[truster]; exists {
 		if trustLevel, found := trustMap[trustee]; found {
+			// QDP-0022: skip expired edges.
+			if !node.isTrustEdgeValidLocked(truster, trustee) {
+				return 0.0
+			}
 			return trustLevel
 		}
 	}
@@ -369,7 +385,9 @@ func (node *QuidnugNode) GetTrustLevel(truster, trustee string) float64 {
 	return 0.0
 }
 
-// GetDirectTrustees returns all quids directly trusted by a given quid
+// GetDirectTrustees returns all quids directly trusted by a given
+// quid. Edges whose ValidUntil has passed (QDP-0022) are filtered
+// out so that downstream trust computation naturally ignores them.
 func (node *QuidnugNode) GetDirectTrustees(quidID string) map[string]float64 {
 	node.TrustRegistryMutex.RLock()
 	defer node.TrustRegistryMutex.RUnlock()
@@ -377,6 +395,10 @@ func (node *QuidnugNode) GetDirectTrustees(quidID string) map[string]float64 {
 	result := make(map[string]float64)
 	if trustMap, exists := node.TrustRegistry[quidID]; exists {
 		for trustee, level := range trustMap {
+			// QDP-0022: skip expired edges.
+			if !node.isTrustEdgeValidLocked(quidID, trustee) {
+				continue
+			}
 			result[trustee] = level
 		}
 	}
@@ -590,6 +612,28 @@ func (node *QuidnugNode) GetStreamEvents(subjectID string, limit, offset int) ([
 	return result, total
 }
 
+// FilterExpiredEvents returns a new slice containing only those
+// events whose payload either has no `expiresAt` field or whose
+// `expiresAt` is still in the future. The chain itself is not
+// mutated — this is a read-side filter used by the HTTP serving
+// layer to honor QDP-0022 event-payload TTLs without breaking
+// the append-only guarantees of the underlying ledger.
+//
+// Preserves input order.
+func FilterExpiredEvents(events []EventTransaction) []EventTransaction {
+	if len(events) == 0 {
+		return events
+	}
+	out := make([]EventTransaction, 0, len(events))
+	for _, ev := range events {
+		if IsEventPayloadExpired(ev.Payload) {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
 // GetEventByID searches for an event by its ID across all streams
 func (node *QuidnugNode) GetEventByID(eventID string) (*EventTransaction, bool) {
 	node.EventStreamMutex.RLock()
@@ -724,7 +768,10 @@ func (node *QuidnugNode) DemoteTrustEdge(truster, trustee string) {
 		"trustee", trustee)
 }
 
-// GetTrustEdges returns trust edges for a quid, optionally including unverified
+// GetTrustEdges returns trust edges for a quid, optionally
+// including unverified. Expired edges (QDP-0022) are filtered
+// out of both the verified and unverified views so that
+// downstream trust computation naturally skips them.
 func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) map[string]TrustEdge {
 	result := make(map[string]TrustEdge)
 
@@ -732,6 +779,10 @@ func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) ma
 	node.TrustRegistryMutex.RLock()
 	if trusterEdges, exists := node.VerifiedTrustEdges[quidID]; exists {
 		for trustee, edge := range trusterEdges {
+			// QDP-0022: skip expired edges.
+			if !node.isTrustEdgeValidLocked(quidID, trustee) {
+				continue
+			}
 			result[trustee] = edge
 		}
 	}
@@ -743,6 +794,13 @@ func (node *QuidnugNode) GetTrustEdges(quidID string, includeUnverified bool) ma
 		if trusterEdges, exists := node.UnverifiedTrustRegistry[quidID]; exists {
 			for trustee, edge := range trusterEdges {
 				if _, hasVerified := result[trustee]; !hasVerified {
+					// QDP-0022: the expiry registry is keyed by
+					// the same (truster, trustee) tuple regardless
+					// of the verified/unverified distinction, so
+					// this re-uses the same check.
+					if !node.IsTrustEdgeValid(quidID, trustee) {
+						continue
+					}
 					result[trustee] = edge
 				}
 			}

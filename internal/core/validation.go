@@ -60,6 +60,22 @@ func (node *QuidnugNode) ValidateTrustTransaction(tx TrustTransaction) bool {
 		return false
 	}
 
+	// QDP-0022: reject edges that are already expired at
+	// submission time. `ValidUntil == 0` means no expiry.
+	// Otherwise it must be strictly in the future relative
+	// to the tx timestamp (or now if unset).
+	if tx.ValidUntil != 0 {
+		refTime := tx.Timestamp
+		if refTime == 0 {
+			refTime = nowUnix()
+		}
+		if tx.ValidUntil <= refTime {
+			logger.Warn("Trust transaction already expired at submission",
+				"validUntil", tx.ValidUntil, "refTime", refTime, "txId", tx.ID)
+			return false
+		}
+	}
+
 	// Validate quid ID formats
 	if tx.Truster != "" && !IsValidQuidID(tx.Truster) {
 		logger.Warn("Invalid truster quid ID format", "truster", tx.Truster, "txId", tx.ID)

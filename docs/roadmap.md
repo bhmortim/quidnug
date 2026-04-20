@@ -46,6 +46,7 @@ the live code:
 | 0019 | Reputation Decay & Time-Weighted Trust | Draft — two-layer decay (edge-level exponential + quid dormancy), observer-configurable per-domain, passive re-endorsement detection |
 | 0020 | Protocol Versioning & Deprecation | Draft — SemVer-based protocol version, capability negotiation, 18-month deprecation timeline, release workflow |
 | 0021 | Blind Signatures for Anonymous Ballot Issuance | Draft — RSA-FDH-3072 auxiliary scheme, `BLIND_KEY_ATTESTATION` event, ballot-proof extension to TRUST tx, governance-bound RSA key, end-to-end universal verifiability. Unblocks the elections use case's ballot-anonymity requirement. |
+| 0022 | Timed Trust & TTL Semantics | **Landed** — `ValidUntil` enforcement on TRUST edges + `expiresAt` on EventTransaction payloads; parallel `TrustExpiryRegistry` on node; submission-time rejection of already-expired edges; graph-walk filter in `GetTrustLevel` / `GetDirectTrustees` / `GetTrustEdges`; `FilterExpiredEvents` + `?include_expired=true` on the stream-events endpoint; test-friendly clock override. Unblocks QDP-0017 consent expiry. |
 
 ### Client SDKs (done)
 

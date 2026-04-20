@@ -87,6 +87,11 @@ type QuidnugNode struct {
 	// State registries
 	TrustRegistry      map[string]map[string]float64
 	TrustNonceRegistry map[string]map[string]int64
+	// TrustExpiryRegistry tracks the TRUST edge's ValidUntil
+	// timestamp (Unix seconds). Zero means no expiry.
+	// Guarded by the same TrustRegistryMutex as TrustRegistry.
+	// See QDP-0022.
+	TrustExpiryRegistry map[string]map[string]int64
 	IdentityRegistry   map[string]IdentityTransaction
 	TitleRegistry      map[string]TitleTransaction
 
@@ -406,6 +411,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		KnownNodes:                make(map[string]Node),
 		TrustRegistry:             make(map[string]map[string]float64),
 		TrustNonceRegistry:        make(map[string]map[string]int64),
+		TrustExpiryRegistry:       make(map[string]map[string]int64),
 		IdentityRegistry:          make(map[string]IdentityTransaction),
 		TitleRegistry:             make(map[string]TitleTransaction),
 		EventStreamRegistry:       make(map[string]*EventStream),
