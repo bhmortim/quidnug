@@ -73,6 +73,13 @@ const (
 	// TxTypeAuthorityDelegateRevocation revokes a prior
 	// AUTHORITY_DELEGATE.
 	TxTypeAuthorityDelegateRevocation TransactionType = "AUTHORITY_DELEGATE_REVOCATION"
+	// TxTypeBlindKeyAttestation (QDP-0021) binds an RSA
+	// blind-signature public key to an ECDSA governance
+	// identity for a specific election / ballot issuance
+	// window. Voters' ballot proofs reference the fingerprint
+	// on this event to identify which RSA key they were
+	// issued under.
+	TxTypeBlindKeyAttestation TransactionType = "BLIND_KEY_ATTESTATION"
 )
 
 // Trust computation resource limits
@@ -343,6 +350,59 @@ type AuthorityDelegateTransaction struct {
 	EffectiveAt     int64                `json:"effectiveAt,omitempty"` // Unix ns
 	ValidUntil      int64                `json:"validUntil,omitempty"`  // Unix ns
 	Nonce           int64                `json:"nonce"`
+}
+
+// ---------------------------------------------------------------
+// QDP-0021: blind-signature ballot issuance (Phase 1)
+// ---------------------------------------------------------------
+
+// BlindKeyAttestationTransaction binds an RSA-FDH blind-
+// signature public key to an ECDSA governance identity. The
+// attestation is signed by the governance quid; the RSA key
+// fingerprint is the SHA-256 of the canonical (n, e) bytes
+// per `pkg/crypto/blindrsa.PublicKeyFingerprint`.
+//
+// Each election / issuance window uses one RSA key. Voters'
+// TRUST transactions (votes) embed a `ballotProof` field
+// referencing this fingerprint + the unblinded signature
+// over their ballot token.
+type BlindKeyAttestationTransaction struct {
+	BaseTransaction
+	// ElectionID — opaque identifier (domain name, UUID,
+	// year+jurisdiction, etc.) naming the election this key
+	// is scoped to.
+	ElectionID string `json:"electionId"`
+	// AuthorityQuid — the governance quid that owns this key
+	// (matches tx.PublicKey's derived quid).
+	AuthorityQuid string `json:"authorityQuid"`
+	// RSAPublicKeyNHex — RSA modulus n as lowercase hex.
+	RSAPublicKeyNHex string `json:"rsaPublicKeyNHex"`
+	// RSAPublicKeyE — RSA public exponent (typically 65537).
+	RSAPublicKeyE int `json:"rsaPublicKeyE"`
+	// RSAKeyFingerprint — SHA-256 of canonical (n, e) per
+	// `pkg/crypto/blindrsa.PublicKeyFingerprint`.
+	RSAKeyFingerprint string `json:"rsaKeyFingerprint"`
+	// ValidFrom / ValidUntil — issuance window in Unix ns.
+	ValidFrom  int64 `json:"validFrom"`
+	ValidUntil int64 `json:"validUntil"`
+	// Nonce — monotonic per authority.
+	Nonce int64 `json:"nonce"`
+}
+
+// BallotProof is the cryptographic receipt a voter embeds in
+// their TRUST transaction (vote) so verifiers can confirm the
+// vote was authorized by the election authority without the
+// authority knowing which voter the ballot was issued to.
+//
+// This struct is NOT a tx type of its own — it rides inside
+// TrustTransaction.BallotProof (a pending extension to the
+// TRUST struct).
+type BallotProof struct {
+	ElectionID        string `json:"electionId"`
+	BallotToken       string `json:"ballotToken"`       // 32-byte hex
+	BlindSignature    string `json:"blindSignature"`    // hex-encoded RSA signature
+	RSAKeyFingerprint string `json:"rsaKeyFingerprint"` // references a BLIND_KEY_ATTESTATION
+	BQEphemeralPubkey string `json:"bqEphemeralPubkey,omitempty"`
 }
 
 // AuthorityDelegateRevocationTransaction revokes a prior
