@@ -69,24 +69,36 @@ public sealed class Quid : IDisposable
         return new Quid(ecdsa, false, id, pubHex, null);
     }
 
-    /// <summary>Sign data. Returns hex-encoded DER signature.</summary>
+    /// <summary>
+    /// Sign data.
+    ///
+    /// v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+    /// raw signature (<c>r||s</c>, each zero-padded to 32 bytes).
+    /// Matches the reference node's <c>VerifySignature</c>.
+    ///
+    /// .NET's <c>ECDsa.SignHash</c> produces IEEE-1363 natively,
+    /// so no encoding conversion is required.
+    /// </summary>
     public string Sign(ReadOnlySpan<byte> data)
     {
         if (!_hasPrivate) throw new InvalidOperationException("quid is read-only");
         byte[] digest = SHA256.HashData(data);
         byte[] ieee = _key.SignHash(digest);
-        // Convert IEEE P1363 r||s (64 bytes) to DER.
-        byte[] der = Ieee1363ToDer(ieee);
-        return ToHex(der);
+        return ToHex(ieee);
     }
 
-    /// <summary>Verify a hex-encoded DER signature.</summary>
+    /// <summary>
+    /// Verify a hex-encoded IEEE-1363 raw 64-byte signature.
+    ///
+    /// v1.0 canonical form: expects exactly 64 bytes.
+    /// Anything else is rejected.
+    /// </summary>
     public bool Verify(ReadOnlySpan<byte> data, string sigHex)
     {
         try
         {
-            byte[] der = FromHex(sigHex);
-            byte[] ieee = DerToIeee1363(der);
+            byte[] ieee = FromHex(sigHex);
+            if (ieee.Length != 64) return false;
             byte[] digest = SHA256.HashData(data);
             return _key.VerifyHash(digest, ieee);
         }
@@ -94,6 +106,41 @@ public sealed class Quid : IDisposable
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Reconstruct a Quid from a raw private scalar in hex.
+    ///
+    /// Used primarily by v1.0 test vectors which check in
+    /// deterministic keys as raw scalars rather than PKCS8 DER.
+    /// </summary>
+    public static Quid FromPrivateScalarHex(string scalarHex)
+    {
+        byte[] d = FromHex(scalarHex);
+        if (d.Length > 32) throw new ArgumentException("scalar must be <= 32 bytes");
+        byte[] padded = new byte[32];
+        Buffer.BlockCopy(d, 0, padded, 32 - d.Length, d.Length);
+        var parameters = new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            D = padded,
+        };
+        var ecdsa = ECDsa.Create(parameters);
+        var p = ecdsa.ExportParameters(includePrivateParameters: false);
+        byte[] sec1 = ExportSec1Uncompressed(p);
+        string id = QuidIdOf(sec1);
+        string privHex = ToHex(padded);
+        // Re-import with both D + Q so the resulting key has
+        // full Q populated for signing + verification.
+        ecdsa.Dispose();
+        parameters = new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            D = padded,
+            Q = p.Q,
+        };
+        var ecdsa2 = ECDsa.Create(parameters);
+        return new Quid(ecdsa2, true, id, ToHex(sec1), privHex);
     }
 
     public void Dispose() => _key.Dispose();

@@ -120,24 +120,168 @@ public final class Quid {
     public String privateKeyHex() { return privateKeyHex; }
     public boolean hasPrivateKey() { return privateKey != null; }
 
-    /** Sign data. Returns hex-encoded DER ECDSA signature. */
+    /**
+     * Sign data.
+     *
+     * v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+     * raw signature ({@code r||s}, each zero-padded to 32 bytes).
+     *
+     * Java's default {@code SHA256withECDSA} signer returns DER;
+     * we convert to IEEE-1363 before encoding. Matches the Go
+     * reference node's {@code VerifySignature} expectation.
+     */
     public String sign(byte[] data) throws GeneralSecurityException {
         if (privateKey == null) throw new IllegalStateException("quid is read-only");
         Signature s = Signature.getInstance("SHA256withECDSA");
         s.initSign(privateKey);
         s.update(data);
-        return Hex.encode(s.sign());
+        byte[] der = s.sign();
+        byte[] ieee = derToIeee1363(der);
+        return Hex.encode(ieee);
     }
 
-    /** Verify a hex-encoded DER signature. */
+    /**
+     * Verify a hex-encoded IEEE-1363 raw 64-byte signature.
+     *
+     * v1.0 canonical form: expects exactly 64 bytes (32 for r,
+     * 32 for s). Anything else is rejected.
+     */
     public boolean verify(byte[] data, String sigHex) {
         try {
+            byte[] ieee = Hex.decode(sigHex);
+            if (ieee.length != 64) return false;
+            byte[] der = ieee1363ToDer(ieee);
             Signature s = Signature.getInstance("SHA256withECDSA");
             s.initVerify(publicKey);
             s.update(data);
-            return s.verify(Hex.decode(sigHex));
+            return s.verify(der);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Convert an ECDSA DER signature to the IEEE-1363 raw 64-byte
+     * form ({@code r||s}, each padded to 32 bytes).
+     *
+     * DER structure:
+     * {@code 30 <total_len> 02 <r_len> <r_bytes> 02 <s_len> <s_bytes>}
+     *
+     * Public so sibling modules (notably the Android keystore
+     * signer) can reuse without duplicating the ASN.1 parser.
+     */
+    public static byte[] derToIeee1363Sig(byte[] der) {
+        return derToIeee1363(der);
+    }
+
+    private static byte[] derToIeee1363(byte[] der) {
+        if (der.length < 8 || der[0] != 0x30) {
+            throw new IllegalArgumentException("not a DER ECDSA signature");
+        }
+        int pos = 2;
+        // Handle long-form length on outer SEQUENCE (uncommon at 32+32
+        // but defensive).
+        if ((der[1] & 0x80) != 0) {
+            int lenBytes = der[1] & 0x7f;
+            pos = 2 + lenBytes;
+        }
+        if (der[pos] != 0x02) throw new IllegalArgumentException("expected INTEGER (r)");
+        int rLen = der[pos + 1] & 0xff;
+        byte[] rBytes = Arrays.copyOfRange(der, pos + 2, pos + 2 + rLen);
+        pos = pos + 2 + rLen;
+
+        if (der[pos] != 0x02) throw new IllegalArgumentException("expected INTEGER (s)");
+        int sLen = der[pos + 1] & 0xff;
+        byte[] sBytes = Arrays.copyOfRange(der, pos + 2, pos + 2 + sLen);
+
+        // Strip leading zero-pad byte if the DER INTEGER had a sign
+        // disambiguator (high bit of MSB set).
+        if (rBytes.length > 32 && rBytes[0] == 0) {
+            rBytes = Arrays.copyOfRange(rBytes, 1, rBytes.length);
+        }
+        if (sBytes.length > 32 && sBytes[0] == 0) {
+            sBytes = Arrays.copyOfRange(sBytes, 1, sBytes.length);
+        }
+
+        byte[] out = new byte[64];
+        System.arraycopy(rBytes, 0, out, 32 - rBytes.length, rBytes.length);
+        System.arraycopy(sBytes, 0, out, 64 - sBytes.length, sBytes.length);
+        return out;
+    }
+
+    /**
+     * Convert an IEEE-1363 raw 64-byte signature to the DER form
+     * Java's {@code SHA256withECDSA.verify} expects.
+     *
+     * DER structure:
+     * {@code 30 <total_len> 02 <r_len> <r_bytes> 02 <s_len> <s_bytes>}
+     * where r_bytes and s_bytes use the minimum number of octets
+     * with a leading zero-pad when the MSB has the high bit set
+     * (DER signedness rule).
+     */
+    private static byte[] ieee1363ToDer(byte[] ieee) {
+        if (ieee.length != 64) {
+            throw new IllegalArgumentException("expected 64-byte IEEE-1363");
+        }
+        byte[] r = trimLeadingZeros(Arrays.copyOfRange(ieee, 0, 32));
+        byte[] s = trimLeadingZeros(Arrays.copyOfRange(ieee, 32, 64));
+        // Add leading zero if high bit is set (DER signedness).
+        if ((r[0] & 0x80) != 0) {
+            byte[] padded = new byte[r.length + 1];
+            System.arraycopy(r, 0, padded, 1, r.length);
+            r = padded;
+        }
+        if ((s[0] & 0x80) != 0) {
+            byte[] padded = new byte[s.length + 1];
+            System.arraycopy(s, 0, padded, 1, s.length);
+            s = padded;
+        }
+        int totalLen = 2 + r.length + 2 + s.length;
+        byte[] der = new byte[2 + totalLen];
+        der[0] = 0x30;
+        der[1] = (byte) totalLen;
+        der[2] = 0x02;
+        der[3] = (byte) r.length;
+        System.arraycopy(r, 0, der, 4, r.length);
+        der[4 + r.length] = 0x02;
+        der[5 + r.length] = (byte) s.length;
+        System.arraycopy(s, 0, der, 6 + r.length, s.length);
+        return der;
+    }
+
+    private static byte[] trimLeadingZeros(byte[] b) {
+        int i = 0;
+        while (i < b.length - 1 && b[i] == 0) i++;
+        return Arrays.copyOfRange(b, i, b.length);
+    }
+
+    /**
+     * Reconstruct a Quid from a raw private scalar in hex.
+     *
+     * Used primarily by v1.0 test vectors which check in
+     * deterministic keys as raw scalars rather than PKCS8 DER.
+     * For production keys, use {@link #fromPrivateHex} with the
+     * PKCS8-encoded key.
+     */
+    public static Quid fromPrivateScalarHex(String scalarHex) {
+        try {
+            BigInteger d = new BigInteger(scalarHex, 16);
+            ECNamedCurveParameterSpec bcSpec = ECNamedCurveTable.getParameterSpec("P-256");
+
+            // Build the BC private key via scalar.
+            org.bouncycastle.jce.spec.ECPrivateKeySpec bcSkSpec =
+                    new org.bouncycastle.jce.spec.ECPrivateKeySpec(d, bcSpec);
+            KeyFactory kf = KeyFactory.getInstance("EC", "BC");
+            PrivateKey sk = kf.generatePrivate(bcSkSpec);
+
+            // Derive public key from scalar.
+            org.bouncycastle.math.ec.ECPoint q = bcSpec.getG().multiply(d).normalize();
+            ECPublicKeySpec pubSpec = new ECPublicKeySpec(q, bcSpec);
+            PublicKey pk = kf.generatePublic(pubSpec);
+
+            return fromKeyPair(sk, pk);
+        } catch (Exception e) {
+            throw new RuntimeException("fromPrivateScalarHex: " + e.getMessage(), e);
         }
     }
 

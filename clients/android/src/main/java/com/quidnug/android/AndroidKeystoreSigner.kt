@@ -4,6 +4,7 @@ import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import com.quidnug.client.Hex
+import com.quidnug.client.Quid
 import com.quidnug.client.QuidnugException
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -57,8 +58,13 @@ class AndroidKeystoreSigner private constructor(
     val publicKeyHex: String by lazy { Hex.encode(publicKeyBytes) }
 
     /**
-     * Sign canonical bytes. Returns hex-encoded DER signature — the
-     * same format used everywhere else in the SDK.
+     * Sign canonical bytes.
+     *
+     * v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+     * raw signature (r||s, each zero-padded to 32 bytes). The
+     * Android keystore's `Signature.getInstance("SHA256withECDSA")`
+     * returns DER, which we convert via the shared helper in the
+     * Java SDK (`Quid.derToIeee1363Sig`).
      *
      * @throws QuidnugException.CryptoException if the keystore refuses
      *   to sign (e.g. biometric auth timeout on a require-auth key).
@@ -68,7 +74,9 @@ class AndroidKeystoreSigner private constructor(
             val signature = Signature.getInstance("SHA256withECDSA")
             signature.initSign(privateKey)
             signature.update(data)
-            return Hex.encode(signature.sign())
+            val der = signature.sign()
+            val ieee = Quid.derToIeee1363Sig(der)
+            return Hex.encode(ieee)
         } catch (e: Exception) {
             throw QuidnugException.CryptoException("keystore sign failed: ${e.message}")
         }

@@ -35,18 +35,46 @@ public struct Quid: Sendable {
 
     public var hasPrivateKey: Bool { privateKey != nil }
 
-    /// Sign data. Returns hex-encoded DER signature.
+    /// Sign data.
+    ///
+    /// v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+    /// raw signature (`r||s`, each zero-padded to 32 bytes). This
+    /// matches the reference node's `VerifySignature` expectation.
+    ///
+    /// CryptoKit's `ECDSASignature.rawRepresentation` is the
+    /// IEEE-1363 form; `derRepresentation` would be DER-encoded.
     public func sign(_ data: Data) throws -> String {
         guard let sk = privateKey else { throw QuidnugError.readOnly }
         let sig = try sk.signature(for: data)
-        return Hex.encode(sig.derRepresentation)
+        return Hex.encode(sig.rawRepresentation)
     }
 
-    /// Verify a hex-encoded DER signature.
+    /// Verify a hex-encoded IEEE-1363 raw 64-byte signature.
+    ///
+    /// v1.0 canonical form: expects exactly 64 bytes.
+    /// Anything else is rejected.
     public func verify(_ data: Data, sigHex: String) -> Bool {
         guard let sigBytes = try? Hex.decode(sigHex) else { return false }
-        guard let sig = try? P256.Signing.ECDSASignature(derRepresentation: sigBytes) else { return false }
+        guard sigBytes.count == 64 else { return false }
+        guard let sig = try? P256.Signing.ECDSASignature(rawRepresentation: sigBytes) else { return false }
         return publicKey.isValidSignature(sig, for: data)
+    }
+
+    /// Reconstruct a Quid from a raw private scalar in hex.
+    ///
+    /// Used by v1.0 test vectors, which check in deterministic
+    /// keys as raw scalars. For production keys, use
+    /// ``fromPrivateHex`` with the PKCS8-encoded form.
+    public static func fromPrivateScalarHex(_ hex: String) throws -> Quid {
+        let scalar = try Hex.decode(hex)
+        guard scalar.count <= 32 else {
+            throw QuidnugError.validation("private scalar must be <= 32 bytes")
+        }
+        // Left-pad to 32 bytes.
+        var padded = Data(count: 32)
+        padded.replaceSubrange((32 - scalar.count)..<32, with: scalar)
+        let sk = try P256.Signing.PrivateKey(rawRepresentation: padded)
+        return from(sk: sk)
     }
 
     // --- Helpers -----------------------------------------------------------

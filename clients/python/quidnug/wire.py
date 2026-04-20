@@ -56,19 +56,49 @@ def _emit_signable(fields: Sequence[Tuple[str, Any, bool]]) -> bytes:
     when ``omitempty_flag`` is True and the value is zero/empty
     (matching Go's ``omitempty`` semantics).
 
+    Float values are serialized the way Go's ``encoding/json``
+    does: integer-valued finite floats drop the trailing ``.0``
+    so ``1.0`` emits as ``"1"``. Python's default
+    ``json.dumps(1.0)`` returns ``"1.0"``, which diverges.
+
     Returns UTF-8 bytes of the compact JSON representation.
     """
     d: Dict[str, Any] = {}
     for key, value, omitempty in fields:
         if omitempty and _is_zero(value):
             continue
-        d[key] = value
+        d[key] = _go_compat_value(value)
     return json.dumps(
         d,
         separators=(",", ":"),
         sort_keys=False,
         ensure_ascii=False,
     ).encode("utf-8")
+
+
+def _go_compat_value(v: Any) -> Any:
+    """Normalize a value to match Go's ``encoding/json`` output.
+
+    The one divergence that matters today is float: Go emits
+    ``float64(1.0)`` as ``"1"``, Python emits it as ``"1.0"``.
+    For integer-valued finite floats in int64 range we cast to
+    int so Python's JSON encoder emits the integer form.
+
+    Strings, ints, bools, None, and non-integer floats pass
+    through unchanged. Dicts and lists recurse.
+    """
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, float):
+        if v == v and v != float("inf") and v != float("-inf"):
+            if v == int(v) and abs(v) < 1e15:
+                return int(v)
+        return v
+    if isinstance(v, dict):
+        return {k: _go_compat_value(sub) for k, sub in v.items()}
+    if isinstance(v, list):
+        return [_go_compat_value(x) for x in v]
+    return v
 
 
 def _is_zero(v: Any) -> bool:
@@ -93,10 +123,15 @@ def _sha256_hex(data: bytes) -> str:
 def _seed_id(fields: Sequence[Tuple[str, Any]]) -> str:
     """Hash a Go-struct-ordered JSON of ``fields`` (key, value)
     pairs. Matches ``AddXxxTransaction``'s ID-derivation seed
-    format in ``internal/core/transactions.go``."""
+    format in ``internal/core/transactions.go``.
+
+    Applies the same Go-compat float normalization as
+    ``_emit_signable`` so IDs match across SDKs for
+    integer-valued float fields (e.g., ``trust_level == 1.0``).
+    """
     # Capitalized keys because the Go seed struct uses Go field
     # names (no json tags).
-    d: Dict[str, Any] = {k: v for k, v in fields}
+    d: Dict[str, Any] = {k: _go_compat_value(v) for k, v in fields}
     payload = json.dumps(
         d,
         separators=(",", ":"),

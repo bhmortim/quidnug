@@ -132,8 +132,11 @@ async function signWithQuid(quid, canonicalBytes) {
         "pkcs8", privDER, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
     const ieee = new Uint8Array(await crypto.subtle.sign(
         { name: "ECDSA", hash: "SHA-256" }, key, canonicalBytes));
-    // Convert IEEE r||s to DER
-    return bytesToHex(ieeeToDer(ieee));
+    // v1.0 canonical form: return 64-byte IEEE-1363 raw (r||s) hex.
+    // WebCrypto's ECDSA sign returns this format natively, so no
+    // encoding conversion is required. The previous DER conversion
+    // produced signatures incompatible with the reference node.
+    return bytesToHex(ieee);
 }
 
 function hexToBytes(hex) {

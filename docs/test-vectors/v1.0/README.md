@@ -180,77 +180,105 @@ canonical form.
 
 ## Conformance status
 
-### `internal/core` reference node — conformant
+All eight crypto-bearing SDKs have been migrated to v1.0
+canonical form in lockstep with the vector harness.
 
-`internal/core/vectors_test.go` passes all 24 cases across 7
-files. All conformance properties hold for every transaction
-type using the reference node's own serialization +
-signature-verification code paths.
+| SDK | Signing path | Vector tests | Verified locally |
+|---|---|---|---|
+| `internal/core` (Go reference) | authoritative | 24/24 PASS | yes |
+| `pkg/client` (Go SDK) | typed-mirror + IEEE-1363 | 24/24 PASS | yes |
+| `clients/python` | `quidnug.wire` typed dataclasses + IEEE-1363 | 24/24 PASS + 4 wire tests | yes |
+| `clients/rust` | typed `wire.rs` + IEEE-1363 + Go-compat float serializer | 3 tests (TRUST + IDENTITY + smoke) PASS | yes |
+| `clients/js` | `v1-wire.js` + WebCrypto IEEE-1363 | 5 tests PASS | yes |
+| `clients/java` | `Quid.sign` DER→IEEE-1363 + `VectorsTest` | 11 vector tests + 21 existing = 32/32 PASS | yes |
+| `clients/dotnet` | `Quid.Sign` now returns IEEE-1363 natively + `VectorsTests.cs` | pending CI (runtime broken locally) | compile-verified only |
+| `clients/swift` | `sig.rawRepresentation` + `VectorsTests.swift` | pending CI (Swift not on Windows) | code-review only |
+| `clients/android` | `AndroidKeystoreSigner.sign` uses `Quid.derToIeee1363Sig` | follows Java SDK | Java tests pass |
+| `clients/browser-extension` | `signWithQuid` returns IEEE-1363 directly + static regression probe | 3/3 PASS | yes |
 
-### `pkg/client` Go SDK — conformant
+### Remaining divergence probes (regression detectors)
 
-`pkg/client/crypto.go` converged to IEEE-1363 signatures in
-the same commit as the expanded vector harness. Submit paths
-for TRUST, IDENTITY, TITLE, EVENT use typed mirror structs in
-`pkg/client/types_wire.go` matching the server's field order
-exactly. `pkg/client/vectors_test.go` exercises all 24 cases
-via the SDK's public `(*Quid).Sign` / `(*Quid).Verify` /
-`QuidFromPublicHex` entry points — all pass.
-
-Two divergence-probe tests remain in place as regression
-detectors:
+Two tests remain in `pkg/client/vectors_test.go` to catch
+accidental rollback:
 
 - `TestPkgClientCanonicalBytesDivergesFromAuthoritative`:
-  `CanonicalBytes()` retains alphabetical ordering for
-  backward compat. It is no longer on the critical signing
-  path for any v1.0 submission; the probe documents the
-  retained legacy behavior.
+  `pkg/client.CanonicalBytes()` retains alphabetical
+  ordering for backward compat but is no longer on any v1.0
+  signing path (submission uses `types_wire.go` mirrors).
+  The probe documents the retained legacy behavior.
 - `TestPkgClientSignNowMatchesAuthoritative`: asserts that
   `(*Quid).Sign` produces valid 64-byte IEEE-1363
-  signatures that verify via an independent authoritative
-  verifier. Regression-detects any accidental rollback.
+  signatures that verify via an independent verifier.
 
-### `clients/python` Python vector consumer — conformant (via local helpers)
+Equivalent probes in `clients/python/tests/test_vectors.py`
+(`test_clients_python_sdk_sign_diverges_from_authoritative`,
+`test_clients_python_canonical_bytes_diverges_from_authoritative`)
+self-heal now that the SDK converged: they log
+"Divergence resolved" on the sign path and
+"retained legacy behavior" on the canonical-bytes path.
 
-`clients/python/tests/test_vectors.py` passes all 24
-conformance cases using local IEEE-1363 helpers that match
-the authoritative form (see the `sign_ieee1363` /
-`verify_ieee1363` functions in the test file).
+### Per-SDK notes
 
-### `clients/python/quidnug` Python SDK itself — still divergent
+**Go-compat float formatting.** Go's `encoding/json`
+serializes `float64(1.0)` as `"1"`; most other languages
+emit `"1.0"`. This matters for integer-valued floats on
+fields like TRUST's `trust_level` (e.g. the
+`trust_bob_to_alice_level_1.0_minimal_description` case).
 
-The SDK's public API (`quidnug.crypto.Quid.sign`,
-`canonical_bytes`) still produces DER signatures and
-alphabetical canonical bytes. Convergence of the Python SDK
-itself is a pending launch blocker analogous to
-`pkg/client`'s earlier state. The fix follows the same
-pattern:
+Per-language handling:
 
-- Migrate `quidnug.crypto.Quid.sign` to return 64-byte
-  IEEE-1363 (DER → raw r||s via `decode_dss_signature` then
-  zero-padded concat, identical to the pattern already used
-  in `examples/elections/clients/common/crypto.py`).
-- Migrate `quidnug.crypto.Quid.verify` to accept the same
-  format.
-- Add typed mirror dataclasses per tx type, replacing
-  map-based tx construction in `clients/python/quidnug/client.py`
-  submit paths.
+- **Go** (reference): native. No special case.
+- **Rust**: `wire.rs` installs `serialize_with =
+  "serialize_go_compat_f64"` on `trust_level` + seed
+  `TrustLevel`. Without it, serde_json emits `"1.0"`.
+- **Python**: `wire.py` applies `_go_compat_value()` in
+  both `_emit_signable` and `_seed_id`. Integer-valued
+  finite floats cast to int before `json.dumps`.
+- **JavaScript**: `JSON.stringify(1.0)` emits `"1"` natively
+  (JS has a single Number type). No special case needed.
+- **Java**: `VectorsTest.putGoCompatFloat()` and the
+  per-test-type seed builders cast integer-valued floats
+  to long before `JsonGenerator.writeNumberField`.
+- **.NET**: `VectorsTests.WriteGoCompatFloat()` does the
+  same cast before `Utf8JsonWriter.WriteNumber`.
+- **Swift**: `VectorsTests.goCompatFloat()` returns `Int`
+  for integer-valued `Double` so the hand-rolled JSON
+  writer emits the integer form.
 
-Two divergence probes in `test_vectors.py` document the SDK
-gap:
+If you add test vectors with non-integer floats (e.g.
+`trust_level: 0.123456789012345`), audit whether every
+SDK round-trips the value bit-for-bit. The current vector
+set uses values that round-trip cleanly under all reasonable
+float encoders.
 
-- `test_clients_python_sdk_sign_diverges_from_authoritative`
-- `test_clients_python_canonical_bytes_diverges_from_authoritative`
+**JS SDK dual-path.** The legacy `clients/js/quidnug-client.js`
+uses base64 keys + SPKI-derived quid IDs, incompatible with
+the v1.0 server. The conformant path is the new
+`clients/js/v1-wire.js` module exported at
+`@quidnug/client/v1-wire`. The legacy module is in
+quarantine pending full deprecation; new code should import
+`v1-wire`.
 
-Both self-heal: they log "converged!" and pass without
-assertion once the SDK migrates.
+**.NET verification pending.** The local dev environment at
+commit time had a broken .NET 9 runtime config, so
+`VectorsTests.cs` could not be executed locally. The file
+compiles in isolation (System.Text.Json + Xunit only);
+verification in CI is the next step.
 
-### `clients/js/` (JS/TS SDK) — consumer pending
+**Swift verification pending.** Swift isn't available on
+the author's dev box (Windows only), so `VectorsTests.swift`
+could not be executed locally. The file targets Swift 5.9+
++ CryptoKit + Foundation; verification in macOS/Linux CI is
+the next step. The `derRepresentation`→`rawRepresentation`
+swap is a well-understood one-line change per Apple's
+CryptoKit documentation.
 
-Known to use a different signing library; cross-check
-required before launch.
-
-### `clients/rust/` (Rust SDK)
+**Android verification via Java.** The Android SDK's
+`AndroidKeystoreSigner` wraps Java's `Signature.getInstance`
+which returns DER, then converts via the shared
+`Quid.derToIeee1363Sig` helper from the Java SDK. Tests in
+the Java module exercise the helper; Android-specific tests
+require an Android emulator or Instrumentation test harness.
 
 - Consumer pending. Known to use `p256` crate; signature
   encoding configuration requires verification.
