@@ -38,7 +38,10 @@ the live code:
 | 0011 | Client Libraries & Integrations roadmap | Landed (all four tiers shipped) |
 | 0012 | Domain Governance (cache replicas / consortium / governors) | Draft — design only, scheduled for Phase 1 implementation after public-network launch |
 | 0013 | Network Federation Model (one protocol, many networks) | Draft — mostly clarifies existing uniformity; new surface is `external_trust_sources` config + `TRUST_IMPORT` transaction |
-| 0014 | Node Discovery + Domain Sharding | Draft — new `NODE_ADVERTISEMENT` tx, discovery HTTP API, `.well-known/quidnug-network.json`, per-domain quid index, documented no-node participation mode |
+| 0014 | Node Discovery + Domain Sharding | **Landed** — `NODE_ADVERTISEMENT` tx + registry + expiry GC, five discovery endpoints, per-domain quid index, CLI + client SDK, signed `.well-known/quidnug-network.json` generator |
+| 0015 | Content Moderation & Takedowns | Draft — `MODERATION_ACTION` tx with suppress/hide/annotate scopes, reason-code taxonomy, federation-aware propagation, GDPR-compatible erasure via cryptographic shredding |
+| 0016 | Abuse Prevention & Resource Limits | Draft — five-layer rate limits (IP, quid, epoch, operator, domain), reputation-weighted graduation, progressive slowdown, proof-of-work challenges, sybil-resistance primitives |
+| 0017 | Data Subject Rights & Privacy | Draft — `DATA_SUBJECT_REQUEST`, `CONSENT_GRANT/WITHDRAW`, `PROCESSING_RESTRICTION` tx types + operator DSR workflow + pseudonymity-by-default config |
 
 ### Client SDKs (done)
 
@@ -99,6 +102,28 @@ Tier-3 domain integrations are shipped:
 
 The remaining scaffolds + roadmap items, grouped by what they
 unlock.
+
+### Launch-gating: implement QDPs 0015 / 0016 / 0017
+
+Three protocol-layer pieces are required before a public
+reviews network can safely carry real users and content:
+
+- **QDP-0015 (Content Moderation)** — without a takedown
+  workflow the operator has no legal response to DMCA
+  notices, court orders, or CSAM reports. Phase 1
+  implementation (state + validation) is ~1 person-week.
+- **QDP-0016 (Abuse Prevention)** — single-layer rate
+  limiting is insufficient for a public network. Phase 1
+  (multi-layer buckets) is ~1.5 person-weeks.
+- **QDP-0017 (Data Subject Rights)** — GDPR / CCPA / LGPD
+  compliance requires honoring access / erasure / consent
+  withdrawal requests within statutory windows. Phase 1
+  (tx types + validation) is ~1.5 person-weeks.
+
+Total: ~4 person-weeks of implementation for pre-launch
+legal + operational readiness. Design docs are complete;
+implementation is sequenced after QDP-0012 Phase 1 (domain
+governance state extension).
 
 ### Near-term: close the scaffold gap
 
