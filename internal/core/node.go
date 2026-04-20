@@ -94,6 +94,10 @@ type QuidnugNode struct {
 	EventStreamRegistry map[string]*EventStream
 	EventRegistry       map[string][]EventTransaction
 
+	// QDP-0014: per-node discovery registry. Owns its own
+	// internal lock; no QuidnugNode-level mutex needed.
+	NodeAdvertisementRegistry *NodeAdvertisementRegistry
+
 	// IPFS client
 	IPFSClient ipfsclient.IPFSClient
 
@@ -402,6 +406,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		TitleRegistry:             make(map[string]TitleTransaction),
 		EventStreamRegistry:       make(map[string]*EventStream),
 		EventRegistry:             make(map[string][]EventTransaction),
+		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
 		IPFSClient:                ipfsClient,
 		TentativeBlocks:           make(map[string][]Block),
 		VerifiedTrustEdges:        make(map[string]map[string]TrustEdge),

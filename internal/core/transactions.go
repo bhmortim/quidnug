@@ -284,6 +284,62 @@ func (node *QuidnugNode) AddTitleTransaction(tx TitleTransaction) (string, error
 	return tx.ID, nil
 }
 
+// AddNodeAdvertisementTransaction adds a QDP-0014
+// NodeAdvertisementTransaction to the pending pool after
+// validating it. The tx proves the node's identity + the
+// operator's attestation, then becomes discoverable via the
+// discovery API once the block including it commits.
+func (node *QuidnugNode) AddNodeAdvertisementTransaction(tx NodeAdvertisementTransaction) (string, error) {
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	tx.Type = TxTypeNodeAdvertisement
+
+	// Generate transaction ID if not present. Hash the
+	// content-relevant fields so honest ID assignment is
+	// deterministic but non-colliding across advertisement
+	// refreshes.
+	if tx.ID == "" {
+		txData, _ := json.Marshal(struct {
+			NodeQuid           string
+			OperatorQuid       string
+			TrustDomain        string
+			AdvertisementNonce int64
+			Timestamp          int64
+		}{
+			NodeQuid:           tx.NodeQuid,
+			OperatorQuid:       tx.OperatorQuid,
+			TrustDomain:        tx.TrustDomain,
+			AdvertisementNonce: tx.AdvertisementNonce,
+			Timestamp:          tx.Timestamp,
+		})
+		hash := sha256.Sum256(txData)
+		tx.ID = hex.EncodeToString(hash[:])
+	}
+
+	if !node.ValidateNodeAdvertisementTransaction(tx) {
+		RecordTransactionProcessed("node_advertisement", false)
+		return "", fmt.Errorf("invalid node advertisement transaction")
+	}
+
+	node.PendingTxsMutex.Lock()
+	defer node.PendingTxsMutex.Unlock()
+
+	node.PendingTxs = append(node.PendingTxs, tx)
+	RecordTransactionProcessed("node_advertisement", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
+
+	go node.BroadcastTransaction(tx)
+
+	logger.Info("Added node advertisement to pending pool",
+		"txId", tx.ID,
+		"nodeQuid", tx.NodeQuid,
+		"operatorQuid", tx.OperatorQuid,
+		"endpoints", len(tx.Endpoints),
+		"domain", tx.TrustDomain)
+	return tx.ID, nil
+}
+
 // FilterTransactionsForBlock filters pending transactions based on trust.
 // Only includes transactions from sources the node trusts (or sponsored transactions).
 // For each transaction, extracts the creator quid and computes relational trust.

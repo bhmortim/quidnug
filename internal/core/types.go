@@ -14,6 +14,11 @@ const (
 	// transfer-of-value sense — the wrapper just lets them share the
 	// block-inclusion machinery.
 	TxTypeAnchor TransactionType = "ANCHOR"
+	// TxTypeNodeAdvertisement is a signed declaration by a node quid
+	// of where it is reachable, which domains it serves, and what
+	// capabilities it offers (QDP-0014). Clients use advertisements
+	// for discovery + sharding.
+	TxTypeNodeAdvertisement TransactionType = "NODE_ADVERTISEMENT"
 )
 
 // Trust computation resource limits
@@ -104,6 +109,52 @@ type EventTransaction struct {
 	Payload         map[string]interface{} `json:"payload,omitempty"`
 	PayloadCID      string                 `json:"payloadCid,omitempty"`
 	PreviousEventID string                 `json:"previousEventId,omitempty"`
+}
+
+// NodeEndpoint is one reachable URL for a node, with routing hints.
+// Clients prefer the lowest-priority endpoint whose capabilities match
+// their query; ties broken by weight (higher weight = preferred).
+type NodeEndpoint struct {
+	URL      string `json:"url"`                // MUST be https://
+	Protocol string `json:"protocol,omitempty"` // "http/1.1" | "http/2" | "http/3" | "grpc"
+	Region   string `json:"region,omitempty"`   // free-form; suggested "iad" | "lhr" | "sin"
+	Priority int    `json:"priority"`           // 0..100; lower = preferred
+	Weight   int    `json:"weight"`             // 0..10000; equal-priority round-robin
+}
+
+// NodeCapabilities describes what a node is willing to do for clients.
+// Validator == true is only honored if the node is also in some
+// domain's Validators map (cross-check happens at advertisement-ingest).
+type NodeCapabilities struct {
+	Validator       bool   `json:"validator,omitempty"`
+	Cache           bool   `json:"cache,omitempty"`
+	Archive         bool   `json:"archive,omitempty"`
+	Bootstrap       bool   `json:"bootstrap,omitempty"`
+	GossipSink      bool   `json:"gossipSink,omitempty"`
+	IPFSGateway     bool   `json:"ipfsGateway,omitempty"`
+	MaxBodyBytes    int    `json:"maxBodyBytes,omitempty"`
+	MinPeerProtocol string `json:"minPeerProtocol,omitempty"`
+}
+
+// NodeAdvertisementTransaction is the QDP-0014 signed record a node
+// publishes to declare its endpoints, supported domains, capabilities,
+// and expiration. The signer is the node itself (its BaseTransaction.
+// PublicKey derives the node quid, which must equal NodeQuid).
+//
+// Operator attestation: there MUST be a current TRUST edge from
+// OperatorQuid → NodeQuid at weight ≥ 0.5 in a domain of the form
+// operators.network.<operator-domain> for an advertisement to be
+// honored. See QDP-0014 §4.1.
+type NodeAdvertisementTransaction struct {
+	BaseTransaction
+	NodeQuid           string           `json:"nodeQuid"`
+	OperatorQuid       string           `json:"operatorQuid"`
+	Endpoints          []NodeEndpoint   `json:"endpoints"`
+	SupportedDomains   []string         `json:"supportedDomains,omitempty"`
+	Capabilities       NodeCapabilities `json:"capabilities"`
+	ProtocolVersion    string           `json:"protocolVersion"`
+	ExpiresAt          int64            `json:"expiresAt"`          // UnixNano; rejected if >7d out
+	AdvertisementNonce int64            `json:"advertisementNonce"` // monotonic per NodeQuid
 }
 
 // AnchorTransaction carries a NonceAnchor through the block transaction

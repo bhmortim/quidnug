@@ -177,6 +177,14 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 			}
 			node.updateEventStreamRegistry(tx)
 
+		case TxTypeNodeAdvertisement:
+			var tx NodeAdvertisementTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal node-advertisement transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updateNodeAdvertisementRegistry(tx)
+
 		case TxTypeAnchor:
 			var tx AnchorTransaction
 			if err := json.Unmarshal(txJson, &tx); err != nil {

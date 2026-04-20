@@ -219,6 +219,9 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 	case TitleTransaction:
 		domainName = t.TrustDomain
 		txType = "title"
+	case NodeAdvertisementTransaction:
+		domainName = t.TrustDomain
+		txType = "node-advertisement"
 	default:
 		logger.Warn("Cannot broadcast unknown transaction type")
 		return

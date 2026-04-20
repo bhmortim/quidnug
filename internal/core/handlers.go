@@ -49,6 +49,7 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 
 	// Event streaming endpoints
 	router.HandleFunc("/events", node.CreateEventTransactionHandler).Methods("POST")
+	router.HandleFunc("/node-advertisements", node.CreateNodeAdvertisementHandler).Methods("POST")
 	router.HandleFunc("/streams/{subjectId}", node.GetEventStreamHandler).Methods("GET")
 	router.HandleFunc("/streams/{subjectId}/events", node.GetStreamEventsHandler).Methods("GET")
 
@@ -938,4 +939,36 @@ func (node *QuidnugNode) QueryTitleRegistryHandler(w http.ResponseWriter, r *htt
 			},
 		})
 	}
+}
+
+// CreateNodeAdvertisementHandler accepts a signed
+// NodeAdvertisementTransaction (QDP-0014), validates + queues
+// it for block inclusion, and returns the assigned tx id.
+//
+// The advertisement is self-published by a node; the submitter
+// must own the NodeQuid's private key. Operator attestation +
+// signature checks happen inside AddNodeAdvertisementTransaction.
+func (node *QuidnugNode) CreateNodeAdvertisementHandler(w http.ResponseWriter, r *http.Request) {
+	var tx NodeAdvertisementTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+
+	txID, err := node.AddNodeAdvertisementTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"id":                 txID,
+		"nodeQuid":           tx.NodeQuid,
+		"operatorQuid":       tx.OperatorQuid,
+		"expiresAt":          tx.ExpiresAt,
+		"advertisementNonce": tx.AdvertisementNonce,
+	})
 }

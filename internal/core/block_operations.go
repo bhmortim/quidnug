@@ -80,6 +80,14 @@ func (node *QuidnugNode) FilterTransactionsForBlock(txs []interface{}, domain st
 				}
 			}
 			txID = t.ID
+		case NodeAdvertisementTransaction:
+			// Self-published by the node; the creator is the
+			// node itself (NodeQuid). An advertisement won't make
+			// it past validation unless the operator has attested
+			// to this node, so block-filter trust applied to the
+			// node quid is a redundant safety check.
+			creatorQuid = t.NodeQuid
+			txID = t.ID
 		default:
 			// Unknown transaction type, skip
 			logger.Debug("Skipping unknown transaction type in trust filter")
@@ -160,6 +168,8 @@ func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 		case TitleTransaction:
 			txDomain = t.TrustDomain
 		case EventTransaction:
+			txDomain = t.TrustDomain
+		case NodeAdvertisementTransaction:
 			txDomain = t.TrustDomain
 		default:
 			// Unknown transaction type, skip
