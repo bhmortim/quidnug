@@ -40,7 +40,7 @@ the live code:
 | 0013 | Network Federation Model (one protocol, many networks) | Draft — mostly clarifies existing uniformity; new surface is `external_trust_sources` config + `TRUST_IMPORT` transaction |
 | 0014 | Node Discovery + Domain Sharding | **Landed** — `NODE_ADVERTISEMENT` tx + registry + expiry GC, five discovery endpoints, per-domain quid index, CLI + client SDK, signed `.well-known/quidnug-network.json` generator |
 | 0015 | Content Moderation & Takedowns | **Phase 1 landed** — `MODERATION_ACTION` tx type + full 12-rule validator, per-target registry with supersede-chain resolution, max-severity scope composition (suppress > hide > annotate), serving-time filter on event streams (both subject-QUID and per-event TX targets), `?includeHidden=true` admin escape hatch, `POST /moderation/actions` + `GET /moderation/actions/{targetType}/{targetId}` endpoints. Phases 2-5 (CLI, federation import, dashboard, transparency report generator) pending. |
-| 0016 | Abuse Prevention & Resource Limits | Draft — five-layer rate limits (IP, quid, epoch, operator, domain), reputation-weighted graduation, progressive slowdown, proof-of-work challenges, sybil-resistance primitives |
+| 0016 | Abuse Prevention & Resource Limits | **Phase 1 landed** — `MultiLayerLimiter` in `internal/ratelimit` composing per-quid / per-operator / per-domain token buckets (the pre-existing per-IP layer stays at the HTTP-ingress middleware); wired into every mempool admission path (TRUST, EVENT, MODERATION_ACTION, DSR/consent/restriction/compliance) with per-layer denial attribution; `quidnug_ratelimit_denials_total` Prometheus counter. Phases 2-6 (progressive slowdown, PoW challenges, reputation graduation, federation abuse signals, alert rules) pending. |
 | 0017 | Data Subject Rights & Privacy | **Phase 1 landed** — five new tx types (`DATA_SUBJECT_REQUEST`, `CONSENT_GRANT`, `CONSENT_WITHDRAW`, `PROCESSING_RESTRICTION`, `DSR_COMPLIANCE`) + validators (enum + self-sign + nonce monotonic + effective-range sanity + validator-only for compliance records) + `PrivacyRegistry` with grant/withdraw/restriction/DSR/compliance indices + read helpers (`HasActiveConsent`, `IsProcessingRestricted`, `RestrictedUsesFor`, `ConsentHistoryFor`, `GetDSRStatus`) + HTTP endpoints for DSR intake, consent history, restriction query, and compliance publish. Phases 2-5 (CLI auto-fulfill, manifest generators, erasure integration, transparency reporting) pending. |
 | 0018 | Observability + Tamper-Evident Operator Log | Draft — per-operator hash-chained audit log, periodic on-chain anchoring, five verification endpoints, standardized metric label set |
 | 0019 | Reputation Decay & Time-Weighted Trust | Draft — two-layer decay (edge-level exponential + quid dormancy), observer-configurable per-domain, passive re-endorsement detection |
@@ -110,25 +110,27 @@ unlock.
 
 ### Launch-gating: implement QDPs 0015 / 0016 / 0017
 
-Three protocol-layer pieces are required before a public
-reviews network can safely carry real users and content:
+**Status: Phase 1 of all three landed (2026-04-20).** The
+launch-gating protocol floor is in place; remaining work is
+CLI tooling, manifest generation, federation wiring, and
+operator documentation. See the individual QDP rows above
+for per-phase status.
 
-- **QDP-0015 (Content Moderation)** — without a takedown
-  workflow the operator has no legal response to DMCA
-  notices, court orders, or CSAM reports. Phase 1
-  implementation (state + validation) is ~1 person-week.
-- **QDP-0016 (Abuse Prevention)** — single-layer rate
-  limiting is insufficient for a public network. Phase 1
-  (multi-layer buckets) is ~1.5 person-weeks.
-- **QDP-0017 (Data Subject Rights)** — GDPR / CCPA / LGPD
-  compliance requires honoring access / erasure / consent
-  withdrawal requests within statutory windows. Phase 1
-  (tx types + validation) is ~1.5 person-weeks.
+- **QDP-0015 Phase 1** — `MODERATION_ACTION` tx + 12-rule
+  validator + per-target registry + serving-time
+  suppress/hide/annotate filter wired into event streams.
+- **QDP-0016 Phase 1** — `MultiLayerLimiter` wired into every
+  mempool admission path with per-layer denial attribution.
+- **QDP-0017 Phase 1** — `DATA_SUBJECT_REQUEST`, `CONSENT_GRANT`,
+  `CONSENT_WITHDRAW`, `PROCESSING_RESTRICTION`, `DSR_COMPLIANCE`
+  tx types + validators + `PrivacyRegistry` with active-consent
+  / restriction / DSR-status read helpers.
+- **QDP-0022** (supporting) — `ValidUntil` / `expiresAt`
+  enforcement; unblocks consent expiry.
 
-Total: ~4 person-weeks of implementation for pre-launch
-legal + operational readiness. Design docs are complete;
-implementation is sequenced after QDP-0012 Phase 1 (domain
-governance state extension).
+Follow-up phases of each QDP (approximately ~3 person-weeks of
+operational tooling + CLI + transparency reports) remain open
+but no longer gate the initial launch.
 
 ### Near-term: close the scaffold gap
 

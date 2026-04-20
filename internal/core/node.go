@@ -19,6 +19,7 @@ import (
 
 	"github.com/quidnug/quidnug/internal/config"
 	"github.com/quidnug/quidnug/internal/ipfsclient"
+	"github.com/quidnug/quidnug/internal/ratelimit"
 )
 
 // Lock ordering to prevent deadlocks:
@@ -110,6 +111,12 @@ type QuidnugNode struct {
 	// QDP-0017: privacy registry (consent / restriction / DSR).
 	// Owns its own internal lock.
 	PrivacyRegistry *PrivacyRegistry
+
+	// QDP-0016: multi-layer write-admission rate limiter. Fires
+	// at the mempool-admission layer, after signature verification.
+	// The existing HTTP-ingress IP limiter (configured via
+	// middleware.go) is independent and complementary.
+	WriteLimiter *ratelimit.MultiLayerLimiter
 
 	// QDP-0014: per-(domain, quid) activity index, populated
 	// incrementally as blocks commit.
@@ -427,6 +434,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
 		ModerationRegistry:        NewModerationRegistry(),
 		PrivacyRegistry:           NewPrivacyRegistry(),
+		WriteLimiter:              ratelimit.NewMultiLayerLimiter(ratelimit.DefaultWriteLimits()),
 		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,
 		TentativeBlocks:           make(map[string][]Block),

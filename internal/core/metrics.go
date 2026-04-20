@@ -173,6 +173,20 @@ func UpdatePendingTransactionsGauge(count int) {
 	pendingTransactionsGauge.Set(float64(count))
 }
 
+// rateLimitDenials is the QDP-0016 Phase 1 counter for writes
+// rejected at the mempool-admission layer. Labelled by which
+// layer raised the rejection so operators can see which part
+// of the multi-layer stack is carrying load.
+var rateLimitDenials = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: "quidnug_ratelimit_denials_total",
+	Help: "Writes rejected at mempool admission by the QDP-0016 multi-layer rate limiter, by layer.",
+}, []string{"layer"})
+
+// RecordRateLimitDenial increments the per-layer denial counter.
+func RecordRateLimitDenial(layer string) {
+	rateLimitDenials.WithLabelValues(layer).Inc()
+}
+
 // UpdateConnectedNodesGauge updates the connected nodes gauge
 func UpdateConnectedNodesGauge(count int) {
 	connectedNodesGauge.Set(float64(count))

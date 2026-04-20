@@ -2,7 +2,7 @@
 
 | Field      | Value                                                            |
 |------------|------------------------------------------------------------------|
-| Status     | Draft — design only                                              |
+| Status     | Phase 1 landed — multi-layer rate limits; Phases 2-6 pending     |
 | Track      | Protocol + ops                                                   |
 | Author     | The Quidnug Authors                                              |
 | Created    | 2026-04-20                                                       |

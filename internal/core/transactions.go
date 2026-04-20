@@ -7,7 +7,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/quidnug/quidnug/internal/ratelimit"
 )
+
+// admitWriteOrReject consults the QDP-0016 multi-layer write
+// limiter and returns a Go error describing the denial (if
+// any) so mempool-admission functions can fail-fast uniformly.
+// Callers that don't want IP-layer enforcement (e.g. writes
+// that originate from the server itself, not over HTTP) should
+// pass an empty IP string — the IP layer skips empty keys.
+//
+// If the limiter is nil, the call is a no-op.
+func (node *QuidnugNode) admitWriteOrReject(keys ratelimit.ActorKeys) error {
+	if node.WriteLimiter == nil {
+		return nil
+	}
+	if got := node.WriteLimiter.AdmitWrite(keys); !got.Allowed {
+		RecordRateLimitDenial(string(got.Layer))
+		return fmt.Errorf("rate limit exceeded at %s layer", got.Layer)
+	}
+	return nil
+}
 
 func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error) {
 	// Auto-fill of Timestamp / Type / Nonce is a test and server-side
@@ -61,6 +82,17 @@ func (node *QuidnugNode) AddTrustTransaction(tx TrustTransaction) (string, error
 
 		hash := sha256.Sum256(txData)
 		tx.ID = hex.EncodeToString(hash[:])
+	}
+
+	// QDP-0016 multi-layer rate limit at mempool admission.
+	// Scoped to the signing quid + target domain; IP / operator
+	// are not known at this layer so only two layers fire here.
+	if err := node.admitWriteOrReject(ratelimit.ActorKeys{
+		Quid:   tx.Truster,
+		Domain: tx.TrustDomain,
+	}); err != nil {
+		RecordTransactionProcessed("trust", false)
+		return "", err
 	}
 
 	// Validate the transaction
@@ -208,6 +240,21 @@ func (node *QuidnugNode) AddEventTransaction(tx EventTransaction) (string, error
 
 		hash := sha256.Sum256(txData)
 		tx.ID = hex.EncodeToString(hash[:])
+	}
+
+	// QDP-0016 rate-limit. The signer's quid is derived from
+	// PublicKey; if the tx is unsigned yet (internal callers)
+	// we fall back to charging the domain layer only.
+	signerQuid := ""
+	if tx.PublicKey != "" {
+		signerQuid = QuidIDFromPublicKeyHex(tx.PublicKey)
+	}
+	if err := node.admitWriteOrReject(ratelimit.ActorKeys{
+		Quid:   signerQuid,
+		Domain: tx.TrustDomain,
+	}); err != nil {
+		RecordTransactionProcessed("event", false)
+		return "", err
 	}
 
 	// Validate the transaction
@@ -388,6 +435,14 @@ func (node *QuidnugNode) AddModerationActionTransaction(tx ModerationActionTrans
 		tx.ID = hex.EncodeToString(hash[:])
 	}
 
+	if err := node.admitWriteOrReject(ratelimit.ActorKeys{
+		Quid:   tx.ModeratorQuid,
+		Domain: tx.TrustDomain,
+	}); err != nil {
+		RecordTransactionProcessed("moderation_action", false)
+		return "", err
+	}
+
 	if !node.ValidateModerationActionTransaction(tx) {
 		RecordTransactionProcessed("moderation_action", false)
 		return "", fmt.Errorf("invalid moderation action transaction")
@@ -431,6 +486,15 @@ func (node *QuidnugNode) addPrivacyTxToPool(
 		return "", fmt.Errorf("ensure tx id: %w", err)
 	}
 
+	// QDP-0016 rate limit. Extracts actor keys via the same
+	// type switch we use for id generation.
+	if keys, ok := privacyActorKeys(txPtr); ok {
+		if err := node.admitWriteOrReject(keys); err != nil {
+			RecordTransactionProcessed(txKind, false)
+			return "", err
+		}
+	}
+
 	if !validate() {
 		RecordTransactionProcessed(txKind, false)
 		return "", fmt.Errorf("invalid %s transaction", txKind)
@@ -456,6 +520,26 @@ func (node *QuidnugNode) addPrivacyTxToPool(
 	return id, nil
 }
 
+// privacyActorKeys pulls (quid, domain) out of a privacy tx
+// pointer for rate-limit charging. For operator-signed
+// DSR_COMPLIANCE the OperatorQuid is used; every other privacy
+// tx charges the subject.
+func privacyActorKeys(txPtr interface{}) (ratelimit.ActorKeys, bool) {
+	switch v := txPtr.(type) {
+	case *DataSubjectRequestTransaction:
+		return ratelimit.ActorKeys{Quid: v.SubjectQuid, Domain: v.TrustDomain}, true
+	case *ConsentGrantTransaction:
+		return ratelimit.ActorKeys{Quid: v.SubjectQuid, Domain: v.TrustDomain}, true
+	case *ConsentWithdrawTransaction:
+		return ratelimit.ActorKeys{Quid: v.SubjectQuid, Domain: v.TrustDomain}, true
+	case *ProcessingRestrictionTransaction:
+		return ratelimit.ActorKeys{Quid: v.SubjectQuid, Domain: v.TrustDomain}, true
+	case *DSRComplianceTransaction:
+		return ratelimit.ActorKeys{Quid: v.OperatorQuid, Operator: v.OperatorQuid, Domain: v.TrustDomain}, true
+	}
+	return ratelimit.ActorKeys{}, false
+}
+
 // derefPrivacyTx unwraps a *PrivacyTx pointer to its value.
 func derefPrivacyTx(txPtr interface{}) (interface{}, error) {
 	switch v := txPtr.(type) {
@@ -474,28 +558,30 @@ func derefPrivacyTx(txPtr interface{}) (interface{}, error) {
 }
 
 // ensurePrivacyTxID writes a sha256-derived ID into tx.ID if
-// it's currently empty. Works off a reflective switch so we
-// don't need per-type plumbing.
+// the tx is unsigned and has no ID yet. Signed transactions are
+// left alone — mutating the ID on a signed struct would silently
+// break signature verification because the validator re-marshals
+// the whole struct (ID included) to recompute the signable bytes.
 func ensurePrivacyTxID(txPtr interface{}, idSeed []byte) error {
 	switch v := txPtr.(type) {
 	case *DataSubjectRequestTransaction:
-		if v.ID == "" {
+		if v.ID == "" && v.Signature == "" {
 			v.ID = hashPrivacyID(idSeed)
 		}
 	case *ConsentGrantTransaction:
-		if v.ID == "" {
+		if v.ID == "" && v.Signature == "" {
 			v.ID = hashPrivacyID(idSeed)
 		}
 	case *ConsentWithdrawTransaction:
-		if v.ID == "" {
+		if v.ID == "" && v.Signature == "" {
 			v.ID = hashPrivacyID(idSeed)
 		}
 	case *ProcessingRestrictionTransaction:
-		if v.ID == "" {
+		if v.ID == "" && v.Signature == "" {
 			v.ID = hashPrivacyID(idSeed)
 		}
 	case *DSRComplianceTransaction:
-		if v.ID == "" {
+		if v.ID == "" && v.Signature == "" {
 			v.ID = hashPrivacyID(idSeed)
 		}
 	default:
