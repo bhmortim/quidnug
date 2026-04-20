@@ -134,9 +134,12 @@ Signing process:
 
 1. Compute canonical signable bytes per §2.2.
 2. `H = SHA-256(signable_bytes)`.
-3. Sign `H` with the signer's ECDSA-P256 private key using
-   the deterministic-K variant of RFC 6979 (REQUIRED;
-   non-deterministic signing MUST NOT be used in v1.0).
+3. Sign `H` with the signer's ECDSA-P256 private key.
+   - The reference node MUST use RFC 6979 deterministic-k
+     (see §2.3.1).
+   - Third-party SDKs SHOULD use RFC 6979 deterministic-k.
+   - Third-party SDKs MAY use non-deterministic-k backed
+     by a cryptographically secure RNG.
 4. Encode the resulting `(r, s)` pair as **IEEE-1363**:
    `r_bytes || s_bytes`, each component zero-padded to
    exactly 32 bytes. Total signature length: 64 bytes.
@@ -144,14 +147,76 @@ Signing process:
 
 **DER-encoded ECDSA signatures MUST NOT be accepted.** The
 reference node rejects non-64-byte signatures at the
-verification layer.
+verification layer (`internal/core/crypto.go:VerifySignature`).
 
-**[OPEN: RFC 6979 enforcement]**
-The Go reference node currently uses `crypto/ecdsa.Sign`
-which is non-deterministic. Mandating RFC 6979 in v1.0 is
-best practice but implies a source change (use an RFC-6979
-wrapper or `ecdsa.SignASN1` replacement with deterministic
-K). Decide before freeze.
+#### 2.3.1 RFC 6979 deterministic-k
+
+The reference node's `SignRFC6979` function in
+`internal/core/crypto.go` implements RFC 6979 §3.2 for
+P-256 + SHA-256 directly (no third-party dependencies).
+Key properties:
+
+- The nonce `k` is derived as a deterministic function of
+  the private key `x` and the message digest `h1` via
+  HMAC-DRBG with SHA-256. The standalone test at
+  `internal/core/rfc6979_test.go` verifies the
+  implementation against RFC 6979 Appendix A.2.5's
+  published test vector (P-256 + SHA-256, message
+  `"sample"`).
+
+- Signatures are bit-stable across runs for the same
+  `(key, message)` pair. The test vector harness in
+  `docs/test-vectors/v1.0/` exploits this: the
+  `reference_signature_hex` field in every case is
+  reproduced byte-identically every time vectors are
+  regenerated, so signature drift is detectable via `git
+  diff` after regeneration.
+
+- Signatures automatically have low `s` (see §2.3.2), so
+  RFC 6979 + low-s normalization compose naturally.
+
+SDK migration guidance:
+
+- **Go** (`pkg/client`): migrate `(*Quid).Sign` to use
+  `core.SignRFC6979` in a future minor release. Current
+  implementation uses non-deterministic `crypto/ecdsa.Sign`
+  but produces valid signatures that still verify.
+- **Rust** (`clients/rust`): the `p256` crate's
+  `ecdsa::SigningKey::sign` already uses RFC 6979
+  deterministic-k by default. No migration required.
+- **Python** (`clients/python`): `cryptography` library
+  default is non-deterministic. Migration path: implement
+  RFC 6979 in `quidnug/crypto.py` or vendor a library
+  like `ecdsa` (pure-Python).
+- **JS** (`clients/js`): WebCrypto's ECDSA is
+  non-deterministic. Migration path: use `@noble/curves/p256`
+  which supports deterministic signing.
+- **Java** (`clients/java`): BouncyCastle's
+  `ECDSASigner` with `HMacDSAKCalculator` supports RFC 6979.
+- **.NET** (`clients/dotnet`): requires BouncyCastle.NET
+  or a custom implementation; `ECDsa.SignHash` is
+  non-deterministic.
+- **Swift** (`clients/swift`): CryptoKit is
+  non-deterministic with no current deterministic option;
+  would need a different library.
+
+Until SDKs migrate, cross-SDK test vectors remain
+verification-stable (the reference signature verifies via
+any SDK's verifier) but SDK sign-then-verify round-trips
+produce different bytes from the reference.
+
+### 2.3.2 Low-s normalization
+
+Reference-node signatures always have `s <= n/2` (BIP-62
+§low-s). When RFC 6979 produces an initial `s > n/2`, the
+signer substitutes `n - s`. Both forms are mathematically
+valid ECDSA signatures; the low-s form is canonical.
+
+**Verification accepts both low-s and high-s signatures in
+v1.0.** Enforcement of low-s at the verification layer is
+deferred to v1.1+ via a fork-block migration per QDP-0009,
+giving SDKs a coordinated window to adopt low-s
+normalization.
 
 ### 2.4 Transaction ID derivation
 
@@ -294,17 +359,27 @@ Verifier:
 
 Implementation: `internal/core/crypto.go:VerifySignature`.
 
-### 3.5 Low-s enforcement
+### 3.5 Low-s normalization and enforcement
 
-**[OPEN: low-s enforcement]**
-ECDSA signatures are malleable: given `(r, s)` there exists
-an equivalent `(r, n-s)`. Industry best practice is to
-reject the high-s form (Bitcoin's BIP-0062 approach). The
-reference node currently does NOT enforce low-s. Malleability
-matters if transaction IDs ever hash the signature, or if
-replay protection relies on signature uniqueness; neither is
-the case for Quidnug today. Decision: enforce or accept
-either form; document either way.
+Resolved. See §2.3.2 for the full specification:
+
+- Reference-node signatures always have `s <= n/2`
+  (automatic via `SignRFC6979` + normalization).
+- Verification layer accepts both low-s and high-s
+  signatures in v1.0. This lets SDKs using
+  non-deterministic ECDSA (which roughly half the time
+  produces high-s without explicit normalization) continue
+  to work.
+- Tightening verification to reject high-s is scheduled
+  for v1.1+ via fork-block migration (QDP-0009), once SDKs
+  have adopted low-s normalization on the signing side.
+
+Rationale for the soft stance in v1.0: Quidnug transaction
+IDs do not include signatures in their hash derivation
+(see §2.4), and replay protection relies on per-signer
+monotonic nonces (QDP-0001), not signature uniqueness.
+Malleability is therefore a hardening item rather than a
+correctness-blocking defect.
 
 ## 4. Transaction type catalog
 
@@ -323,6 +398,37 @@ type BaseTransaction struct {
 
 All transaction types REQUIRE these fields. Type-specific
 fields are declared after the embedded base.
+
+### 4.0 v1.0 size + length constants
+
+The reference-node validators apply these limits uniformly
+across every applicable transaction type. All values are in
+bytes unless noted. Source of truth in each case is a Go
+constant; changes require a fork-block migration (QDP-0009)
+after launch.
+
+| Constant | Value | Applies to | Source |
+|---|---|---|---|
+| `MaxDomainLength` | 253 | `trustDomain` on every tx | `internal/core/middleware.go:289` |
+| `MaxNameLength` | 256 | `IdentityTransaction.Name`, `TitleTransaction.TitleType` | `internal/core/middleware.go:287` |
+| `MaxDescriptionLength` | 4096 | `TrustTransaction.Description`, `IdentityTransaction.Description` | `internal/core/middleware.go:288` |
+| `MaxEventTypeLength` | 64 | `EventTransaction.EventType` | `internal/core/validation.go:232` |
+| `MaxPayloadSize` | 65536 (64 KB) | `EventTransaction.Payload` JSON-serialized | `internal/core/validation.go:235` |
+| `MaxAnnotationTextLength` | 2048 | `ModerationActionTransaction.AnnotationText` | `internal/core/moderation.go:74` |
+| `MaxRequestDetailsLength` | 4096 | `DataSubjectRequestTransaction.RequestDetails` | `internal/core/privacy.go:84` |
+| `MaxPolicyHashLength` | 128 | `ConsentGrantTransaction.PolicyHash` | `internal/core/privacy.go:88` |
+| `GossipPushMaxEnvelopeBytes` | 131072 (128 KB) | push-gossip messages | `internal/core/gossip_push.go:115` |
+| `MerkleMaxTxsPerBlock` | 4096 | block transaction count | `internal/core/merkle.go:41` |
+| `DefaultMaxNonceGap` | 1024 | per-signer nonce gap tolerance | `internal/core/ledger.go:52` |
+| `AnchorMaxFutureSkew` | 5 min | `AnchorTransaction.AnchorTimestamp` future bound | `internal/core/anchor.go:70` |
+| `AnchorMaxAge` | 30 days | `AnchorTransaction.AnchorTimestamp` past bound | `internal/core/anchor.go:76` |
+| `AnchorGossipMaxAge` | 24 hours | anchor gossip message age | `internal/core/anchor_gossip.go:87` |
+| `ResignationEffectiveAtMaxFuture` | 365 days | `GuardianResignation.EffectiveAt` lead | `internal/core/guardian_resignation.go:59` |
+
+**Control character handling.** Every string field that
+flows through `ValidateStringField` rejects ASCII control
+characters except tab (`\t`, 0x09), newline (`\n`, 0x0A), and
+carriage return (`\r`, 0x0D). See `middleware.go:293`.
 
 ### 4.1 Transaction type enumeration
 
@@ -397,8 +503,9 @@ level `TrustLevel` in domain `TrustDomain`, optionally until
 5. `Truster` and `Trustee` MUST be valid quid IDs (16 hex
    lowercase).
 6. `Description` MUST NOT exceed `MaxDescriptionLength`
-   (`[VERIFY: 500]`) and MUST NOT contain ASCII control
-   characters except tab / newline.
+   (**4096 bytes** per `internal/core/middleware.go`) and
+   MUST NOT contain ASCII control characters except tab,
+   newline, or carriage return.
 7. Signature MUST verify per §3.4 using the canonical bytes
    from §2.2.
 8. Nonce ledger admission MUST succeed (QDP-0001) when
@@ -532,13 +639,20 @@ increasing `Sequence`.
    the prior event in the stream (enforces linked-list
    integrity).
 5. Exactly one of `Payload` or `PayloadCID` MUST be present
-   (not both, not neither). `[OPEN: verify this invariant
-   is actually enforced]`.
+   (not both, not neither). SDK-side precondition checks
+   enforce this (pkg/client, quidnug/client.py,
+   clients/js/v1-wire.js); the reference node currently
+   accepts both-populated and neither-populated submissions
+   with warnings logged. **Enforcement at the node layer is
+   scheduled for v1.1+** via fork-block; until then, SDK
+   callers are responsible.
 6. Payload size limits: inline `Payload` MUST NOT serialize
-   to more than `MaxInlinePayloadBytes` (**[OPEN: set to
-   64 KB? 256 KB? Prod decision]**); larger payloads MUST
-   use `PayloadCID` + IPFS.
-7. Signature MUST verify; public key MUST resolve to a
+   to more than `MaxPayloadSize` (**64 KB per
+   `internal/core/validation.go:235`**); larger payloads
+   MUST use `PayloadCID` + IPFS.
+7. `EventType` MUST NOT exceed `MaxEventTypeLength`
+   (**64 bytes per `internal/core/validation.go:232`**).
+8. Signature MUST verify; public key MUST resolve to a
    quid authorized to write to the subject's stream
    (subject-quid writes own stream; authorized delegates
    per subject's policy; creator quid for titles).
@@ -868,12 +982,21 @@ field per QDP-0021, not EVENT transactions.
 ### 5.8 Payload size + encoding
 
 - Inline payloads (`EventTransaction.Payload`) MUST NOT
-  exceed `MaxInlinePayloadBytes` in JSON-serialized form
-  (**[OPEN: commit to exact number before freeze]**).
+  exceed **`MaxPayloadSize`**, set to **64 KB** per
+  `internal/core/validation.go:235`. The constant is
+  bytes of the serialized JSON payload.
 - Larger payloads MUST use `PayloadCID` with content stored
   in IPFS. The CID MUST resolve to a valid multihash.
-- Payload JSON MUST NOT contain object keys conflicting
-  with reserved keys **[OPEN: enumerate]**.
+- Payload JSON MUST NOT contain object keys that collide
+  with reserved top-level transaction fields: `id`, `type`,
+  `trustDomain`, `timestamp`, `signature`, `publicKey`,
+  plus the tx-type-specific reserved fields enumerated in
+  §4 per transaction (e.g., TRUST's `truster` / `trustee` /
+  `trustLevel` / `nonce` / `description` / `validUntil`).
+  In practice the payload is nested inside the tx struct's
+  `payload` field so collisions are only visible if a
+  caller attempts to flatten the payload into the enclosing
+  object. Don't do that.
 
 ## 6. Endpoint surface
 
@@ -923,45 +1046,176 @@ replay is prevented). Candidate: HTTP Message Signatures
 
 ### 6.3 Endpoint catalog
 
-| Method | Path | Purpose | Auth | v1.0? |
-|---|---|---|---|---|
-| GET | `/api/health` | Liveness probe | None | Required |
-| GET | `/api/info` | Node metadata | None | Required |
-| GET | `/.well-known/quidnug-network.json` | Operator network descriptor (QDP-0014) | None | Required |
-| POST | `/api/transactions/identity` | Submit IDENTITY tx | None (tx is self-signed) | Required |
-| POST | `/api/transactions/trust` | Submit TRUST tx | None | Required |
-| POST | `/api/transactions/title` | Submit TITLE tx | None | Required |
-| POST | `/api/events` | Submit EVENT tx | None | Required |
-| POST | `/api/transactions/node-advertisement` | Submit NODE_ADVERTISEMENT | None | Required |
-| POST | `/api/transactions/moderation-action` | Submit MODERATION_ACTION | None | Required |
-| POST | `/api/transactions/data-subject-request` | Submit DSR | None | Required |
-| POST | `/api/transactions/consent-grant` | Submit CONSENT_GRANT | None | Required |
-| POST | `/api/transactions/consent-withdraw` | Submit CONSENT_WITHDRAW | None | Required |
-| POST | `/api/transactions/processing-restriction` | Submit PROCESSING_RESTRICTION | None | Required |
-| POST | `/api/transactions/dsr-compliance` | Submit DSR_COMPLIANCE | Validator-only | Required |
-| GET | `/api/identity/{quid}` | Fetch identity record | None | Required |
-| GET | `/api/trust/{truster}/{trustee}` | Fetch trust level | None | Required |
-| GET | `/api/trust/{truster}/edges` | List outbound edges | None | Required |
-| GET | `/api/streams/{subjectId}/events` | List events on a stream | None | Required |
-| GET | `/api/domains` | List domains | None | Required |
-| GET | `/api/domains/{name}` | Fetch domain | None | Required |
-| GET | `/api/v2/discovery/domain/{name}` | QDP-0014 domain discovery | None | Required |
-| GET | `/api/v2/discovery/node/{nodeQuid}` | QDP-0014 node advertisement | None | Required |
-| GET | `/api/v2/discovery/operator/{operatorQuid}` | QDP-0014 operator index | None | Required |
-| GET | `/api/v2/discovery/quids` | QDP-0014 per-domain quid index | None | Required |
-| GET | `/api/moderation/actions/{targetType}/{targetId}` | QDP-0015 moderation query | None | Required |
-| GET | `/api/consent/{granter}/{processor}` | QDP-0017 consent status | None | Required |
-| GET | `/api/dsr/{requestId}` | QDP-0017 DSR status | None | Required |
-| GET | `/audit/head` | QDP-0018 audit-log head | Bearer | Required |
-| GET | `/audit/entries` | QDP-0018 paginated entries | Bearer | Required |
-| GET | `/audit/entry/{sequence}` | QDP-0018 single entry | Bearer | Required |
-| GET | `/metrics` | Prometheus metrics | Bearer or open (operator choice) | Required |
+Routes are mounted by `internal/core/handlers.go:
+StartServerWithConfig` under three path prefixes:
 
-**[OPEN: the above is derived from cross-QDP knowledge +
-the Python SDK's http_client. Before freeze, walk
-`internal/core/handlers.go` + `handlers_*.go` and ensure
-every exposed route is either on this list (Required or
-Deferred) or explicitly documented as out-of-scope.]**
+- `/api/v1/...` — versioned alias of the core surface.
+- `/api/...` — unversioned alias of the core surface
+  (identical route set; kept for backward compatibility).
+- `/api/v2/...` — post-v1 additions: QDP-0002 guardians,
+  QDP-0003 cross-domain gossip, QDP-0014 discovery.
+
+Every core route is reachable at both `/api/v1/<route>` and
+`/api/<route>`. The table below uses the unversioned form
+for brevity; replace with `/api/v1/` to pin to v1 when
+authoring integrations that should survive future default-
+prefix churn.
+
+Static paths (not mounted in the Go router):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/.well-known/quidnug-network.json` | Operator network descriptor (QDP-0014). Emitted by `quidnug-cli well-known generate`; served by any reverse proxy in front of the node. |
+| GET | `/metrics` | Prometheus metrics (`promhttp.Handler`). Mounted directly at root, NOT under `/api/`. |
+
+#### 6.3.1 Core transaction submission
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/transactions/trust` | `CreateTrustTransactionHandler` | Submit TRUST tx |
+| POST | `/api/transactions/identity` | `CreateIdentityTransactionHandler` | Submit IDENTITY tx |
+| POST | `/api/transactions/title` | `CreateTitleTransactionHandler` | Submit TITLE tx |
+| POST | `/api/events` | `CreateEventTransactionHandler` | Submit EVENT tx |
+| POST | `/api/node-advertisements` | `CreateNodeAdvertisementHandler` | Submit NODE_ADVERTISEMENT (QDP-0014) |
+| POST | `/api/quids` | `CreateQuidHandler` | Server-side quid generation (test utility) |
+
+#### 6.3.2 Read-side queries
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| GET | `/api/health` | `HealthCheckHandler` | Liveness probe |
+| GET | `/api/info` | `GetInfoHandler` | Node metadata + supported features |
+| GET | `/api/nodes` | `GetNodesHandler` | Peer list |
+| GET | `/api/transactions` | `GetTransactionsHandler` | Paginated tx list |
+| GET | `/api/blocks` | `GetBlocksHandler` | Block tip + paginated list |
+| GET | `/api/blocks/tentative/{domain}` | `GetTentativeBlocksHandler` | Tiered-acceptance pending blocks (QDP-0010) |
+| GET | `/api/identity/{quidId}` | `GetIdentityHandler` | Identity record or 404 |
+| GET | `/api/title/{assetId}` | `GetTitleHandler` | Title record or 404 |
+| GET | `/api/trust/{observer}/{target}` | `GetTrustHandler` | Relational trust query |
+| GET | `/api/trust/edges/{quidId}` | `GetTrustEdgesHandler` | Outbound edges |
+| POST | `/api/trust/query` | `RelationalTrustQueryHandler` | Batch trust query (structured) |
+| GET | `/api/streams/{subjectId}` | `GetEventStreamHandler` | Stream metadata |
+| GET | `/api/streams/{subjectId}/events` | `GetStreamEventsHandler` | Paginated event list |
+
+#### 6.3.3 Domain governance (QDP-0012)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| GET | `/api/domains` | `GetDomainsHandler` | List known domains |
+| POST | `/api/domains` | `RegisterDomainHandler` | Register a new domain |
+| GET | `/api/domains/{name}/query` | `QueryDomainHandler` | Domain metadata |
+| GET | `/api/registry/identity` | `QueryIdentityRegistryHandler` | Identity registry dump (paginated) |
+| GET | `/api/registry/title` | `QueryTitleRegistryHandler` | Title registry dump |
+| GET | `/api/registry/trust` | `QueryTrustRegistryHandler` | Trust-edge registry dump |
+| GET | `/api/node/domains` | `GetNodeDomainsHandler` | Domains this node serves |
+| POST | `/api/node/domains` | `UpdateNodeDomainsHandler` | Update served-domain list |
+| POST | `/api/gossip/domains` | `ReceiveDomainGossipHandler` | Peer gossip: domain-registration sync |
+
+#### 6.3.4 Discovery + sharding (QDP-0014)
+
+v2-only. Each route is at `/api/v2/discovery/...`.
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| GET | `/api/v2/discovery/domain/{name}` | `DiscoveryDomainHandler` | Consortium + endpoint hints for a domain |
+| GET | `/api/v2/discovery/node/{quid}` | `DiscoveryNodeHandler` | Current advertisement for a node |
+| GET | `/api/v2/discovery/operator/{quid}` | `DiscoveryOperatorHandler` | All advertisements attested by an operator |
+| GET | `/api/v2/discovery/quids` | `DiscoveryQuidsHandler` | Per-domain quid index (sortable by activity, etc.) |
+| GET | `/api/v2/discovery/trusted-quids` | `DiscoveryTrustedQuidsHandler` | Consortium-blessed quid subset |
+
+#### 6.3.5 Guardian recovery (QDP-0002 + QDP-0006)
+
+v2-only. Each route is at `/api/v2/guardian/...`.
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/v2/guardian/set-update` | `SubmitGuardianSetUpdateHandler` | Publish / rotate a guardian set |
+| POST | `/api/v2/guardian/recovery/init` | `SubmitGuardianRecoveryInitHandler` | Start time-locked recovery |
+| POST | `/api/v2/guardian/recovery/veto` | `SubmitGuardianRecoveryVetoHandler` | Veto in-flight recovery |
+| POST | `/api/v2/guardian/recovery/commit` | `SubmitGuardianRecoveryCommitHandler` | Finalize after time-lock |
+| POST | `/api/v2/guardian/resign` | `SubmitGuardianResignationHandler` | Resign a guardian (QDP-0006) |
+| GET | `/api/v2/guardian/set/{quid}` | `GetGuardianSetHandler` | Current guardian set for a quid |
+| GET | `/api/v2/guardian/pending-recovery/{quid}` | `GetPendingRecoveryHandler` | In-flight recovery state |
+| GET | `/api/v2/guardian/resignations/{quid}` | `GetGuardianResignationsHandler` | Resignation history |
+
+#### 6.3.6 Cross-domain gossip + fingerprints (QDP-0003 + QDP-0005)
+
+v2-only. Each route is at `/api/v2/...`.
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/v2/anchor-gossip` | `SubmitAnchorGossipHandler` | Publish cross-domain nonce anchor |
+| POST | `/api/v2/domain-fingerprints` | `SubmitDomainFingerprintHandler` | Publish domain fingerprint |
+| GET | `/api/v2/domain-fingerprints/{domain}/latest` | `GetLatestDomainFingerprintHandler` | Latest fingerprint for a domain |
+| POST | `/api/v2/gossip/push-anchor` | `ReceiveAnchorPushHandler` | Receive pushed anchor |
+| POST | `/api/v2/gossip/push-fingerprint` | `ReceiveFingerprintPushHandler` | Receive pushed fingerprint |
+
+#### 6.3.7 Fork-block activation (QDP-0009)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/fork-block` | `SubmitForkBlockHandler` | Submit a signed fork activation |
+| GET | `/api/fork-block/status` | `GetForkBlockStatusHandler` | Current fork-block state |
+
+#### 6.3.8 Bootstrap snapshots (QDP-0008)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/nonce-snapshots` | `SubmitNonceSnapshotHandler` | Publish K-of-K snapshot |
+| GET | `/api/nonce-snapshots/{domain}/latest` | `GetLatestNonceSnapshotHandler` | Latest snapshot for a domain |
+| GET | `/api/bootstrap/status` | `GetBootstrapStatusHandler` | Bootstrap progress |
+
+#### 6.3.9 Moderation (QDP-0015 Phase 1)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/moderation/actions` | `CreateModerationActionHandler` | Submit a moderation action |
+| GET | `/api/moderation/actions/{targetType}/{targetId}` | `GetModerationActionsHandler` | Effective action for a target |
+
+#### 6.3.10 Privacy + data-subject rights (QDP-0017 Phase 1)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/privacy/dsr` | `CreateDSRHandler` | Submit a data-subject request |
+| GET | `/api/privacy/dsr/{requestTxId}` | `GetDSRStatusHandler` | DSR status + compliance record |
+| POST | `/api/privacy/consent/grants` | `CreateConsentGrantHandler` | Submit CONSENT_GRANT |
+| POST | `/api/privacy/consent/withdraws` | `CreateConsentWithdrawHandler` | Submit CONSENT_WITHDRAW |
+| GET | `/api/privacy/consent/history` | `GetConsentHistoryHandler` | Per-granter grant + withdraw history |
+| POST | `/api/privacy/restrictions` | `CreateProcessingRestrictionHandler` | Submit PROCESSING_RESTRICTION |
+| GET | `/api/privacy/restrictions/{subjectQuid}` | `GetRestrictionsForSubjectHandler` | Active restrictions for a subject |
+| POST | `/api/privacy/compliance` | `CreateDSRComplianceHandler` | Submit DSR_COMPLIANCE (validator-only) |
+
+#### 6.3.11 Audit log (QDP-0018 Phase 1)
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| GET | `/api/audit/head` | `AuditHeadHandler` | Hash-chain head |
+| GET | `/api/audit/entries` | `AuditEntriesHandler` | Paginated entries |
+| GET | `/api/audit/entry/{sequence}` | `AuditEntryHandler` | Single entry by sequence |
+
+#### 6.3.12 IPFS bridge
+
+| Method | Path | Handler | Purpose |
+|---|---|---|---|
+| POST | `/api/ipfs/pin` | `PinToIPFSHandler` | Pin content to IPFS |
+| GET | `/api/ipfs/{cid}` | `GetFromIPFSHandler` | Fetch content by CID |
+
+#### 6.3.13 Authentication
+
+v1.0 authentication is uniform: no built-in auth on most
+routes, with node-configurable middleware for bearer
+tokens applied in front of the mux.
+
+- **Public routes** (no auth required): all read-side
+  queries + all transaction submissions. Transactions
+  authenticate via their embedded `signature` field.
+- **Operator-scoped routes** (bearer token via
+  `Authorization: Bearer <token>`, configured at node
+  startup): `/api/audit/*`, `/api/node/domains` POST,
+  `/api/privacy/compliance` POST (validator-only).
+- **Rate-limited routes**: all POST routes pass through
+  the `MultiLayerLimiter` (QDP-0016 Phase 1) per
+  quid / operator / domain.
 
 ### 6.4 Endpoints deferred (not in v1.0 unless launch-gated)
 
@@ -1393,49 +1647,79 @@ test suite similar to W3C's browser-WPT model.]**
 
 ## 15. Open questions consolidated
 
-A quick index of every **[OPEN]** marker for triage:
+Status of each `[OPEN]` marker, most-recently-updated
+first. Resolved items kept in the list for audit trail.
 
-1. **§2.2** — Canonical byte form cross-SDK determinism
-   (verify Python/JS/Rust match Go).
-2. **§2.3** — RFC 6979 deterministic signing mandate.
-3. **§2.4** — Per-type ID derivation verification.
-4. **§2.7** — Timestamp unit unification (seconds vs ns).
-5. **§3.5** — Low-s signature enforcement.
-6. **§4.1** — `TxTypeGeneric` — keep or remove?
-7. **§4.1** — Which Draft QDPs actually land in v1.0?
-8. **§4.2** — `MaxDescriptionLength` exact value.
-9. **§4.3** — Reserved attribute keys on IDENTITY.
-10. **§4.4** — TITLE asset ID canonical format.
-11. **§4.4** — TITLE per-type transfer threshold table.
-12. **§4.5** — `MaxInlinePayloadBytes` exact value.
-13. **§4.5** — `Payload` + `PayloadCID` mutual exclusion
-    enforcement.
-14. **§5.2** — Protocol-internal event-type exhaustive
-    list + schemas.
-15. **§5.6/5.7** — Whether DNS attestation + group
-    encryption event types are in v1.0.
-16. **§5.8** — Reserved keys enumerated.
-17. **§6.2** — Quid-signed request header format.
-18. **§6.3** — Cross-check against `handlers*.go` to
-    ensure completeness.
-19. **§7.10** — Audit log category enumeration.
-20. **§8.1** — Gossip interval + fan-out parameters.
-21. **§8.2** — Block interval + acceptance thresholds.
-22. **§8.3** — Fork-block exercised on staging once before
+### Resolved
+
+- **§2.2** — Canonical byte form cross-SDK determinism.
+  **RESOLVED.** Eight SDKs (Go reference, pkg/client,
+  Python, Rust, JS, Java, .NET, Swift, browser extension)
+  have conforming test-vector consumers at
+  `docs/test-vectors/v1.0/`. See the Conformance Status
+  section there.
+- **§2.3** — RFC 6979 deterministic signing mandate.
+  **RESOLVED.** Reference node MUST use RFC 6979 + low-s.
+  SDKs SHOULD migrate. Verified against RFC 6979 Appendix
+  A.2.5 in `internal/core/rfc6979_test.go`.
+- **§2.4** — Per-type ID derivation verification.
+  **RESOLVED.** Every SDK's test suite derives IDs locally
+  and compares against the vector `expected_id`.
+- **§3.5** — Low-s signature enforcement.
+  **RESOLVED.** Reference node signs low-s automatically.
+  Verification accepts both forms in v1.0; strict
+  rejection deferred to v1.1 via fork-block.
+- **§4.0** — Size + length constants.
+  **RESOLVED.** Constants table at §4.0 pulls actual
+  values from `internal/core` source.
+- **§4.2** — `MaxDescriptionLength` exact value. 4096
+  bytes (see §4.0 table).
+- **§4.5** — `MaxPayloadSize` (inline). 64 KB
+  (see §4.0 table; renamed from `MaxInlinePayloadBytes`).
+- **§6.3** — Endpoint catalog cross-check. **RESOLVED.**
+  Catalog in §6.3 now enumerates all 66 routes across
+  `/api/v1/`, `/api/`, and `/api/v2/` prefixes, grouped
+  by functional area.
+- **§13** — Test vector directory build. **RESOLVED.**
+  Directory exists with 24 cases across 7 files covering
+  every Required transaction type.
+
+### Still open
+
+1. **§2.7** — Timestamp unit unification (seconds vs ns).
+2. **§4.1** — `TxTypeGeneric` — keep or remove?
+3. **§4.1** — Which Draft QDPs actually land in v1.0?
+4. **§4.3** — Reserved attribute keys on IDENTITY.
+5. **§4.4** — TITLE asset ID canonical format.
+6. **§4.4** — TITLE per-type transfer threshold table.
+7. **§4.5** — `Payload` + `PayloadCID` mutual exclusion
+   enforcement at the node layer (currently SDK-enforced;
+   v1.1 tightening).
+8. **§5.2** — Protocol-internal event-type exhaustive
+   list + schemas.
+9. **§5.6/5.7** — Whether DNS attestation + group
+   encryption event types are in v1.0.
+10. **§6.2** — Quid-signed request header format (for
+    trust-gated reads of private records).
+11. **§7.10** — Audit log category enumeration.
+12. **§8.1** — Gossip interval + fan-out parameters.
+13. **§8.2** — Block interval + acceptance thresholds.
+14. **§8.3** — Fork-block exercised on staging once before
     launch.
-23. **§9** — Federation semantics require fuller §9
+15. **§9** — Federation semantics require fuller §9
     treatment.
-24. **§9.2** — Import-weight reference default.
-25. **§10.2** — Full capability-flag vocabulary.
-26. **§11.2** — Bounded-staleness numeric bound.
-27. **§11.5** — Companion `protocol-invariants.md`.
-28. **§12.4** — QDP-0023 + QDP-0024 in-or-out decision.
-29. **§13** — Test vector directory build.
-30. **§14** — Conformance test harness.
+16. **§9.2** — Import-weight reference default.
+17. **§10.2** — Full capability-flag vocabulary.
+18. **§11.2** — Bounded-staleness numeric bound.
+19. **§11.5** — Companion `protocol-invariants.md`.
+20. **§12.4** — QDP-0023 + QDP-0024 in-or-out decision.
+21. **§14** — Conformance test harness (external
+    implementation runner).
 
 Each open question gates some portion of the freeze.
-Resolution should produce an amendment commit that edits
-this document inline and removes the `[OPEN]` marker.
+Resolution produces an amendment commit that edits this
+document inline, adds to the "Resolved" list, and removes
+any `[OPEN]` marker in the body.
 
 ## 16. Document maintenance
 

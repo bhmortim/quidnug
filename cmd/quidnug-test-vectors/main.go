@@ -27,14 +27,11 @@ package main
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
 	"os/exec"
@@ -44,10 +41,6 @@ import (
 
 	"github.com/quidnug/quidnug/internal/core"
 )
-
-func init() {
-	cr = cryptorand.Reader
-}
 
 const schemaVersion = "1.0"
 
@@ -143,15 +136,14 @@ func deriveTestKey(name, seed string) (*testKey, error) {
 	}, nil
 }
 
-// signIEEE1363 produces a 64-byte raw (r||s) hex ECDSA
-// signature over SHA-256(data). This matches what the
-// reference node's VerifySignature accepts.
+// signIEEE1363 produces a deterministic 64-byte raw (r||s)
+// hex ECDSA signature over SHA-256(data) per RFC 6979 with
+// low-s normalization. Matches the reference node's
+// SignData exactly; test-vector reference signatures are now
+// bit-stable across regenerations.
 func (k *testKey) signIEEE1363(data []byte) (string, error) {
 	h := sha256.Sum256(data)
-	r, s, err := ecdsa.Sign(rngFor(k), k.Priv, h[:])
-	if err != nil {
-		return "", err
-	}
+	r, s := core.SignRFC6979(k.Priv, h[:])
 	sig := make([]byte, 64)
 	rb := r.Bytes()
 	sb := s.Bytes()
@@ -160,26 +152,8 @@ func (k *testKey) signIEEE1363(data []byte) (string, error) {
 	return hex.EncodeToString(sig), nil
 }
 
-// rngFor returns a reader for the signing RNG. Currently we
-// use crypto/rand; when RFC 6979 deterministic signing is
-// mandated this switches to an RFC-6979 reader derived from
-// (k, data).
-func rngFor(_ *testKey) io.Reader {
-	return newRandReader()
-}
-
-// newRandReader returns a fresh crypto/rand reader. Wrapped
-// so the call site stays unchanged when the signing RNG
-// becomes RFC 6979 deterministic.
-func newRandReader() io.Reader {
-	return cryptoRand{}
-}
-
-type cryptoRand struct{}
-
-func (cryptoRand) Read(p []byte) (int, error) {
-	return readFromCryptoRand(p)
-}
+// (rngFor and related plumbing removed: RFC 6979 is fully
+// deterministic and needs no external entropy source.)
 
 // ---------------------------------------------------------------
 // Case + file types
@@ -809,31 +783,8 @@ func gitCommit() string {
 	return strings.TrimSpace(string(out))
 }
 
-// readFromCryptoRand is separated so we can stub it out in
-// future RFC-6979 migration without touching call sites.
-func readFromCryptoRand(p []byte) (int, error) {
-	// lazy import to avoid naming clash with `rand` used elsewhere
-	return cryptoRandReadImpl(p)
-}
-
-// cryptoRandReadImpl pulls from crypto/rand. Split from
-// readFromCryptoRand to make the swap point explicit.
-func cryptoRandReadImpl(p []byte) (int, error) {
-	return cryptoRandFallback(p)
-}
-
-// cryptoRandFallback is the final fallback calling
-// crypto/rand.Reader directly.
-func cryptoRandFallback(p []byte) (int, error) {
-	if cr == nil {
-		return 0, errors.New("crypto rand reader unavailable")
-	}
-	return cr.Read(p)
-}
-
-// cr is the actual crypto/rand.Reader; assigned at init so
-// the import stays visible to go vet.
-var cr io.Reader
+// (Legacy crypto/rand plumbing removed — RFC 6979 is
+// deterministic and needs no external entropy source.)
 
 // ---------------------------------------------------------------
 // Additional ID derivations

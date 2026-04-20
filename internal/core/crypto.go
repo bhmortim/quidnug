@@ -3,12 +3,156 @@ package core
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"hash"
 	"math/big"
 )
+
+// ---------------------------------------------------------------
+// RFC 6979 deterministic ECDSA
+// ---------------------------------------------------------------
+//
+// Per v1.0 (protocol-v1.0.md §2.3), the reference node MUST sign
+// using RFC 6979 deterministic-k ECDSA with SHA-256 + low-s
+// normalization. SDKs SHOULD adopt the same over time; until they
+// do, verification remains lenient so non-deterministic signatures
+// from other implementations still verify.
+//
+// Implementation is a direct translation of RFC 6979 §3.2 for
+// ECDSA P-256 + SHA-256 (the only suite v1.0 uses).
+
+// rfc6979K computes the deterministic nonce k per RFC 6979 §3.2
+// for curve N = order, private scalar x, and hashed message h1.
+// Output is in [1, N-1].
+func rfc6979K(n, x *big.Int, h1 []byte) *big.Int {
+	qlen := n.BitLen()
+	hashLen := sha256.Size
+	// bits2octets(h1) per §2.3.4: take leftmost qlen bits, reduce mod n.
+	bits2int := func(b []byte) *big.Int {
+		v := new(big.Int).SetBytes(b)
+		blen := len(b) * 8
+		if blen > qlen {
+			v.Rsh(v, uint(blen-qlen))
+		}
+		return v
+	}
+	bits2octets := func(b []byte) []byte {
+		z1 := bits2int(b)
+		z2 := new(big.Int).Mod(z1, n)
+		return int2octets(z2, qlen)
+	}
+
+	V := bytes1Repeated(0x01, hashLen)
+	K := make([]byte, hashLen) // all zeros
+
+	x1 := int2octets(x, qlen)
+	h1o := bits2octets(h1)
+
+	// K = HMAC(K, V || 0x00 || int2octets(x) || bits2octets(h1))
+	K = hmacSum(sha256.New, K, concat(V, []byte{0x00}, x1, h1o))
+	V = hmacSum(sha256.New, K, V)
+	// K = HMAC(K, V || 0x01 || int2octets(x) || bits2octets(h1))
+	K = hmacSum(sha256.New, K, concat(V, []byte{0x01}, x1, h1o))
+	V = hmacSum(sha256.New, K, V)
+
+	for {
+		T := []byte{}
+		for len(T)*8 < qlen {
+			V = hmacSum(sha256.New, K, V)
+			T = append(T, V...)
+		}
+		k := bits2int(T)
+		if k.Sign() > 0 && k.Cmp(n) < 0 {
+			return k
+		}
+		// k not in range; re-seed and retry
+		K = hmacSum(sha256.New, K, concat(V, []byte{0x00}))
+		V = hmacSum(sha256.New, K, V)
+	}
+}
+
+// int2octets encodes an int to a big-endian byte string of
+// exactly rlen bits (rounded up to bytes), per RFC 6979 §2.3.3.
+func int2octets(v *big.Int, rlen int) []byte {
+	out := v.Bytes()
+	byteLen := (rlen + 7) / 8
+	if len(out) < byteLen {
+		pad := make([]byte, byteLen-len(out))
+		out = append(pad, out...)
+	}
+	if len(out) > byteLen {
+		out = out[len(out)-byteLen:]
+	}
+	return out
+}
+
+func bytes1Repeated(b byte, n int) []byte {
+	out := make([]byte, n)
+	for i := range out {
+		out[i] = b
+	}
+	return out
+}
+
+func hmacSum(newHash func() hash.Hash, key, data []byte) []byte {
+	m := hmac.New(newHash, key)
+	m.Write(data)
+	return m.Sum(nil)
+}
+
+func concat(parts ...[]byte) []byte {
+	total := 0
+	for _, p := range parts {
+		total += len(p)
+	}
+	out := make([]byte, 0, total)
+	for _, p := range parts {
+		out = append(out, p...)
+	}
+	return out
+}
+
+// SignRFC6979 produces a deterministic ECDSA P-256 + SHA-256
+// signature per RFC 6979, with low-s normalization per BIP-62.
+// Returns (r, s) where s <= n/2.
+//
+// The returned pair serializes to 64 bytes as r||s padded to
+// 32 bytes each; that's the on-wire IEEE-1363 form.
+func SignRFC6979(priv *ecdsa.PrivateKey, digest []byte) (r, s *big.Int) {
+	curve := priv.Curve
+	params := curve.Params()
+	n := params.N
+
+	k := rfc6979K(n, priv.D, digest)
+	kInv := new(big.Int).ModInverse(k, n)
+
+	x, _ := curve.ScalarBaseMult(k.Bytes())
+	r = new(big.Int).Mod(x, n)
+
+	// e (message hash trimmed to the curve order's bit length).
+	e := new(big.Int).SetBytes(digest)
+	if n.BitLen() < e.BitLen() {
+		e.Rsh(e, uint(e.BitLen()-n.BitLen()))
+	}
+
+	// s = k^-1 * (e + r*d) mod n
+	s = new(big.Int).Mul(r, priv.D)
+	s.Add(s, e)
+	s.Mul(s, kInv)
+	s.Mod(s, n)
+
+	// Low-s normalization: if s > n/2, replace with n - s.
+	// Ensures a canonical, non-malleable signature.
+	halfN := new(big.Int).Rsh(n, 1)
+	if s.Cmp(halfN) > 0 {
+		s.Sub(n, s)
+	}
+	return r, s
+}
 
 // GetBlockSignableData returns canonical bytes for signing a block.
 // This excludes the Hash field (not set during signing) and ValidatorSigs
@@ -103,16 +247,26 @@ func canonicalBlockBytes(block Block) ([]byte, error) {
 	return json.Marshal(generic)
 }
 
-// SignData signs data with the node's private key
+// SignData signs data with the node's private key.
+//
+// v1.0 canonical form: deterministic RFC 6979 k selection +
+// low-s normalization. Output is 64-byte IEEE-1363 raw
+// (r||s, each zero-padded to 32 bytes). Signatures are
+// bit-stable across runs for the same (key, message) pair,
+// enabling reproducible test vectors and eliminating the
+// class of bugs caused by weak RNGs leaking private keys via
+// k-reuse.
+//
+// Non-RFC-6979 signers (other SDKs) still produce valid ECDSA
+// signatures that this verifier accepts; determinism is a
+// one-way guarantee the reference node provides, not a
+// requirement on incoming signatures.
 func (node *QuidnugNode) SignData(data []byte) ([]byte, error) {
-	hash := sha256.Sum256(data)
+	digest := sha256.Sum256(data)
 
-	r, s, err := ecdsa.Sign(rand.Reader, node.PrivateKey, hash[:])
-	if err != nil {
-		return nil, err
-	}
+	r, s := SignRFC6979(node.PrivateKey, digest[:])
 
-	// Pad r and s to 32 bytes each for P-256 (64 bytes total)
+	// Pad r and s to 32 bytes each for P-256 (64 bytes total).
 	signature := make([]byte, 64)
 	rBytes := r.Bytes()
 	sBytes := s.Bytes()
@@ -121,6 +275,10 @@ func (node *QuidnugNode) SignData(data []byte) ([]byte, error) {
 
 	return signature, nil
 }
+
+// Keep rand import alive for any future non-deterministic path
+// (e.g., future protocol additions requiring fresh entropy).
+var _ = rand.Reader
 
 // GetPublicKeyHex returns the hex-encoded public key in uncompressed format.
 // Returns an empty string when the node has no public key set (e.g. test nodes

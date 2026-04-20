@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "NODE_ADVERTISEMENT",
-  "generated_at": "2026-04-20T22:20:35Z",
-  "generator_commit": "4f176423b60f23b1af9e380cdcf357383fd72026",
+  "generated_at": "2026-04-20T23:11:58Z",
+  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
   "canonical_form_notes": "json.Marshal(txCopy) on typed NodeAdvertisementTransaction struct with Signature=''",
   "cases": [
     {
@@ -14,7 +14,7 @@
         "type": "NODE_ADVERTISEMENT",
         "trustDomain": "operators.network.reviews.public",
         "timestamp": 1729468800,
-        "signature": "113aa2f60aedae68cdb3f056f6df9414515383c8b7602ee0161014af39409f2a27b0b9303f642a3f4fab742b7fb1b40df14f6b40179c86fd2f4f5d1047405cb8",
+        "signature": "b917e76baaf3e5818659ed709e365bf7555478b9794cef7a48934bd4523f03a676f738d9f5fc7e4d199fca213f33b7418b0ce369065588d2afc3b85a812d706d",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "nodeQuid": "c31907f180e6e1e0",
         "operatorQuid": "4ef5d5d0f15ff46d",
@@ -43,7 +43,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"0e9563d718c85687a5e03023619b6e68222da39a13ada7a9a1053baac740b112\",\"type\":\"NODE_ADVERTISEMENT\",\"trustDomain\":\"operators.network.reviews.public\",\"timestamp\":1729468800,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"nodeQuid\":\"c31907f180e6e1e0\",\"operatorQuid\":\"4ef5d5d0f15ff46d\",\"endpoints\":[{\"url\":\"https://node-alice.example.com:443\",\"protocol\":\"http/2\",\"region\":\"iad\",\"priority\":10,\"weight\":100}],\"supportedDomains\":[\"reviews.public.*\"],\"capabilities\":{\"validator\":true,\"cache\":true},\"protocolVersion\":\"1.0\",\"expiresAt\":1730073600000000000,\"advertisementNonce\":1}",
         "sha256_of_canonical_hex": "bc162223e0786133cf44b8a15075ac621977ed34fcbe5fe847272033f5dfa0a9",
         "expected_id": "0e9563d718c85687a5e03023619b6e68222da39a13ada7a9a1053baac740b112",
-        "reference_signature_hex": "113aa2f60aedae68cdb3f056f6df9414515383c8b7602ee0161014af39409f2a27b0b9303f642a3f4fab742b7fb1b40df14f6b40179c86fd2f4f5d1047405cb8",
+        "reference_signature_hex": "b917e76baaf3e5818659ed709e365bf7555478b9794cef7a48934bd4523f03a676f738d9f5fc7e4d199fca213f33b7418b0ce369065588d2afc3b85a812d706d",
         "signature_length_bytes": 64
       }
     },
@@ -56,7 +56,7 @@
         "type": "NODE_ADVERTISEMENT",
         "trustDomain": "operators.network.reviews.public",
         "timestamp": 1729468801,
-        "signature": "3002c68c74e73a3f0d50cf6b403f23fe3d0147d4aaa10951bee851f72ec7cbe24c2cebd546bed519edd4e0b9e03d5ad961611bcba775ebf4612523d4344ee109",
+        "signature": "8b05e975afa9e3eeccac367032ea650d4cd6306276c4877fc473430bf15a87fc47aa7a1726fb54f212236c6dc7309017dd171b58558145e2b5e68f171a2b93c2",
         "publicKey": "04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8",
         "nodeQuid": "4ef5d5d0f15ff46d",
         "operatorQuid": "c31907f180e6e1e0",
@@ -89,7 +89,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"47670cf1395f6f15ed177b6dec52491a7116b0a162163025168e7f15ad51c11a\",\"type\":\"NODE_ADVERTISEMENT\",\"trustDomain\":\"operators.network.reviews.public\",\"timestamp\":1729468801,\"signature\":\"\",\"publicKey\":\"04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8\",\"nodeQuid\":\"4ef5d5d0f15ff46d\",\"operatorQuid\":\"c31907f180e6e1e0\",\"endpoints\":[{\"url\":\"https://cache-lhr.example.com:443\",\"protocol\":\"http/2\",\"region\":\"lhr\",\"priority\":10,\"weight\":100},{\"url\":\"https://cache-sin.example.com:443\",\"protocol\":\"http/2\",\"region\":\"sin\",\"priority\":20,\"weight\":50}],\"capabilities\":{\"cache\":true,\"maxBodyBytes\":1048576},\"protocolVersion\":\"1.0\",\"expiresAt\":1729490401000000000,\"advertisementNonce\":1}",
         "sha256_of_canonical_hex": "dfdbf82078d43daded2b48a186853c5c2c811b539352df1cc039520b07e75bfb",
         "expected_id": "47670cf1395f6f15ed177b6dec52491a7116b0a162163025168e7f15ad51c11a",
-        "reference_signature_hex": "3002c68c74e73a3f0d50cf6b403f23fe3d0147d4aaa10951bee851f72ec7cbe24c2cebd546bed519edd4e0b9e03d5ad961611bcba775ebf4612523d4344ee109",
+        "reference_signature_hex": "8b05e975afa9e3eeccac367032ea650d4cd6306276c4877fc473430bf15a87fc47aa7a1726fb54f212236c6dc7309017dd171b58558145e2b5e68f171a2b93c2",
         "signature_length_bytes": 64
       }
     }

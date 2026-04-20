@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "TITLE",
-  "generated_at": "2026-04-20T22:20:35Z",
-  "generator_commit": "4f176423b60f23b1af9e380cdcf357383fd72026",
+  "generated_at": "2026-04-20T23:11:58Z",
+  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
   "canonical_form_notes": "json.Marshal(txCopy) on typed TitleTransaction struct with Signature=''",
   "cases": [
     {
@@ -14,7 +14,7 @@
         "type": "TITLE",
         "trustDomain": "titles.home",
         "timestamp": 1729468800,
-        "signature": "599585845fbdcabfd12405eb60475eb351f7a35e1655b7081164e9bab890d78f5c26aaacf114fd5cd62e839e82827ebe21ecd5e4b59048806215f3423526b247",
+        "signature": "38487d3180d39129cd90731d534097d8a0a5f74411f3344e2007e67e1d7ec9a717ceb21a420158174943483dd327e19e4ed0042a6b1bd7580d0c48bb2785c7bd",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "assetId": "asset-sku-000001",
         "owners": [
@@ -32,7 +32,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"27c0d5db17a5e97f1fff1713bcb9f56052b7b38f024109dc4b5fdbbbdf4feeae\",\"type\":\"TITLE\",\"trustDomain\":\"titles.home\",\"timestamp\":1729468800,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"assetId\":\"asset-sku-000001\",\"owners\":[{\"ownerId\":\"c31907f180e6e1e0\",\"percentage\":1,\"stakeType\":\"full-ownership\"}],\"signatures\":{},\"titleType\":\"inventory\"}",
         "sha256_of_canonical_hex": "48b8ed6f4f2371e49c587dd75c582237bf07506e105f8c62ceb7e78d768d4cb5",
         "expected_id": "27c0d5db17a5e97f1fff1713bcb9f56052b7b38f024109dc4b5fdbbbdf4feeae",
-        "reference_signature_hex": "599585845fbdcabfd12405eb60475eb351f7a35e1655b7081164e9bab890d78f5c26aaacf114fd5cd62e839e82827ebe21ecd5e4b59048806215f3423526b247",
+        "reference_signature_hex": "38487d3180d39129cd90731d534097d8a0a5f74411f3344e2007e67e1d7ec9a717ceb21a420158174943483dd327e19e4ed0042a6b1bd7580d0c48bb2785c7bd",
         "signature_length_bytes": 64
       }
     },
@@ -45,7 +45,7 @@
         "type": "TITLE",
         "trustDomain": "titles.home",
         "timestamp": 1729472400,
-        "signature": "3ffe2c0df79eec2a3a20ca30ae3d22ae6911dbbd2d30eaa467187bf2f918e72b1322df79624166b9e57e44c9863e713fb752cc32b6ace42bbe1d070a80bebd9b",
+        "signature": "6317f3de61be3102089cdb9740d3060dbd90153ca8bc0470cceeb6cac9139bdd51c1991a370ef0538b3755dcc1e5c382a322a5c943f2794f9a4de1c88dcae972",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "assetId": "asset-joint-002",
         "owners": [
@@ -65,7 +65,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"a12629e758baeab1fe4be0844c29f581dd0b9cc38bf18646b31e8f13c87e5113\",\"type\":\"TITLE\",\"trustDomain\":\"titles.home\",\"timestamp\":1729472400,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"assetId\":\"asset-joint-002\",\"owners\":[{\"ownerId\":\"c31907f180e6e1e0\",\"percentage\":0.6},{\"ownerId\":\"4ef5d5d0f15ff46d\",\"percentage\":0.4}],\"signatures\":{}}",
         "sha256_of_canonical_hex": "9c118bc33213576c04b03167f374bde2c76039b9993e96cf508ea06929204fe0",
         "expected_id": "a12629e758baeab1fe4be0844c29f581dd0b9cc38bf18646b31e8f13c87e5113",
-        "reference_signature_hex": "3ffe2c0df79eec2a3a20ca30ae3d22ae6911dbbd2d30eaa467187bf2f918e72b1322df79624166b9e57e44c9863e713fb752cc32b6ace42bbe1d070a80bebd9b",
+        "reference_signature_hex": "6317f3de61be3102089cdb9740d3060dbd90153ca8bc0470cceeb6cac9139bdd51c1991a370ef0538b3755dcc1e5c382a322a5c943f2794f9a4de1c88dcae972",
         "signature_length_bytes": 64
       }
     },
@@ -78,7 +78,7 @@
         "type": "TITLE",
         "trustDomain": "titles.lease",
         "timestamp": 1729555200,
-        "signature": "b0f9f1bfec005e07ced95887cb576168e016c941ca94e6201e173e4c9ade5c80c7803d3f462393c1faf06ba7961f7d02e126f80215e8498a81d62b329684a8e9",
+        "signature": "5863c4e91a41eb78f4f06ace4c06a9bb5c80879ea0720b37eb46b7df365a7d1449ec1aef82535c36d1d1cb4f2dd64bd703f8e00b1ae83778e6d9dd67ddd73da1",
         "publicKey": "04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a",
         "assetId": "lease-apt-3f",
         "owners": [
@@ -107,7 +107,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"d0653318b89d779c7082aec0cf4bb22142dab8c9157ec9a2ba8aa4e600e1de5c\",\"type\":\"TITLE\",\"trustDomain\":\"titles.lease\",\"timestamp\":1729555200,\"signature\":\"\",\"publicKey\":\"04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a\",\"assetId\":\"lease-apt-3f\",\"owners\":[{\"ownerId\":\"c31907f180e6e1e0\",\"percentage\":0.4,\"stakeType\":\"tenant\"},{\"ownerId\":\"4ef5d5d0f15ff46d\",\"percentage\":0.3,\"stakeType\":\"tenant\"},{\"ownerId\":\"aaed0498f455b5ca\",\"percentage\":0.3,\"stakeType\":\"tenant\"}],\"signatures\":{},\"expiryDate\":1737331200,\"titleType\":\"residential-lease\"}",
         "sha256_of_canonical_hex": "392ff030c3fcff3a9206859f295ddafab946e14f32ad70afe0846adcf33b093f",
         "expected_id": "d0653318b89d779c7082aec0cf4bb22142dab8c9157ec9a2ba8aa4e600e1de5c",
-        "reference_signature_hex": "b0f9f1bfec005e07ced95887cb576168e016c941ca94e6201e173e4c9ade5c80c7803d3f462393c1faf06ba7961f7d02e126f80215e8498a81d62b329684a8e9",
+        "reference_signature_hex": "5863c4e91a41eb78f4f06ace4c06a9bb5c80879ea0720b37eb46b7df365a7d1449ec1aef82535c36d1d1cb4f2dd64bd703f8e00b1ae83778e6d9dd67ddd73da1",
         "signature_length_bytes": 64
       }
     }

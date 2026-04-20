@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "EVENT",
-  "generated_at": "2026-04-20T22:20:35Z",
-  "generator_commit": "4f176423b60f23b1af9e380cdcf357383fd72026",
+  "generated_at": "2026-04-20T23:11:58Z",
+  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
   "canonical_form_notes": "json.Marshal(txCopy) on typed EventTransaction struct with Signature=''",
   "cases": [
     {
@@ -14,7 +14,7 @@
         "type": "EVENT",
         "trustDomain": "reviews.public.technology.laptops",
         "timestamp": 1729468800,
-        "signature": "68efd5f897c5ba75517d1e4982f06fd93dce0d3b9ea482b7e4ad5a5e5c62d0749fc4053a249da5a03d9d6791df28f56be0a7b634bd3a34b4d32baf1bcf63add1",
+        "signature": "47d6d155a980322030c4a796bad66d0e58920a18b1e0612bdb16644f8ad133d74e4e22b1929c5a7e3ecd162cfc7fd8dc303bf61a1449caed766ecd92f62a2bcf",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "subjectId": "c31907f180e6e1e0",
         "subjectType": "QUID",
@@ -32,7 +32,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"dc3098b7bc65c330e9abb21cc9b6f1c46f1373c295892f407c1be169c7bc3b74\",\"type\":\"EVENT\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729468800,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectId\":\"c31907f180e6e1e0\",\"subjectType\":\"QUID\",\"sequence\":1,\"eventType\":\"reviews.review.created\",\"payload\":{\"body_excerpt\":\"keyboard is excellent; battery could be better\",\"product\":\"thinkpad-x1\",\"rating\":4.5,\"title\":\"solid machine\"}}",
         "sha256_of_canonical_hex": "dadd4d00365c5413b7a4ac8cd53815a022501ef247c7072644dea57eb86d9e42",
         "expected_id": "dc3098b7bc65c330e9abb21cc9b6f1c46f1373c295892f407c1be169c7bc3b74",
-        "reference_signature_hex": "68efd5f897c5ba75517d1e4982f06fd93dce0d3b9ea482b7e4ad5a5e5c62d0749fc4053a249da5a03d9d6791df28f56be0a7b634bd3a34b4d32baf1bcf63add1",
+        "reference_signature_hex": "47d6d155a980322030c4a796bad66d0e58920a18b1e0612bdb16644f8ad133d74e4e22b1929c5a7e3ecd162cfc7fd8dc303bf61a1449caed766ecd92f62a2bcf",
         "signature_length_bytes": 64
       }
     },
@@ -45,7 +45,7 @@
         "type": "EVENT",
         "trustDomain": "reviews.public.technology.laptops",
         "timestamp": 1729472400,
-        "signature": "dfbe966ac6a8fcdc7685814e2eece95420e829966a56924f1523a5e4e82a4f2448f28daef00bd1b4b46706f63babdb477b520c59e22396fab3642c3641d1a9ea",
+        "signature": "6c250ac40252f986dc34d0561f7e01e3bf18091ca21bd80dfa1de94e2eaca7121c4484a42a97c7397341abac8da4afe2978d9db29cb12ca4e28fc8c5a564953c",
         "publicKey": "04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8",
         "subjectId": "4ef5d5d0f15ff46d",
         "subjectType": "QUID",
@@ -58,7 +58,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"3b5790e68206fe180c88ff2cd46a606047f3743714eef6309606248c6f92551b\",\"type\":\"EVENT\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729472400,\"signature\":\"\",\"publicKey\":\"04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8\",\"subjectId\":\"4ef5d5d0f15ff46d\",\"subjectType\":\"QUID\",\"sequence\":1,\"eventType\":\"reviews.review.created\",\"payloadCid\":\"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi\"}",
         "sha256_of_canonical_hex": "ca151e53fe18e843ea83f97e50930b923213a84f501b549c961f413efd4473ab",
         "expected_id": "3b5790e68206fe180c88ff2cd46a606047f3743714eef6309606248c6f92551b",
-        "reference_signature_hex": "dfbe966ac6a8fcdc7685814e2eece95420e829966a56924f1523a5e4e82a4f2448f28daef00bd1b4b46706f63babdb477b520c59e22396fab3642c3641d1a9ea",
+        "reference_signature_hex": "6c250ac40252f986dc34d0561f7e01e3bf18091ca21bd80dfa1de94e2eaca7121c4484a42a97c7397341abac8da4afe2978d9db29cb12ca4e28fc8c5a564953c",
         "signature_length_bytes": 64
       }
     },
@@ -71,7 +71,7 @@
         "type": "EVENT",
         "trustDomain": "reviews.public.technology.laptops",
         "timestamp": 1729555200,
-        "signature": "395529df7f60a654408a8e9769933fefa40831673d151243a8164a9c940ec1468ca2059d17ce21a1ca43f7ae2110b7ffec6b0d22e80dbf6bc5ada9b80d021828",
+        "signature": "f19215b0bc984e9d42993d52c9b2d1e8b289f3a589a434564156ff24a763b7af340b7d5017fd6f8c959643ebd73abbae9f0702d27977bbc0e311404cba82423b",
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "subjectId": "c31907f180e6e1e0",
         "subjectType": "QUID",
@@ -87,7 +87,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"524981946931dc6867cd6fd99e8347ecf732f6dd0b94fb58d176db3fd01f400b\",\"type\":\"EVENT\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729555200,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectId\":\"c31907f180e6e1e0\",\"subjectType\":\"QUID\",\"sequence\":2,\"eventType\":\"reviews.review.updated\",\"payload\":{\"correction\":\"updated battery-life claim based on longer testing\"},\"previousEventId\":\"0000000000000000000000000000000000000000000000000000000000000001\"}",
         "sha256_of_canonical_hex": "97d9cebf40301a669f1758f4549340d3cc023b9b457486d1c9d4ee0fae7f5114",
         "expected_id": "524981946931dc6867cd6fd99e8347ecf732f6dd0b94fb58d176db3fd01f400b",
-        "reference_signature_hex": "395529df7f60a654408a8e9769933fefa40831673d151243a8164a9c940ec1468ca2059d17ce21a1ca43f7ae2110b7ffec6b0d22e80dbf6bc5ada9b80d021828",
+        "reference_signature_hex": "f19215b0bc984e9d42993d52c9b2d1e8b289f3a589a434564156ff24a763b7af340b7d5017fd6f8c959643ebd73abbae9f0702d27977bbc0e311404cba82423b",
         "signature_length_bytes": 64
       }
     }

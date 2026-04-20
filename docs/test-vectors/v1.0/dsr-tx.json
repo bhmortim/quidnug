@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "DSR_FAMILY",
-  "generated_at": "2026-04-20T22:20:35Z",
-  "generator_commit": "4f176423b60f23b1af9e380cdcf357383fd72026",
+  "generated_at": "2026-04-20T23:11:58Z",
+  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
   "canonical_form_notes": "DSR family: json.Marshal(txCopy) on typed struct with Signature=''. Each case's Input carries a `type` field naming which of the five tx types (DATA_SUBJECT_REQUEST | CONSENT_GRANT | CONSENT_WITHDRAW | PROCESSING_RESTRICTION | DSR_COMPLIANCE).",
   "cases": [
     {
@@ -17,7 +17,7 @@
         "nonce": 1,
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "requestType": "access",
-        "signature": "4458b87661c22d9e2cc88576c7ce2cdd49d288c327e6c42419c8a4105ca6d153be08d0cb3db24519ec13c2b289aaa0df39b0a65ffee993a4881c3b0bdfe566ce",
+        "signature": "74f3ed62d488233dbe2230eb996a5770d5a830558cc3abbd0a6959c9046fb59409045be75809f14d0cd81074d87dcbcc7074dbcdc911a8f5e2de253adca8532e",
         "subjectQuid": "c31907f180e6e1e0",
         "timestamp": 1729468800,
         "trustDomain": "reviews.public.technology.laptops",
@@ -28,7 +28,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"e22e0b68d799b0be842d29bef34ff243432c0e24db6d9731c140fa5f5fecba59\",\"type\":\"DATA_SUBJECT_REQUEST\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729468800,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectQuid\":\"c31907f180e6e1e0\",\"controllerQuid\":\"4ef5d5d0f15ff46d\",\"requestType\":\"access\",\"contactEmail\":\"alice@example.com\",\"jurisdiction\":\"EU\",\"nonce\":1}",
         "sha256_of_canonical_hex": "03449596b9db2e7a38d45dfa4489ed3df64ae26e59e9ecb86d141afa9e30d70d",
         "expected_id": "e22e0b68d799b0be842d29bef34ff243432c0e24db6d9731c140fa5f5fecba59",
-        "reference_signature_hex": "4458b87661c22d9e2cc88576c7ce2cdd49d288c327e6c42419c8a4105ca6d153be08d0cb3db24519ec13c2b289aaa0df39b0a65ffee993a4881c3b0bdfe566ce",
+        "reference_signature_hex": "74f3ed62d488233dbe2230eb996a5770d5a830558cc3abbd0a6959c9046fb59409045be75809f14d0cd81074d87dcbcc7074dbcdc911a8f5e2de253adca8532e",
         "signature_length_bytes": 64
       }
     },
@@ -44,7 +44,7 @@
         "publicKey": "04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8",
         "requestDetails": "Please delete all my reviews older than 2 years per GDPR Art. 17.",
         "requestType": "erasure",
-        "signature": "7e0248a2c49669f19eb87971163cca4eae7d8bd4eaff182ec01febf07932d87d2c702a8214641055708a27d36f52d67e898eb3576bdf4be59c6724df6c82e9b5",
+        "signature": "e6aaea8a91878c9a8a66742a9a0624e786efa3679b606a5b8506540a9650fbbb0f87f16b69b83016670f9c45019ed00a719fb1eb13f6dfee69ffa8d4d7e7761e",
         "subjectQuid": "4ef5d5d0f15ff46d",
         "timestamp": 1729468860,
         "trustDomain": "reviews.public.technology.laptops",
@@ -55,7 +55,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"c7e80ff2d14c6fbff093735ae1ff268556ba61dd6b7b7669503d3fdf013538a6\",\"type\":\"DATA_SUBJECT_REQUEST\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729468860,\"signature\":\"\",\"publicKey\":\"04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8\",\"subjectQuid\":\"4ef5d5d0f15ff46d\",\"controllerQuid\":\"c31907f180e6e1e0\",\"requestType\":\"erasure\",\"requestDetails\":\"Please delete all my reviews older than 2 years per GDPR Art. 17.\",\"jurisdiction\":\"EU\",\"nonce\":1}",
         "sha256_of_canonical_hex": "e01271846c0e5f646c1356b7f5082897ca4e7242e00002dd5426d5b2c37b57ec",
         "expected_id": "c7e80ff2d14c6fbff093735ae1ff268556ba61dd6b7b7669503d3fdf013538a6",
-        "reference_signature_hex": "7e0248a2c49669f19eb87971163cca4eae7d8bd4eaff182ec01febf07932d87d2c702a8214641055708a27d36f52d67e898eb3576bdf4be59c6724df6c82e9b5",
+        "reference_signature_hex": "e6aaea8a91878c9a8a66742a9a0624e786efa3679b606a5b8506540a9650fbbb0f87f16b69b83016670f9c45019ed00a719fb1eb13f6dfee69ffa8d4d7e7761e",
         "signature_length_bytes": 64
       }
     },
@@ -75,7 +75,7 @@
           "reputation-computation",
           "recommendations"
         ],
-        "signature": "ececeeb82ce90cab4ec1a238def4d46763aefecd1bce61311444250cea192c916309b9195d38b7654fb8458b3c9f187141bbe94d460a73eea48acb8a642dce04",
+        "signature": "6a7c104487d6dc97ef60b05c287a114deb65716ddf10d2f799315e44fc98a9be17eedf002da66ed28c2ecc0fb641ea6d51519f310e252d1f06a62c0c20dbe6c5",
         "subjectQuid": "c31907f180e6e1e0",
         "timestamp": 1729468920,
         "trustDomain": "reviews.public.technology.laptops",
@@ -86,7 +86,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"054cfd342f4054029c5d025ba8a7d9d1ea743f9c2f08cc0bbc4fc104b12a2dc0\",\"type\":\"CONSENT_GRANT\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729468920,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectQuid\":\"c31907f180e6e1e0\",\"controllerQuid\":\"4ef5d5d0f15ff46d\",\"scope\":[\"reputation-computation\",\"recommendations\"],\"policyUrl\":\"https://example.com/privacy-policy/v2\",\"policyHash\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4\",\"effectiveUntil\":1761004920,\"nonce\":1}",
         "sha256_of_canonical_hex": "a73168cca5532454b8e22c8c4f8ffea70a4718656537bf2cf5a5b86059d73e17",
         "expected_id": "054cfd342f4054029c5d025ba8a7d9d1ea743f9c2f08cc0bbc4fc104b12a2dc0",
-        "reference_signature_hex": "ececeeb82ce90cab4ec1a238def4d46763aefecd1bce61311444250cea192c916309b9195d38b7654fb8458b3c9f187141bbe94d460a73eea48acb8a642dce04",
+        "reference_signature_hex": "6a7c104487d6dc97ef60b05c287a114deb65716ddf10d2f799315e44fc98a9be17eedf002da66ed28c2ecc0fb641ea6d51519f310e252d1f06a62c0c20dbe6c5",
         "signature_length_bytes": 64
       }
     },
@@ -99,7 +99,7 @@
         "nonce": 2,
         "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
         "reason": "no-longer-using-service",
-        "signature": "ff2c7459639d8ecb3a7294f6f58fced7a105616b6e8c4868a5b26dd8f9c8163fbc931d7084f153b6ac99f1dc880d5c42974ad59268067eef9a5a645db273d5b4",
+        "signature": "4c7bb9ecb7900aeddef5052aea2450cb2309b78e0c2c94efe369895b2326434443f7c5ad5d1240c4c99f9f5e99ef67a9449fe4acf1b070381d3077f57c5af58c",
         "subjectQuid": "c31907f180e6e1e0",
         "timestamp": 1729468980,
         "trustDomain": "reviews.public.technology.laptops",
@@ -111,7 +111,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"350d82fa32e779e781ee9f70c9992fa79c5eb484cd66ec90005c464c1f96d753\",\"type\":\"CONSENT_WITHDRAW\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729468980,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectQuid\":\"c31907f180e6e1e0\",\"withdrawsGrantTxId\":\"deadbeef0000000000000000000000000000000000000000000000000000cafe\",\"reason\":\"no-longer-using-service\",\"nonce\":2}",
         "sha256_of_canonical_hex": "875226250326a79035afa6b7ee2f102f2658738a5bf01dd2534a5b1a13e32ead",
         "expected_id": "350d82fa32e779e781ee9f70c9992fa79c5eb484cd66ec90005c464c1f96d753",
-        "reference_signature_hex": "ff2c7459639d8ecb3a7294f6f58fced7a105616b6e8c4868a5b26dd8f9c8163fbc931d7084f153b6ac99f1dc880d5c42974ad59268067eef9a5a645db273d5b4",
+        "reference_signature_hex": "4c7bb9ecb7900aeddef5052aea2450cb2309b78e0c2c94efe369895b2326434443f7c5ad5d1240c4c99f9f5e99ef67a9449fe4acf1b070381d3077f57c5af58c",
         "signature_length_bytes": 64
       }
     },
@@ -129,7 +129,7 @@
           "marketing-analytics",
           "ml-training"
         ],
-        "signature": "9c79d5aedb214d5547c3fed31107d110fa982017deb78b2a99730a158fab8c44cfcbff382c94914b729e5c381ecce6f09fb29c910eac047e57254aa9e185934b",
+        "signature": "bda01fc8f9382f64b683c01be1068b738e8c29aaf4685f77471a94b10c77983a33ef5238ef3de1b5b76f4961152cd88c27c5d3e2158727ab2397b2deb40f8f3d",
         "subjectQuid": "4ef5d5d0f15ff46d",
         "timestamp": 1729469040,
         "trustDomain": "reviews.public.technology.laptops",
@@ -140,7 +140,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"bf1085b89d55451d0b7a21071c0b14eb84816c86a36ed47d16ccd757645a2ad7\",\"type\":\"PROCESSING_RESTRICTION\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729469040,\"signature\":\"\",\"publicKey\":\"04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8\",\"subjectQuid\":\"4ef5d5d0f15ff46d\",\"controllerQuid\":\"c31907f180e6e1e0\",\"restrictedUses\":[\"marketing-analytics\",\"ml-training\"],\"reason\":\"gdpr-art-18-objection\",\"nonce\":1}",
         "sha256_of_canonical_hex": "2b0697912a0876cd01f5107b92304e46c49255585ec0f14aa6e44fef3249b26f",
         "expected_id": "bf1085b89d55451d0b7a21071c0b14eb84816c86a36ed47d16ccd757645a2ad7",
-        "reference_signature_hex": "9c79d5aedb214d5547c3fed31107d110fa982017deb78b2a99730a158fab8c44cfcbff382c94914b729e5c381ecce6f09fb29c910eac047e57254aa9e185934b",
+        "reference_signature_hex": "bda01fc8f9382f64b683c01be1068b738e8c29aaf4685f77471a94b10c77983a33ef5238ef3de1b5b76f4961152cd88c27c5d3e2158727ab2397b2deb40f8f3d",
         "signature_length_bytes": 64
       }
     },
@@ -160,7 +160,7 @@
         "publicKey": "04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a",
         "requestTxId": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
         "requestType": "erasure",
-        "signature": "a5b566230886e4a337525f077cf64414904eb5e7ee47b61351e6ff33d91dd592f738e48a5f2c92b07e1d6de1dc1973f9f72349ae014c0e20ffd73ade5ef98709",
+        "signature": "e50d6e85f3dbb0423a84f00a9c39c449a6f22bb5e5edeb42067bb9735c5f4cc21c4f73d1178f7dda547e68aec29b8a5a9ef34bbbb16ea2605a3617f301c54f5d",
         "timestamp": 1729469100,
         "trustDomain": "reviews.public.technology.laptops",
         "type": "DSR_COMPLIANCE"
@@ -170,7 +170,7 @@
         "canonical_signable_bytes_utf8": "{\"id\":\"cf1c734b386e30b40cfe96991bd555a21f65962622d7b9057c23aa53d763b6d9\",\"type\":\"DSR_COMPLIANCE\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729469100,\"signature\":\"\",\"publicKey\":\"04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a\",\"requestTxId\":\"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4\",\"requestType\":\"erasure\",\"operatorQuid\":\"aaed0498f455b5ca\",\"completedAt\":1729469100,\"actionsCategory\":\"manifest-generated\",\"carveOutsApplied\":[\"legal-hold-tax-records\"],\"nonce\":1}",
         "sha256_of_canonical_hex": "1c4ca308b3fdeec0cfd5da929b5fb7ffe6b4599c7ce0175588d7d54a2c95a64e",
         "expected_id": "cf1c734b386e30b40cfe96991bd555a21f65962622d7b9057c23aa53d763b6d9",
-        "reference_signature_hex": "a5b566230886e4a337525f077cf64414904eb5e7ee47b61351e6ff33d91dd592f738e48a5f2c92b07e1d6de1dc1973f9f72349ae014c0e20ffd73ade5ef98709",
+        "reference_signature_hex": "e50d6e85f3dbb0423a84f00a9c39c449a6f22bb5e5edeb42067bb9735c5f4cc21c4f73d1178f7dda547e68aec29b8a5a9ef34bbbb16ea2605a3617f301c54f5d",
         "signature_length_bytes": 64
       }
     }
