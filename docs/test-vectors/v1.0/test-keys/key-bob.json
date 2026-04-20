@@ -1,0 +1,8 @@
+{
+  "name": "bob",
+  "seed": "quidnug-test-key-bob-v1",
+  "private_scalar_hex": "358735cb37ba2a8987dfc3b2ac5cd30cbe1ef9e0d7c55d86ef97a5edfaf9ed8d",
+  "public_key_sec1_hex": "04866d53e135cfde438c432ef08efcb39bbf1c8deaabadfab2d9e485f075ca41462b1bd03936e3d95fc93e5b1f557439735f32dd7fb1878782fa3b7652a633ada8",
+  "quid_id": "4ef5d5d0f15ff46d",
+  "notes": "deterministic test key; NEVER use in production"
+}

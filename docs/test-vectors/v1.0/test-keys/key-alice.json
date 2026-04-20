@@ -1,0 +1,8 @@
+{
+  "name": "alice",
+  "seed": "quidnug-test-key-alice-v1",
+  "private_scalar_hex": "1ccb11c6f8ca348eb189672eb2e793da0a1a3967105a3107a871010c9aad07af",
+  "public_key_sec1_hex": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
+  "quid_id": "c31907f180e6e1e0",
+  "notes": "deterministic test key; NEVER use in production"
+}

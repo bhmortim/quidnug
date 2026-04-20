@@ -1,0 +1,8 @@
+{
+  "name": "carol",
+  "seed": "quidnug-test-key-carol-v1",
+  "private_scalar_hex": "276242df3d82af27873ac9d8ed6c0b23523a021b43b42929de15baedc18533af",
+  "public_key_sec1_hex": "04afdb7e1ad3952ea516831256f3c09cd61d839beb05b3c427780787be423069b95305d5514186daf80f3827c5e6bb7470861d2eb231e0df13f1c95479a28b5a4a",
+  "quid_id": "aaed0498f455b5ca",
+  "notes": "deterministic test key; NEVER use in production"
+}
