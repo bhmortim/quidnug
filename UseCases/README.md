@@ -296,9 +296,30 @@ governors (QDP-0012). DNS record types map one-to-one to signed
 gives users alternative roots. Discovery (QDP-0014) finds the right
 nodes to query. Guardian recovery replaces "forgot password." DANE
 over Quidnug-signed TLSA records removes CAs from the TLS trust path.
-First deployable as a parallel `.quidnug` TLD, then as a DNS gateway
-for legacy clients, eventually as an alternative root for existing
-TLDs.
+Adoption sequenced: **Phase 0 DNS-anchored attestation (QDP-0023)**
+which keeps existing DNS and layers cryptographic trust on top (the
+adoption flywheel), then parallel `.quidnug` TLD, then DNS gateway
+for legacy clients, eventually alternative root for existing TLDs.
+
+---
+
+### [`enterprise-domain-authority/`](enterprise-domain-authority/)
+
+**Problem:** Large enterprises operate six to eight separate systems
+for DNS + split-horizon visibility + service discovery + secret
+management + audit + key lifecycle. Each has its own ownership,
+access model, failure mode, and compliance surface. Consolidation has
+been blocked by the lack of a primitive that covers all of them.
+
+**Why Quidnug:** QDP-0023 DNS attestation binds the enterprise's DNS
+name to a quid. The generic `AUTHORITY_DELEGATE` primitive hands
+resolution authority back to the enterprise's own nodes with per-
+record-type visibility policy. Public records use the standard event
+stream; trust-gated records (partner APIs) require a trust edge;
+private records (employee directory, board comms) use QDP-0024
+group-keyed encryption so cache replicas store ciphertext and only
+group members can decrypt. One signed event stream replaces BIND +
+AD DNS + Vault + Consul + SIEM.
 
 ---
 
@@ -320,7 +341,8 @@ TLDs.
 | 12 | healthcare-consent-management          | Healthcare    | Guardians for emergency override, consent event streams               |
 | 13 | credential-verification-network        | Cross-industry| Issuer quids + guardians, revocable anchors, domain hierarchy          |
 | 14 | developer-artifact-signing             | Open source   | Guardian recovery, fork-block for ecosystem upgrades                  |
-| 15 | **dns-replacement**                    | **Infrastructure** | **Domain governance, federation (alt roots), DANE-integrated TLS, guardian recovery for names** |
+| 15 | **dns-replacement**                    | **Infrastructure** | **Domain governance, federation (alt roots), DANE-integrated TLS, guardian recovery for names; Phase 0 via QDP-0023 DNS attestation** |
+| 16 | **enterprise-domain-authority**        | **Infrastructure** | **QDP-0023 DNS attestation + QDP-0024 group encryption + generic AUTHORITY_DELEGATE; split-horizon public / trust-gated / private records on one stream** |
 
 ---
 

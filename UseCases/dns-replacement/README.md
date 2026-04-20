@@ -159,10 +159,56 @@ hierarchy anyone can seize.
 
 ## What "replaces DNS" actually means
 
-Not literally — DNS isn't going anywhere overnight. Realistic
-adoption in three phases:
+Not literally. DNS isn't going anywhere overnight. Realistic
+adoption in four phases, sequenced by adoption gradient
+(lowest-friction first):
 
-### Phase 1: Parallel namespace (now)
+### Phase 0: DNS-anchored attestation (adoption flywheel)
+
+**Per QDP-0023**, any existing DNS domain owner can bind
+their name to a Quidnug quid via a standardized verification
+flow: publish a DNS TXT record + a well-known file, pay a
+tiered fee (free for `.gov`/`.edu`, $5 for `.com`, $25 for
+premium TLDs), and a federated attestation root signs the
+binding.
+
+The owner keeps their existing DNS exactly as it is. Nothing
+migrates. But the attestation unlocks:
+
+- Reviews under `reviews.public.<sha256-of-domain>` are
+  tied to a verified merchant identity
+- Interbank wire authorization, credential verification,
+  AI agent authorization, content authenticity (C2PA),
+  and every other use case in this folder all receive a
+  cryptographically-attested DNS-to-quid binding free of
+  charge
+- A generic `AUTHORITY_DELEGATE` primitive lets the owner
+  take over resolution authority for their own domain with
+  split-horizon public/trust-gated/private visibility
+  (see [`UseCases/enterprise-domain-authority/`](../enterprise-domain-authority/))
+- Private records use **QDP-0024 group-keyed encryption**
+  so cache-at-rest remains encrypted while authorized
+  members can still decrypt
+
+This is the phase that actually drives mainstream adoption.
+Domain owners don't have to abandon DNS; they layer Quidnug
+trust on top of it. Fee proceeds fund the root-verifier
+operation and create a market for competing attestation
+roots.
+
+**Use cases that win here:**
+
+- Every small/medium business with a `.com` — verified
+  merchant identity for reviews, anti-phishing
+- Every university with a `.edu` — free cryptographic
+  credential signing
+- Every government org with `.gov` — free cryptographically-
+  attested authority
+- Every bank — cross-bank federation with cryptographically-
+  verified counterparty identity (see
+  [`UseCases/interbank-wire-authorization/`](../interbank-wire-authorization/))
+
+### Phase 1: Parallel namespace
 
 A new TLD (e.g. `.quidnug`) lives on the Quidnug network.
 Early adopters publish records there, resolvers that support
@@ -182,7 +228,7 @@ for anyone who wants them.
 - Apps that need strong cryptographic domain-to-key binding
   (PKI for secure email, DANE-integrated HTTPS).
 
-### Phase 2: Bridge + gateway (6-18 months in)
+### Phase 2: Bridge + gateway (6-18 months after Phase 1)
 
 DNS gateways that answer queries for `.quidnug` names over
 standard UDP/TCP DNS, so any resolver (curl, Chrome, iOS) can
@@ -197,7 +243,7 @@ This unlocks:
 - TLS certificates that validate against the domain's own
   published key instead of a CA's
 
-### Phase 3: Alternative roots for existing TLDs (long-term)
+### Phase 3: Alternative roots for existing TLDs (long-term post-Phase-2)
 
 An operator could mirror `.com`, `.org`, etc. into the
 Quidnug namespace as an alternative, cryptographically-
@@ -279,6 +325,10 @@ DNS replacement is a stress test for most of what we've built:
 - **QDP-0014 (discovery + sharding)** — finding where a name's
   records live across a globally distributed cache-replica
   network.
+- **QDP-0023 (DNS-anchored attestation)** — the Phase 0
+  adoption flywheel; binding existing DNS names to quids.
+- **QDP-0024 (private communications)** — group-keyed
+  encryption backing the `private:*` record visibility class.
 - **QDP-0001 (nonce ledger)** — replay protection for record
   updates.
 - **QDP-0002 (guardian recovery)** — the "I lost my key"
@@ -304,16 +354,22 @@ owned by you, and nobody could take it away."
   comparison with DNS/DNSSEC failure modes, limits of the
   design.
 
+See also the companion use case
+[`UseCases/enterprise-domain-authority/`](../enterprise-domain-authority/)
+which demonstrates Phase-0 adoption end-to-end for a large
+corporation (split-horizon public/trust-gated/private
+records, delegated authoritative resolution, group-keyed
+encrypted records).
+
 ## Status
 
-Design. Nothing from this use case has shipped yet. It builds
-on QDP-0012, 0013, 0014 (all Draft) and the existing
-transaction types + discovery APIs. Implementation would be a
-second-party project — a DNS-compatible client library
-(`@quidnug/dns-resolver`), a DNS gateway service, a CLI
-tooling layer for record management.
+Phase 0 is specified in QDP-0023 (DNS-Anchored Identity
+Attestation) and QDP-0024 (Private Communications & Group-
+Keyed Encryption). Both are Draft status; protocol design
+complete, implementation scheduled 2026-Q3. Phase 0 reuses
+all machinery from QDP-0012/0013/0014 + adds only the
+event types documented in those QDPs.
 
-The foundational layer (domain governance + signed event
-streams + per-domain discovery) is what we're already
-building for the reviews system. DNS replacement reuses
-effectively 100% of that machinery.
+Phases 1-3 (parallel namespace, gateway, alternative roots)
+remain forward-looking; they build on top of Phase 0 rather
+than replacing it.

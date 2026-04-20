@@ -109,6 +109,8 @@ func run(args []string) error {
 		return cmdDiscover(rest)
 	case "well-known":
 		return cmdWellKnown(rest)
+	case "dns":
+		return cmdDNS(rest)
 	default:
 		return fmt.Errorf("unknown command %q (try `quidnug-cli help`)", cmd)
 	}
