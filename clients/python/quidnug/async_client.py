@@ -65,6 +65,14 @@ from quidnug.client import (
     _trust_result_from_wire,
 )
 from quidnug.crypto import Quid, canonical_bytes
+from quidnug.wire import (
+    EventTx as _EventTx,
+    IdentityTx as _IdentityTx,
+    OwnershipStake as _WireOwnershipStake,
+    TitleTx as _TitleTx,
+    TrustTx as _TrustTx,
+    sign_wire as _sign_wire,
+)
 from quidnug.errors import (
     ConflictError,
     NodeError,
@@ -262,26 +270,20 @@ class AsyncQuidnugClient:
             raise ValidationError("signer must have a private key")
         subject = subject_quid or signer.id
         import time
-        tx: Dict[str, Any] = {
-            "type": "IDENTITY",
-            "timestamp": int(time.time()),
-            "trustDomain": domain,
-            "signerQuid": signer.id,
-            "definerQuid": signer.id,
-            "subjectQuid": subject,
-            "updateNonce": update_nonce,
-            "schemaVersion": "1.0",
-            "attributes": attributes or {},
-        }
-        if name:
-            tx["name"] = name
-        if description:
-            tx["description"] = description
-        if home_domain:
-            tx["homeDomain"] = home_domain
-        sig_bytes = canonical_bytes(tx, exclude_fields=("signature", "txId"))
-        tx["signature"] = signer.sign(sig_bytes)
-        return await self._request("POST", "transactions/identity", body=tx)
+        tx = _IdentityTx(
+            trust_domain=domain,
+            timestamp=int(time.time()),
+            public_key=signer.public_key_hex,
+            quid_id=subject,
+            name=name or "",
+            description=description or "",
+            attributes=attributes,
+            creator=signer.id,
+            update_nonce=update_nonce,
+            home_domain=home_domain or "",
+        )
+        wire = _sign_wire(tx, signer)
+        return await self._request("POST", "transactions/identity", body=wire)
 
     async def get_identity(self, quid_id: str, *, domain: Optional[str] = None) -> Optional[IdentityRecord]:
         if not quid_id:
@@ -318,23 +320,19 @@ class AsyncQuidnugClient:
         if not 0.0 <= level <= 1.0:
             raise ValidationError("level must be in [0.0, 1.0]")
         import time
-        tx: Dict[str, Any] = {
-            "type": "TRUST",
-            "timestamp": int(time.time()),
-            "trustDomain": domain,
-            "signerQuid": signer.id,
-            "truster": signer.id,
-            "trustee": trustee,
-            "trustLevel": level,
-            "nonce": nonce,
-        }
-        if valid_until is not None:
-            tx["validUntil"] = valid_until
-        if description:
-            tx["description"] = description
-        sig_bytes = canonical_bytes(tx, exclude_fields=("signature", "txId"))
-        tx["signature"] = signer.sign(sig_bytes)
-        return await self._request("POST", "transactions/trust", body=tx)
+        tx = _TrustTx(
+            trust_domain=domain,
+            timestamp=int(time.time()),
+            public_key=signer.public_key_hex,
+            truster=signer.id,
+            trustee=trustee,
+            trust_level=level,
+            nonce=nonce,
+            description=description or "",
+            valid_until=valid_until or 0,
+        )
+        wire = _sign_wire(tx, signer)
+        return await self._request("POST", "transactions/trust", body=wire)
 
     async def get_trust(
         self,
@@ -377,26 +375,35 @@ class AsyncQuidnugClient:
         if not owners:
             raise ValidationError("owners is required")
         total = sum(s.percentage for s in owners)
-        if abs(total - 100.0) > 0.001:
-            raise ValidationError(f"ownership percentages must sum to 100 (got {total})")
+        if abs(total - 1.0) < 0.001:
+            norm = 1.0
+        elif abs(total - 100.0) < 0.001:
+            norm = 0.01
+        else:
+            raise ValidationError(
+                f"ownership percentages must sum to 1.0 (or 100.0 for percent); got {total}"
+            )
         import time
-        tx: Dict[str, Any] = {
-            "type": "TITLE",
-            "timestamp": int(time.time()),
-            "trustDomain": domain,
-            "signerQuid": signer.id,
-            "issuerQuid": signer.id,
-            "assetQuid": asset_id,
-            "ownershipMap": [_dc(s) for s in owners],
-            "transferSigs": {},
-        }
-        if title_type:
-            tx["titleType"] = title_type
-        if prev_title_tx_id:
-            tx["prevTitleTxID"] = prev_title_tx_id
-        sig_bytes = canonical_bytes(tx, exclude_fields=("signature", "txId"))
-        tx["signature"] = signer.sign(sig_bytes)
-        return await self._request("POST", "transactions/title", body=tx)
+        wire_owners = [
+            _WireOwnershipStake(
+                owner_id=s.owner_id,
+                percentage=s.percentage * norm,
+                stake_type=getattr(s, "stake_type", "") or "",
+            )
+            for s in owners
+        ]
+        _ = prev_title_tx_id  # not in v1.0 wire schema
+        tx = _TitleTx(
+            trust_domain=domain,
+            timestamp=int(time.time()),
+            public_key=signer.public_key_hex,
+            asset_id=asset_id,
+            owners=wire_owners,
+            signatures={},
+            title_type=title_type or "",
+        )
+        wire = _sign_wire(tx, signer)
+        return await self._request("POST", "transactions/title", body=wire)
 
     async def get_title(self, asset_id: str, *, domain: Optional[str] = None) -> Optional[Title]:
         try:
@@ -442,24 +449,19 @@ class AsyncQuidnugClient:
                 sequence = 1
 
         import time
-        tx: Dict[str, Any] = {
-            "type": "EVENT",
-            "timestamp": int(time.time()),
-            "trustDomain": domain,
-            "subjectId": subject_id,
-            "subjectType": subject_type,
-            "eventType": event_type,
-            "sequence": sequence,
-        }
-        if payload is not None:
-            tx["payload"] = payload
-        if payload_cid is not None:
-            tx["payloadCid"] = payload_cid
-
-        sig_bytes = canonical_bytes(tx, exclude_fields=("signature", "txId", "publicKey"))
-        tx["signature"] = signer.sign(sig_bytes)
-        tx["publicKey"] = signer.public_key_hex
-        return await self._request("POST", "events", body=tx)
+        tx = _EventTx(
+            trust_domain=domain,
+            timestamp=int(time.time()),
+            public_key=signer.public_key_hex,
+            subject_id=subject_id,
+            subject_type=subject_type,
+            sequence=sequence,
+            event_type=event_type,
+            payload=payload,
+            payload_cid=payload_cid or "",
+        )
+        wire = _sign_wire(tx, signer)
+        return await self._request("POST", "events", body=wire)
 
     async def get_event_stream(self, subject_id: str, *, domain: Optional[str] = None) -> Optional[Dict[str, Any]]:
         try:

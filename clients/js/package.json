@@ -17,19 +17,25 @@
       "import": "./quidnug-client-v2.js",
       "types": "./quidnug-client-v2.d.ts",
       "default": "./quidnug-client-v2.js"
+    },
+    "./v1-wire": {
+      "import": "./v1-wire.js",
+      "default": "./v1-wire.js"
     }
   },
   "scripts": {
-    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js",
-    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js",
+    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js vectors.test.js",
+    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js vectors.test.js",
     "test:retry": "node --test quidnug-client.retry.test.js",
-    "test:v2": "node --test quidnug-client-v2.test.js"
+    "test:v2": "node --test quidnug-client-v2.test.js",
+    "test:vectors": "node --test vectors.test.js"
   },
   "files": [
     "quidnug-client.js",
     "quidnug-client.d.ts",
     "quidnug-client-v2.js",
-    "quidnug-client-v2.d.ts"
+    "quidnug-client-v2.d.ts",
+    "v1-wire.js"
   ],
   "keywords": [
     "quidnug",

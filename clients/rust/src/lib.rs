@@ -41,6 +41,7 @@ mod crypto;
 mod error;
 mod merkle;
 mod types;
+pub mod wire;
 
 pub use canonical::canonical_bytes;
 pub use client::{Client, TrustParams};

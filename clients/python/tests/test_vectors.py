@@ -259,7 +259,9 @@ def test_clients_python_sdk_sign_diverges_from_authoritative() -> None:
 def test_clients_python_canonical_bytes_diverges_from_authoritative() -> None:
     """Document clients/python/quidnug.crypto.canonical_bytes vs the
     authoritative v1.0 form (struct-declaration order, not
-    alphabetical).
+    alphabetical). This helper is retained for backward compat but
+    no longer on the v1.0 signing path; ``quidnug.wire`` typed
+    dataclasses are.
     """
     try:
         from quidnug.crypto import canonical_bytes as sdk_canonical_bytes  # type: ignore
@@ -283,7 +285,179 @@ def test_clients_python_canonical_bytes_diverges_from_authoritative() -> None:
 
     print(
         "\n[divergence probe] clients/python/quidnug.crypto.canonical_bytes "
-        "produces alphabetical-order output; authoritative v1.0 form is "
-        "struct-declaration order. Launch-blocker tracked in "
-        "docs/test-vectors/v1.0/README.md § Known divergences."
+        "retains alphabetical-order output for backward compat; it is "
+        "no longer on the critical signing path. v1.0 submissions use "
+        "quidnug.wire typed dataclasses with struct-declaration-order "
+        "JSON. This probe documents the retained legacy behavior."
     )
+
+
+# ---------------------------------------------------------------
+# Conformance tests via quidnug.wire (the v1.0 SDK signing path)
+# ---------------------------------------------------------------
+
+
+def test_wire_trust_tx_matches_vectors(keys: dict[str, dict[str, Any]]) -> None:
+    """Build the TRUST vectors via quidnug.wire.TrustTx + sign via
+    quidnug.crypto.Quid and verify byte-identical match against the
+    test vector's canonical signable bytes + expected ID."""
+    from quidnug.wire import TrustTx
+    from quidnug.crypto import Quid
+
+    vf = load_vector_file("trust-tx.json")
+    for case in vf["cases"]:
+        key = keys[case["signer_key_ref"]]
+        inp = case["input"]
+
+        tx = TrustTx(
+            trust_domain=inp["trustDomain"],
+            timestamp=inp["timestamp"],
+            public_key=inp["publicKey"],
+            truster=inp["truster"],
+            trustee=inp["trustee"],
+            trust_level=inp["trustLevel"],
+            nonce=inp["nonce"],
+            description=inp.get("description", ""),
+            valid_until=inp.get("validUntil", 0),
+        )
+        # Must derive same ID as the generator did.
+        derived_id = tx.derive_id()
+        assert derived_id == case["expected"]["expected_id"], (
+            f"{case['name']}: TrustTx.derive_id() mismatch"
+        )
+        tx.id = derived_id
+
+        # Canonical signable bytes must match.
+        signable = tx.signable_bytes()
+        assert signable.decode("utf-8") == case["expected"]["canonical_signable_bytes_utf8"], (
+            f"{case['name']}: signable_bytes() diverges from vector"
+        )
+
+        # SDK sign + verify round-trip.
+        q = Quid.from_private_hex_scalar(key["private_scalar_hex"])
+        sig_hex = q.sign(signable)
+        assert len(bytes.fromhex(sig_hex)) == 64, (
+            f"{case['name']}: SDK signature not 64 bytes"
+        )
+        q_ro = Quid.from_public_hex(key["public_key_sec1_hex"])
+        assert q_ro.verify(signable, sig_hex), (
+            f"{case['name']}: SDK Verify rejected SDK-signed payload"
+        )
+        # Reference signature from the vector must also verify.
+        assert q_ro.verify(signable, case["expected"]["reference_signature_hex"]), (
+            f"{case['name']}: SDK Verify rejected reference signature"
+        )
+
+
+def test_wire_identity_tx_matches_vectors(keys: dict[str, dict[str, Any]]) -> None:
+    from quidnug.wire import IdentityTx
+    from quidnug.crypto import Quid
+
+    vf = load_vector_file("identity-tx.json")
+    for case in vf["cases"]:
+        key = keys[case["signer_key_ref"]]
+        inp = case["input"]
+        tx = IdentityTx(
+            trust_domain=inp["trustDomain"],
+            timestamp=inp["timestamp"],
+            public_key=inp["publicKey"],
+            quid_id=inp["quidId"],
+            name=inp["name"],
+            description=inp.get("description", ""),
+            attributes=inp.get("attributes"),
+            creator=inp["creator"],
+            update_nonce=inp["updateNonce"],
+            home_domain=inp.get("homeDomain", ""),
+        )
+        derived_id = tx.derive_id()
+        assert derived_id == case["expected"]["expected_id"], (
+            f"{case['name']}: IdentityTx.derive_id() mismatch"
+        )
+        tx.id = derived_id
+        signable = tx.signable_bytes()
+        assert signable.decode("utf-8") == case["expected"]["canonical_signable_bytes_utf8"], (
+            f"{case['name']}: signable_bytes() diverges from vector"
+        )
+        q_ro = Quid.from_public_hex(key["public_key_sec1_hex"])
+        assert q_ro.verify(signable, case["expected"]["reference_signature_hex"])
+
+
+def test_wire_event_tx_matches_vectors(keys: dict[str, dict[str, Any]]) -> None:
+    from quidnug.wire import EventTx
+    from quidnug.crypto import Quid
+
+    vf = load_vector_file("event-tx.json")
+    for case in vf["cases"]:
+        key = keys[case["signer_key_ref"]]
+        inp = case["input"]
+        tx = EventTx(
+            trust_domain=inp["trustDomain"],
+            timestamp=inp["timestamp"],
+            public_key=inp["publicKey"],
+            subject_id=inp["subjectId"],
+            subject_type=inp["subjectType"],
+            sequence=inp["sequence"],
+            event_type=inp["eventType"],
+            payload=inp.get("payload"),
+            payload_cid=inp.get("payloadCid", ""),
+            previous_event_id=inp.get("previousEventId", ""),
+        )
+        derived_id = tx.derive_id()
+        assert derived_id == case["expected"]["expected_id"], (
+            f"{case['name']}: EventTx.derive_id() mismatch"
+        )
+        tx.id = derived_id
+        signable = tx.signable_bytes()
+        assert signable.decode("utf-8") == case["expected"]["canonical_signable_bytes_utf8"], (
+            f"{case['name']}: signable_bytes() diverges"
+        )
+        q_ro = Quid.from_public_hex(key["public_key_sec1_hex"])
+        assert q_ro.verify(signable, case["expected"]["reference_signature_hex"])
+
+
+def test_wire_title_tx_matches_vectors(keys: dict[str, dict[str, Any]]) -> None:
+    from quidnug.wire import TitleTx, OwnershipStake
+    from quidnug.crypto import Quid
+
+    vf = load_vector_file("title-tx.json")
+    for case in vf["cases"]:
+        key = keys[case["signer_key_ref"]]
+        inp = case["input"]
+        owners = [
+            OwnershipStake(
+                owner_id=o["ownerId"],
+                percentage=o["percentage"],
+                stake_type=o.get("stakeType", ""),
+            )
+            for o in inp["owners"]
+        ]
+        prev_owners = [
+            OwnershipStake(
+                owner_id=o["ownerId"],
+                percentage=o["percentage"],
+                stake_type=o.get("stakeType", ""),
+            )
+            for o in inp.get("previousOwners", [])
+        ]
+        tx = TitleTx(
+            trust_domain=inp["trustDomain"],
+            timestamp=inp["timestamp"],
+            public_key=inp["publicKey"],
+            asset_id=inp["assetId"],
+            owners=owners,
+            previous_owners=prev_owners,
+            signatures=inp.get("signatures") or {},
+            expiry_date=inp.get("expiryDate", 0),
+            title_type=inp.get("titleType", ""),
+        )
+        derived_id = tx.derive_id()
+        assert derived_id == case["expected"]["expected_id"], (
+            f"{case['name']}: TitleTx.derive_id() mismatch"
+        )
+        tx.id = derived_id
+        signable = tx.signable_bytes()
+        assert signable.decode("utf-8") == case["expected"]["canonical_signable_bytes_utf8"], (
+            f"{case['name']}: signable_bytes() diverges"
+        )
+        q_ro = Quid.from_public_hex(key["public_key_sec1_hex"])
+        assert q_ro.verify(signable, case["expected"]["reference_signature_hex"])

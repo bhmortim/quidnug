@@ -89,27 +89,64 @@ impl Quid {
         self.signing_key.is_some()
     }
 
-    /// Sign arbitrary bytes. Returns the hex-encoded DER signature.
+    /// Sign arbitrary bytes.
+    ///
+    /// v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+    /// raw signature (`r||s`, each zero-padded to 32 bytes).
+    /// Matches the reference node's `VerifySignature` expectation.
     pub fn sign(&self, data: &[u8]) -> Result<String> {
         let sk = self
             .signing_key
             .as_ref()
             .ok_or_else(|| Error::crypto("quid is read-only"))?;
         let sig: Signature = sk.sign(data);
-        Ok(hex::encode(sig.to_der().as_bytes()))
+        // `Signature::to_bytes` returns the raw IEEE-1363 r||s form
+        // (64 bytes for P-256). This is what we want on the wire.
+        let raw = sig.to_bytes();
+        debug_assert_eq!(raw.len(), 64, "P-256 Signature::to_bytes must be 64 bytes");
+        Ok(hex::encode(raw))
     }
 
-    /// Verify a hex-encoded DER signature against this Quid's public key.
+    /// Verify a hex-encoded IEEE-1363 raw 64-byte signature against
+    /// this Quid's public key.
+    ///
+    /// v1.0 canonical form: expects exactly 64 bytes (32-byte `r`
+    /// followed by 32-byte `s`). Anything else is rejected.
     pub fn verify(&self, data: &[u8], sig_hex: &str) -> bool {
         let raw = match hex::decode(sig_hex) {
             Ok(r) => r,
             Err(_) => return false,
         };
-        let sig = match Signature::from_der(&raw) {
+        if raw.len() != 64 {
+            return false;
+        }
+        let sig = match Signature::from_slice(&raw) {
             Ok(s) => s,
             Err(_) => return false,
         };
         self.verifying_key.verify(data, &sig).is_ok()
+    }
+
+    /// Reconstruct a Quid from a raw private scalar in hex.
+    ///
+    /// Used primarily by the v1.0 test vectors, which check in
+    /// deterministic keys as raw scalars rather than PKCS8 DER.
+    /// For production keys, use `from_private_hex` with the
+    /// PKCS8-encoded key.
+    pub fn from_private_hex_scalar(scalar_hex: &str) -> Result<Self> {
+        let scalar_bytes = hex::decode(scalar_hex)
+            .map_err(|e| Error::crypto(format!("hex: {e}")))?;
+        if scalar_bytes.len() > 32 {
+            return Err(Error::crypto("private scalar must be <= 32 bytes"));
+        }
+        // Left-pad to 32 bytes (scalar may have leading zeros stripped
+        // by the generator's big.Int.Bytes() call).
+        let mut padded = [0u8; 32];
+        let offset = 32 - scalar_bytes.len();
+        padded[offset..].copy_from_slice(&scalar_bytes);
+        let sk = SigningKey::from_bytes(&padded.into())
+            .map_err(|e| Error::crypto(format!("invalid scalar: {e}")))?;
+        Ok(Self::from_signing_key(sk))
     }
 }
 

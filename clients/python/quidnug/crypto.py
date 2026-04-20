@@ -1,13 +1,24 @@
 """Cryptographic primitives for the Quidnug SDK.
 
 The protocol uses ECDSA P-256 (a.k.a. secp256r1 / NIST prime256v1)
-with SHA-256 hashing. Signatures are hex-encoded, DER-formatted for
-interop with the Go reference implementation.
+with SHA-256 hashing.
 
-Canonicalization — critical for cross-implementation signature
-verification — follows the round-trip-through-a-generic-object rule
-documented at ``schemas/types/canonicalization.md``. This lives here
-as ``canonical_bytes(obj, exclude_fields=...)``.
+v1.0 canonical form (matches the reference node in
+``internal/core``):
+
+- **Signatures**: 64-byte IEEE-1363 raw encoding, ``r||s`` each
+  zero-padded to 32 bytes. Hex-encoded on the wire.
+- **Canonical signable bytes**: ``json.Marshal`` on the typed
+  struct with ``Signature`` cleared. In Python this is achieved
+  by constructing a dataclass in the same field order as the
+  Go struct (see ``quidnug.wire``) and serializing via
+  ``json.dumps(..., sort_keys=False, separators=(",", ":"),
+  ensure_ascii=False)``.
+
+The legacy ``canonical_bytes()`` helper below uses the
+alphabetical round-trip approach for backward compatibility
+with pre-v1.0 callers; it is NOT on the v1.0 signing path.
+New code should use ``quidnug.wire`` typed dataclasses.
 """
 
 from __future__ import annotations
@@ -20,6 +31,10 @@ from typing import Any, Iterable, Optional
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import (
+    decode_dss_signature,
+    encode_dss_signature,
+)
 
 from quidnug.errors import CryptoError
 
@@ -74,17 +89,43 @@ def _json_default(o: Any) -> Any:
 
 
 def sign_bytes(priv: ec.EllipticCurvePrivateKey, data: bytes) -> str:
-    """Sign *data* with an ECDSA P-256 private key. Returns hex-encoded DER."""
-    sig = priv.sign(data, ec.ECDSA(hashes.SHA256()))
+    """Sign *data* with an ECDSA P-256 private key.
+
+    v1.0 canonical form: returns hex-encoded 64-byte IEEE-1363
+    raw signature (``r||s``, each zero-padded to 32 bytes).
+
+    This is the format the reference node's ``VerifySignature``
+    accepts. DO NOT change without coordinating with every SDK
+    consumer; cross-SDK test vectors at ``docs/test-vectors/v1.0/``
+    lock this in.
+    """
+    der = priv.sign(data, ec.ECDSA(hashes.SHA256()))
+    r, s = decode_dss_signature(der)
+    sig = r.to_bytes(32, "big") + s.to_bytes(32, "big")
     return sig.hex()
 
 
 def verify_signature(pub: ec.EllipticCurvePublicKey, data: bytes, sig_hex: str) -> bool:
-    """Verify an ECDSA P-256 signature. Returns True on valid signature."""
+    """Verify an ECDSA P-256 signature. Returns True on valid signature.
+
+    v1.0 canonical form: expects exactly 64 bytes (IEEE-1363 raw
+    r||s). Anything else is rejected.
+    """
     try:
-        pub.verify(bytes.fromhex(sig_hex), data, ec.ECDSA(hashes.SHA256()))
+        sig_bytes = bytes.fromhex(sig_hex)
+    except ValueError:
+        return False
+    if len(sig_bytes) != 64:
+        return False
+    r = int.from_bytes(sig_bytes[:32], "big")
+    s = int.from_bytes(sig_bytes[32:], "big")
+    der = encode_dss_signature(r, s)
+    try:
+        pub.verify(der, data, ec.ECDSA(hashes.SHA256()))
         return True
-    except (InvalidSignature, ValueError):
+    except InvalidSignature:
+        return False
+    except Exception:
         return False
 
 
@@ -169,6 +210,37 @@ class Quid:
         pub = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), pub_bytes)
         quid_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
         q = cls(id=quid_id, public_key_hex=public_key_hex)
+        q._pub = pub
+        return q
+
+    @classmethod
+    def from_private_hex_scalar(cls, scalar_hex: str) -> "Quid":
+        """Reconstruct a Quid from a raw private scalar in hex.
+
+        Used primarily by test vectors, which check in deterministic
+        keys as raw scalars rather than PKCS8 DER (the scalar form
+        is simpler + byte-identical across SDKs). For production
+        keys, use ``from_private_hex`` with the PKCS8-encoded key.
+        """
+        d = int(scalar_hex, 16)
+        priv = ec.derive_private_key(d, ec.SECP256R1())
+        pub = priv.public_key()
+        pub_bytes = pub.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+        priv_bytes = priv.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        quid_id = hashlib.sha256(pub_bytes).hexdigest()[:16]
+        q = cls(
+            id=quid_id,
+            public_key_hex=pub_bytes.hex(),
+            private_key_hex=priv_bytes.hex(),
+        )
+        q._priv = priv
         q._pub = pub
         return q
 
