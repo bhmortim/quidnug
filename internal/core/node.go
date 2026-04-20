@@ -103,6 +103,10 @@ type QuidnugNode struct {
 	// internal lock; no QuidnugNode-level mutex needed.
 	NodeAdvertisementRegistry *NodeAdvertisementRegistry
 
+	// QDP-0015: moderation registry. Owns its own internal
+	// lock; no QuidnugNode-level mutex needed.
+	ModerationRegistry *ModerationRegistry
+
 	// QDP-0014: per-(domain, quid) activity index, populated
 	// incrementally as blocks commit.
 	QuidDomainIndex *QuidDomainIndex
@@ -417,6 +421,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		EventStreamRegistry:       make(map[string]*EventStream),
 		EventRegistry:             make(map[string][]EventTransaction),
 		NodeAdvertisementRegistry: NewNodeAdvertisementRegistry(),
+		ModerationRegistry:        NewModerationRegistry(),
 		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,
 		TentativeBlocks:           make(map[string][]Block),

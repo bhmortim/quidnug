@@ -340,6 +340,79 @@ func (node *QuidnugNode) AddNodeAdvertisementTransaction(tx NodeAdvertisementTra
 	return tx.ID, nil
 }
 
+// AddModerationActionTransaction admits a QDP-0015
+// ModerationActionTransaction into the pending pool after
+// full validation. On acceptance it is broadcast like any
+// other signed transaction; once the containing block commits,
+// serving-layer filters pick it up via the ModerationRegistry.
+//
+// Auto-filled fields follow the same signed/unsigned policy as
+// AddTrustTransaction: if Signature is non-empty the tx is
+// treated as client-signed and we leave Timestamp / Type / ID /
+// Nonce exactly as provided. Mutating any of them would silently
+// invalidate the signature.
+func (node *QuidnugNode) AddModerationActionTransaction(tx ModerationActionTransaction) (string, error) {
+	signed := tx.Signature != ""
+
+	if !signed && tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+	if !signed {
+		tx.Type = TxTypeModerationAction
+	}
+
+	// Nonce: if not set, use currentNonce+1 for the moderator.
+	if !signed && tx.Nonce == 0 && node.ModerationRegistry != nil {
+		tx.Nonce = node.ModerationRegistry.currentNonce(tx.ModeratorQuid) + 1
+	}
+
+	if !signed && tx.ID == "" {
+		txData, _ := json.Marshal(struct {
+			ModeratorQuid string
+			TargetType    string
+			TargetID      string
+			Scope         string
+			ReasonCode    string
+			Nonce         int64
+			Timestamp     int64
+		}{
+			ModeratorQuid: tx.ModeratorQuid,
+			TargetType:    tx.TargetType,
+			TargetID:      tx.TargetID,
+			Scope:         tx.Scope,
+			ReasonCode:    tx.ReasonCode,
+			Nonce:         tx.Nonce,
+			Timestamp:     tx.Timestamp,
+		})
+		hash := sha256.Sum256(txData)
+		tx.ID = hex.EncodeToString(hash[:])
+	}
+
+	if !node.ValidateModerationActionTransaction(tx) {
+		RecordTransactionProcessed("moderation_action", false)
+		return "", fmt.Errorf("invalid moderation action transaction")
+	}
+
+	node.PendingTxsMutex.Lock()
+	defer node.PendingTxsMutex.Unlock()
+
+	node.PendingTxs = append(node.PendingTxs, tx)
+	RecordTransactionProcessed("moderation_action", true)
+	UpdatePendingTransactionsGauge(len(node.PendingTxs))
+
+	go node.BroadcastTransaction(tx)
+
+	logger.Info("Added moderation action to pending pool",
+		"txId", tx.ID,
+		"moderator", tx.ModeratorQuid,
+		"targetType", tx.TargetType,
+		"targetId", tx.TargetID,
+		"scope", tx.Scope,
+		"reason", tx.ReasonCode,
+		"domain", tx.TrustDomain)
+	return tx.ID, nil
+}
+
 // FilterTransactionsForBlock filters pending transactions based on trust.
 // Only includes transactions from sources the node trusts (or sponsored transactions).
 // For each transaction, extracts the creator quid and computes relational trust.

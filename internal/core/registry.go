@@ -218,6 +218,18 @@ func (node *QuidnugNode) processBlockTransactions(block Block) {
 					tx.TrustDomain, tx.NodeQuid, tx.Timestamp)
 			}
 
+		case TxTypeModerationAction:
+			var tx ModerationActionTransaction
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				logger.Error("Failed to unmarshal moderation-action transaction", "blockIndex", block.Index, "error", err)
+				continue
+			}
+			node.updateModerationRegistry(tx)
+			if node.QuidDomainIndex != nil {
+				node.QuidDomainIndex.observe(
+					tx.TrustDomain, tx.ModeratorQuid, tx.Timestamp)
+			}
+
 		case TxTypeAnchor:
 			var tx AnchorTransaction
 			if err := json.Unmarshal(txJson, &tx); err != nil {

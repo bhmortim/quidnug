@@ -19,6 +19,12 @@ const (
 	// capabilities it offers (QDP-0014). Clients use advertisements
 	// for discovery + sharding.
 	TxTypeNodeAdvertisement TransactionType = "NODE_ADVERTISEMENT"
+	// TxTypeModerationAction is a signed on-chain takedown /
+	// suppression record (QDP-0015). The chain remains append-
+	// only; serving layers consult the moderation registry at
+	// read time to honor DMCA / court orders / GDPR erasure /
+	// CSAM takedowns / operator policy.
+	TxTypeModerationAction TransactionType = "MODERATION_ACTION"
 )
 
 // Trust computation resource limits

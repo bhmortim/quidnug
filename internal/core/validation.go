@@ -670,6 +670,11 @@ func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
 			json.Unmarshal(txJson, &tx)
 			isValid = node.ValidateNodeAdvertisementTransaction(tx)
 
+		case TxTypeModerationAction:
+			var tx ModerationActionTransaction
+			json.Unmarshal(txJson, &tx)
+			isValid = node.ValidateModerationActionTransaction(tx)
+
 		default:
 			isValid = false
 		}

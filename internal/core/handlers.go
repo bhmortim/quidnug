@@ -53,6 +53,10 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	router.HandleFunc("/streams/{subjectId}", node.GetEventStreamHandler).Methods("GET")
 	router.HandleFunc("/streams/{subjectId}/events", node.GetStreamEventsHandler).Methods("GET")
 
+	// QDP-0015 content moderation.
+	router.HandleFunc("/moderation/actions", node.CreateModerationActionHandler).Methods("POST")
+	router.HandleFunc("/moderation/actions/{targetType}/{targetId}", node.GetModerationActionsHandler).Methods("GET")
+
 	// IPFS endpoints
 	router.HandleFunc("/ipfs/pin", node.PinToIPFSHandler).Methods("POST")
 	router.HandleFunc("/ipfs/{cid}", node.GetFromIPFSHandler).Methods("GET")
@@ -836,10 +840,31 @@ func (node *QuidnugNode) CreateEventTransactionHandler(w http.ResponseWriter, r 
 	})
 }
 
-// GetEventStreamHandler returns event stream metadata for a subject
+// GetEventStreamHandler returns event stream metadata for a
+// subject. QDP-0015 moderation on the subject quid short-circuits
+// before data is returned (see GetStreamEventsHandler for the
+// per-event variant).
 func (node *QuidnugNode) GetEventStreamHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	subjectID := vars["subjectId"]
+	includeHidden := r.URL.Query().Get("includeHidden") == "true"
+
+	scope := node.EffectiveScopeFor(ModerationTargetQuid, subjectID)
+	switch scope.Scope {
+	case ModerationScopeSuppress:
+		w.Header().Set("X-Quidnug-Moderated", scope.ReasonCode)
+		WriteError(w, http.StatusUnavailableForLegalReasons,
+			"MODERATED", "Stream suppressed by operator policy")
+		return
+	case ModerationScopeHide:
+		if !includeHidden {
+			w.Header().Set("X-Quidnug-Moderated", scope.ReasonCode)
+			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Event stream not found")
+			return
+		}
+	case ModerationScopeAnnotate:
+		w.Header().Set("X-Quidnug-Annotation", scope.AnnotationText)
+	}
 
 	stream, exists := node.GetEventStream(subjectID)
 	if !exists {
@@ -857,17 +882,47 @@ func (node *QuidnugNode) GetEventStreamHandler(w http.ResponseWriter, r *http.Re
 // response. Pass `?include_expired=true` to bypass the filter
 // — useful for audit tooling or incident forensics, not for
 // application traffic.
+//
+// QDP-0015: moderation actions on the stream subject
+// (scope=suppress) short-circuit with HTTP 451; scope=hide
+// returns 404 unless `?includeHidden=true`; scope=annotate
+// passes through with the annotation included in the response
+// as X-Quidnug-Annotation. Per-event suppressions are also
+// applied (events suppressed individually are dropped from the
+// page). Override the per-event filter with `?includeHidden=true`.
 func (node *QuidnugNode) GetStreamEventsHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	subjectID := vars["subjectId"]
 
 	params := ParsePaginationParams(r, DefaultPaginationLimit, MaxPaginationLimit)
 	includeExpired := r.URL.Query().Get("include_expired") == "true"
+	includeHidden := r.URL.Query().Get("includeHidden") == "true"
+
+	// QDP-0015: stream-subject-level moderation. Check the
+	// subject's QUID scope first, then fall back to per-event
+	// filtering.
+	streamScope := node.EffectiveScopeFor(ModerationTargetQuid, subjectID)
+	switch streamScope.Scope {
+	case ModerationScopeSuppress:
+		w.Header().Set("X-Quidnug-Moderated", streamScope.ReasonCode)
+		WriteError(w, http.StatusUnavailableForLegalReasons,
+			"MODERATED", "Stream suppressed by operator policy")
+		return
+	case ModerationScopeHide:
+		if !includeHidden {
+			w.Header().Set("X-Quidnug-Moderated", streamScope.ReasonCode)
+			WriteError(w, http.StatusNotFound, "NOT_FOUND", "Event stream not found")
+			return
+		}
+	case ModerationScopeAnnotate:
+		w.Header().Set("X-Quidnug-Annotation", streamScope.AnnotationText)
+	}
 
 	events, total := node.GetStreamEvents(subjectID, params.Limit, params.Offset)
 	if !includeExpired {
 		events = FilterExpiredEvents(events)
 	}
+	events = node.filterModeratedEvents(events, includeHidden)
 
 	WriteSuccess(w, map[string]interface{}{
 		"data": events,
@@ -876,6 +931,113 @@ func (node *QuidnugNode) GetStreamEventsHandler(w http.ResponseWriter, r *http.R
 			Offset: params.Offset,
 			Total:  total,
 		},
+	})
+}
+
+// filterModeratedEvents applies per-event QDP-0015 moderation
+// to a page of events:
+//
+//   - `suppress` scope drops the event from the slice entirely.
+//   - `hide` scope drops unless includeHidden is true.
+//   - `annotate` scope merges the annotation text into the
+//     event's payload under the reserved key `_moderationNote`.
+//
+// Returns a new slice; input is not mutated.
+func (node *QuidnugNode) filterModeratedEvents(events []EventTransaction, includeHidden bool) []EventTransaction {
+	if node.ModerationRegistry == nil || len(events) == 0 {
+		return events
+	}
+	out := make([]EventTransaction, 0, len(events))
+	for _, ev := range events {
+		scope := node.EffectiveScopeFor(ModerationTargetTx, ev.ID)
+		switch scope.Scope {
+		case ModerationScopeSuppress:
+			continue
+		case ModerationScopeHide:
+			if !includeHidden {
+				continue
+			}
+		case ModerationScopeAnnotate:
+			if ev.Payload == nil {
+				ev.Payload = map[string]interface{}{}
+			} else {
+				// Copy-on-write so we don't mutate the
+				// registry's stored event.
+				cp := make(map[string]interface{}, len(ev.Payload)+1)
+				for k, v := range ev.Payload {
+					cp[k] = v
+				}
+				ev.Payload = cp
+			}
+			ev.Payload["_moderationNote"] = scope.AnnotationText
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// CreateModerationActionHandler accepts a signed
+// ModerationActionTransaction (QDP-0015) and queues it for
+// block inclusion. The submitter must be an authorized
+// moderator for the tx's trust domain (validator or
+// delegated-trust ≥0.7 from a validator).
+func (node *QuidnugNode) CreateModerationActionHandler(w http.ResponseWriter, r *http.Request) {
+	var tx ModerationActionTransaction
+	if err := DecodeJSONBody(w, r, &tx); err != nil {
+		return
+	}
+
+	if tx.Timestamp == 0 {
+		tx.Timestamp = time.Now().Unix()
+	}
+
+	txID, err := node.AddModerationActionTransaction(tx)
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	WriteSuccess(w, map[string]interface{}{
+		"id":            txID,
+		"moderatorQuid": tx.ModeratorQuid,
+		"targetType":    tx.TargetType,
+		"targetId":      tx.TargetID,
+		"scope":         tx.Scope,
+		"reasonCode":    tx.ReasonCode,
+		"nonce":         tx.Nonce,
+	})
+}
+
+// GetModerationActionsHandler returns every moderation action
+// in the registry for a given (targetType, targetId), together
+// with the current effective scope. Useful for clients and
+// transparency tooling that want the full audit trail rather
+// than just the resolved decision.
+func (node *QuidnugNode) GetModerationActionsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	targetType := vars["targetType"]
+	targetID := vars["targetId"]
+
+	if err := validateModerationTarget(targetType, targetID); err != nil {
+		WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+
+	if node.ModerationRegistry == nil {
+		WriteSuccess(w, map[string]interface{}{
+			"actions":         []ModerationActionTransaction{},
+			"effectiveScope":  EffectiveScope{},
+		})
+		return
+	}
+
+	actions := node.ModerationRegistry.actionsFor(targetType, targetID)
+	scope := node.EffectiveScopeFor(targetType, targetID)
+	WriteSuccess(w, map[string]interface{}{
+		"targetType":     targetType,
+		"targetId":       targetID,
+		"actions":        actions,
+		"effectiveScope": scope,
 	})
 }
 
