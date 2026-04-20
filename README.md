@@ -460,6 +460,9 @@ Protocol evolution is tracked in versioned design docs under
 | 0015  | Content Moderation & Takedowns (append-only + legal compliance) | Draft |
 | 0016  | Abuse Prevention & Resource Limits (multi-layer rate limiting) | Draft |
 | 0017  | Data Subject Rights & Privacy (GDPR/CCPA compliance) | Draft |
+| 0018  | Observability + Tamper-Evident Operator Log | Draft |
+| 0019  | Reputation Decay & Time-Weighted Trust | Draft |
+| 0020  | Protocol Versioning & Deprecation | Draft |
 
 ---
 

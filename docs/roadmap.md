@@ -42,6 +42,9 @@ the live code:
 | 0015 | Content Moderation & Takedowns | Draft — `MODERATION_ACTION` tx with suppress/hide/annotate scopes, reason-code taxonomy, federation-aware propagation, GDPR-compatible erasure via cryptographic shredding |
 | 0016 | Abuse Prevention & Resource Limits | Draft — five-layer rate limits (IP, quid, epoch, operator, domain), reputation-weighted graduation, progressive slowdown, proof-of-work challenges, sybil-resistance primitives |
 | 0017 | Data Subject Rights & Privacy | Draft — `DATA_SUBJECT_REQUEST`, `CONSENT_GRANT/WITHDRAW`, `PROCESSING_RESTRICTION` tx types + operator DSR workflow + pseudonymity-by-default config |
+| 0018 | Observability + Tamper-Evident Operator Log | Draft — per-operator hash-chained audit log, periodic on-chain anchoring, five verification endpoints, standardized metric label set |
+| 0019 | Reputation Decay & Time-Weighted Trust | Draft — two-layer decay (edge-level exponential + quid dormancy), observer-configurable per-domain, passive re-endorsement detection |
+| 0020 | Protocol Versioning & Deprecation | Draft — SemVer-based protocol version, capability negotiation, 18-month deprecation timeline, release workflow |
 
 ### Client SDKs (done)
 
