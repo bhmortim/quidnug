@@ -14,18 +14,34 @@ import java.util.*;
  * Canonical signable-bytes encoder — byte-for-byte compatible with the
  * Go, Python, Rust, and JavaScript Quidnug SDKs.
  *
- * <p>The rule (see {@code schemas/types/canonicalization.md}):
- * <ol>
- *   <li>Serialize the object to JSON.</li>
- *   <li>Parse it back into a generic JSON tree.</li>
- *   <li>Serialize again with <b>alphabetized keys</b> (matches Go's
- *       {@code encoding/json} output for {@code map[string]interface{}}).</li>
- *   <li>Exclude named top-level fields (typically {@code signature} and
- *       {@code txId}).</li>
- * </ol>
+ * <p>This class ships two helpers:
  *
- * <p>This matches every other SDK exactly, so a signature produced in
- * Java verifies against a signature produced anywhere else.
+ * <dl>
+ *   <dt>{@link #v1Of(Map, String...)} — v1.0-spec-conformant</dt>
+ *   <dd>Top-level keys preserve caller insertion order (must match
+ *       the Go struct declaration order for the tx type). Nested
+ *       {@code Map<String,Object>} payloads and attributes are
+ *       recursively sorted alphabetically (matches Go's
+ *       {@code encoding/json} default for
+ *       {@code map[string]interface{}}).
+ *       <br><b>Use this for any transaction bound for a v1.0 node.</b></dd>
+ *
+ *   <dt>{@link #of(Map, String...)} — legacy fully-sorted mode</dt>
+ *   <dd>Sorts <em>every</em> level of the tree alphabetically,
+ *       including the top-level keys. This was the pre-v1.0 encoding.
+ *       It does <b>not</b> match the v1.0 canonical form and
+ *       signatures produced this way will not verify against a
+ *       v1.0 node. Kept only for backward compatibility with the
+ *       pre-v1.0 {@code QuidnugClient} code path.</dd>
+ * </dl>
+ *
+ * <p>Until {@code QuidnugClient} is fully converted to v1.0 wire
+ * shapes (tracked as a separate task), direct users of the Java SDK
+ * that need to sign v1.0 transactions should build their own
+ * top-level field lists (mirroring
+ * {@code docs/test-vectors/v1.0/README.md}) and pass them through
+ * {@link #v1Of(Map, String...)}. The {@code VectorsTest} class in
+ * {@code src/test/java} has worked examples.
  */
 public final class CanonicalBytes {
 
@@ -33,7 +49,42 @@ public final class CanonicalBytes {
 
     private CanonicalBytes() {}
 
-    /** Return the canonical signable bytes for an object map. */
+    /**
+     * v1.0-conformant canonical bytes: preserve top-level caller
+     * insertion order, sort nested object keys alphabetically.
+     *
+     * <p>Pass transaction fields into the {@code obj} map in Go
+     * struct declaration order for the tx type. Any nested
+     * {@code Map<String,Object>} fields (payload / attributes) will
+     * have their keys sorted before serialization.
+     */
+    public static byte[] v1Of(Map<String, Object> obj, String... excludeFields) {
+        try {
+            JsonNode tree = MAPPER.valueToTree(obj);
+            if (!tree.isObject()) {
+                throw new IllegalArgumentException("expected a JSON object at the root");
+            }
+            ObjectNode shallow = (ObjectNode) tree;
+            for (String f : excludeFields) {
+                shallow.remove(f);
+            }
+            JsonNode normalized = sortNestedKeysOnly(shallow);
+            return MAPPER.writeValueAsString(normalized).getBytes(StandardCharsets.UTF_8);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("canonicalize: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Legacy fully-sorted canonical bytes. Sorts every level.
+     *
+     * <p>Does <b>not</b> match the v1.0 canonical form. Kept only
+     * for backward compatibility with pre-v1.0 signing paths.
+     *
+     * @deprecated since 2.0; use {@link #v1Of(Map, String...)} for
+     *             signatures bound for a v1.0 node.
+     */
+    @Deprecated
     public static byte[] of(Map<String, Object> obj, String... excludeFields) {
         try {
             JsonNode tree = MAPPER.valueToTree(obj);
@@ -51,6 +102,11 @@ public final class CanonicalBytes {
         }
     }
 
+    /**
+     * Recursively sort the keys of every object in the tree — including
+     * the root. Used only by the legacy {@link #of(Map, String...)}
+     * helper; new code should prefer {@link #sortNestedKeysOnly(JsonNode)}.
+     */
     static JsonNode sortKeysDeep(JsonNode n) {
         if (n.isObject()) {
             ObjectNode src = (ObjectNode) n;
@@ -61,6 +117,28 @@ public final class CanonicalBytes {
             for (String k : keys) {
                 out.set(k, sortKeysDeep(src.get(k)));
             }
+            return out;
+        }
+        if (n.isArray()) {
+            ArrayNode out = JsonNodeFactory.instance.arrayNode(n.size());
+            for (JsonNode item : n) {
+                out.add(sortKeysDeep(item));
+            }
+            return out;
+        }
+        return n;
+    }
+
+    /**
+     * Preserve the root object's key order, but recursively sort
+     * any nested object's keys alphabetically. Arrays preserve
+     * index order; their elements are recursively normalized.
+     */
+    static JsonNode sortNestedKeysOnly(JsonNode n) {
+        if (n.isObject()) {
+            ObjectNode src = (ObjectNode) n;
+            ObjectNode out = JsonNodeFactory.instance.objectNode();
+            src.fieldNames().forEachRemaining(k -> out.set(k, sortKeysDeep(src.get(k))));
             return out;
         }
         if (n.isArray()) {

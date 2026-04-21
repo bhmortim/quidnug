@@ -66,4 +66,73 @@ class CanonicalBytesTest {
         assertEquals(expected, actual,
             "UTF-8 interop broken: Java must emit raw UTF-8, not escaped unicode");
     }
+
+    /**
+     * v1Of preserves top-level caller insertion order (Go struct
+     * declaration order for the tx type) while still sorting
+     * nested-object keys alphabetically to match Go's
+     * encoding/json output for map[string]interface{}.
+     *
+     * This is the behavior v1.0 nodes require. The legacy
+     * {@link CanonicalBytes#of(Map, String...)} helper sorts
+     * everything and does NOT match v1.0; signatures built via
+     * that helper will not verify against a v1.0 server.
+     */
+    @Test
+    void v1OfPreservesTopLevelOrderSortsNested() {
+        // Struct-declaration-order insertion (mirrors an EVENT
+        // tx: id, type, trustDomain, timestamp, ...).
+        Map<String, Object> nestedPayload = new LinkedHashMap<>();
+        nestedPayload.put("zebra", 1);
+        nestedPayload.put("apple", 2);
+        nestedPayload.put("mango", 3);
+        Map<String, Object> deeper = new LinkedHashMap<>();
+        deeper.put("yankee", "A");
+        deeper.put("alpha", "B");
+        deeper.put("mike", "C");
+        nestedPayload.put("nested", deeper);
+
+        Map<String, Object> tx = new LinkedHashMap<>();
+        tx.put("id", "abc");
+        tx.put("type", "EVENT");
+        tx.put("trustDomain", "test");
+        tx.put("timestamp", 1729468800L);
+        tx.put("payload", nestedPayload);
+
+        String out = new String(
+            CanonicalBytes.v1Of(tx), StandardCharsets.UTF_8);
+
+        // Top level: id, type, trustDomain, timestamp, payload
+        // (NOT alphabetical — matches struct declaration order).
+        // Payload nested: keys sorted alphabetically.
+        String expected = "{\"id\":\"abc\","
+            + "\"type\":\"EVENT\","
+            + "\"trustDomain\":\"test\","
+            + "\"timestamp\":1729468800,"
+            + "\"payload\":{"
+            +   "\"apple\":2,"
+            +   "\"mango\":3,"
+            +   "\"nested\":{\"alpha\":\"B\",\"mike\":\"C\",\"yankee\":\"A\"},"
+            +   "\"zebra\":1"
+            + "}}";
+        assertEquals(expected, out,
+            "v1Of must preserve top-level order and sort nested keys");
+    }
+
+    /**
+     * Regression: legacy {@link CanonicalBytes#of(Map, String...)}
+     * sorts EVERY level (including the top). This test locks in
+     * that behavior so the two helpers stay visibly distinct;
+     * v1.0 users must call v1Of, not of.
+     */
+    @Test
+    void legacyOfSortsTopLevelToo() {
+        Map<String, Object> tx = new LinkedHashMap<>();
+        tx.put("type", "EVENT");
+        tx.put("id", "abc");
+        @SuppressWarnings("deprecation")
+        String out = new String(CanonicalBytes.of(tx), StandardCharsets.UTF_8);
+        // Alphabetical: id before type.
+        assertEquals("{\"id\":\"abc\",\"type\":\"EVENT\"}", out);
+    }
 }
