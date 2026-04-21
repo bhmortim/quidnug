@@ -79,13 +79,27 @@ def _emit_signable(fields: Sequence[Tuple[str, Any, bool]]) -> bytes:
 def _go_compat_value(v: Any) -> Any:
     """Normalize a value to match Go's ``encoding/json`` output.
 
-    The one divergence that matters today is float: Go emits
-    ``float64(1.0)`` as ``"1"``, Python emits it as ``"1.0"``.
-    For integer-valued finite floats in int64 range we cast to
-    int so Python's JSON encoder emits the integer form.
+    Two divergences matter:
+
+    1. Floats: Go emits ``float64(1.0)`` as ``"1"``, Python
+       emits it as ``"1.0"``. For integer-valued finite floats
+       in int64 range we cast to int so Python's JSON encoder
+       emits the integer form.
+
+    2. Map-key ordering: Go's ``encoding/json`` sorts
+       ``map[string]interface{}`` keys alphabetically, while
+       Python's ``json.dumps(..., sort_keys=False)`` preserves
+       insertion order. Any nested dict that will be signed (and
+       re-marshaled server-side into a Go ``map``) must be
+       emitted with alphabetically sorted keys to match.
+
+    Struct-typed fields are NOT sorted; their order is dictated
+    by Go struct field declaration order and preserved by the
+    explicit ``(key, value, omitempty)`` field tuple in each
+    ``signable_bytes`` method.
 
     Strings, ints, bools, None, and non-integer floats pass
-    through unchanged. Dicts and lists recurse.
+    through unchanged. Dicts are sorted; lists recurse.
     """
     if isinstance(v, bool):
         return v
@@ -95,7 +109,8 @@ def _go_compat_value(v: Any) -> Any:
                 return int(v)
         return v
     if isinstance(v, dict):
-        return {k: _go_compat_value(sub) for k, sub in v.items()}
+        # Sort to match Go's encoding/json map marshal order.
+        return {k: _go_compat_value(sub) for k, sub in sorted(v.items())}
     if isinstance(v, list):
         return [_go_compat_value(x) for x in v]
     return v

@@ -781,6 +781,60 @@ class QuidnugClient:
         body = {"name": domain, **attrs}
         return self._request("POST", "domains", body=body)
 
+    def ensure_domain(self, domain: str, **attrs: Any) -> Dict[str, Any]:
+        """Register the domain if it doesn't already exist. Idempotent.
+
+        Convenience wrapper around ``register_domain`` for demos
+        and bootstrap scripts that don't care whether the domain
+        was just created or already present.
+        """
+        try:
+            return self.register_domain(domain, **attrs)
+        except ValidationError as e:
+            if "already exists" in str(e).lower():
+                return {"status": "success", "domain": domain,
+                         "message": "trust domain already exists"}
+            raise
+
+    def wait_for_identity(
+        self, quid_id: str, *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> "IdentityRecord":
+        """Block until the identity with ``quid_id`` is visible in
+        the committed registry, or raise TimeoutError.
+
+        A just-submitted identity transaction lives in the pending
+        pool until the next block is sealed. Code that immediately
+        emits events or title transactions referencing the new
+        quid must wait for commit first. Demos and bootstrap
+        scripts use this to avoid racing the block producer.
+        """
+        import time as _time
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            rec = self.get_identity(quid_id)
+            if rec is not None:
+                return rec
+            _time.sleep(poll)
+        raise TimeoutError(
+            f"identity {quid_id} did not commit within {timeout}s"
+        )
+
+    def wait_for_identities(
+        self, quid_ids: List[str], *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> None:
+        """Block until every quid_id in the list is committed.
+        Shares a single deadline across all ids."""
+        import time as _time
+        deadline = _time.time() + timeout
+        for qid in quid_ids:
+            remaining = max(0.0, deadline - _time.time())
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"identities not all committed within {timeout}s "
+                    f"(blocked on {qid})"
+                )
+            self.wait_for_identity(qid, timeout=remaining, poll=poll)
+
     def get_node_domains(self) -> Dict[str, Any]:
         return self._request("GET", "node/domains")
 

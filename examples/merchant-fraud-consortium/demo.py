@@ -100,6 +100,9 @@ def bootstrap_consortium(client: QuidnugClient) -> Dict[str, Merchant]:
         m = _bootstrap_merchant(client, name, vertical)
         merchants[name] = m
         print(f"  registered: {m}")
+    # Wait for every identity to reach the committed registry
+    # before any follow-on trust or event tx references them.
+    client.wait_for_identities([m.quid.id for m in merchants.values()])
     return merchants
 
 
@@ -254,6 +257,9 @@ def main() -> None:
         print(f"  node unreachable: {e}", file=sys.stderr)
         print("  (start one via: cd deploy/compose && docker compose up -d)", file=sys.stderr)
         sys.exit(1)
+
+    # Register the shared trust domain (idempotent).
+    client.ensure_domain(DOMAIN)
 
     merchants = bootstrap_consortium(client)
     establish_trust_graph(client, merchants)
