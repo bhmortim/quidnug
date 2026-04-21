@@ -313,6 +313,25 @@ New degrees use the new key.
 - [`implementation.md`](implementation.md)
 - [`threat-model.md`](threat-model.md)
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/credential-verification-network/`](../../examples/credential-verification-network/):
+
+- `credential_verify.py` — standalone verifier logic.
+- `credential_verify_test.py` — 10 pytest cases covering
+  direct + transitive trust, revocation, threshold tuning,
+  cross-jurisdiction observer-relative verdicts.
+- `demo.py` — seven-step end-to-end flow against a live
+  Quidnug node: register actors, establish accreditation,
+  issue degree, verify from US + APAC employer perspectives,
+  revoke, re-verify, cross-jurisdiction credential.
+
+```bash
+cd examples/credential-verification-network
+python demo.py
+```
+
 ## Related
 
 - [`../healthcare-consent-management/`](../healthcare-consent-management/)
