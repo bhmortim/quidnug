@@ -214,6 +214,24 @@ records they saw remain readable — by design).
 management surface. Compliance teams get a single query
 target. Ops teams get one on-call rotation rather than six.
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/enterprise-domain-authority/`](../../examples/enterprise-domain-authority/):
+
+- `split_horizon.py` — pure decision logic for the three
+  visibility tiers (public / trust-gated / private).
+- `split_horizon_test.py` — 13 pytest cases.
+- `demo.py` — five-step end-to-end flow: register BigCorp
+  actors, publish records in all three tiers, build trust +
+  membership graphs, and demonstrate that outsider / partner /
+  employee each see a different subset of the zone.
+
+```bash
+cd examples/enterprise-domain-authority
+python demo.py
+```
+
 ## What's in this folder
 
 - [`README.md`](README.md) — this document (high-level).
