@@ -332,6 +332,25 @@ automatically enforces the new requirement.
 - [`implementation.md`](implementation.md)
 - [`threat-model.md`](threat-model.md)
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/developer-artifact-signing/`](../../examples/developer-artifact-signing/):
+
+- `artifact_verify.py` — pure verifier logic (hash match,
+  revocation, CVE status, trust threshold).
+- `artifact_verify_test.py` — 16 pytest cases covering match,
+  mismatch, revocation, severity handling, batch verification.
+- `demo.py` — ten-step end-to-end flow against a live node:
+  register actors, publish release, verify, report CVE,
+  re-verify (warn), patch, verify superseded version, revoke,
+  tamper-detection sanity check.
+
+```bash
+cd examples/developer-artifact-signing
+python demo.py
+```
+
 ## Related
 
 - [`../ai-model-provenance/`](../ai-model-provenance/) — same supply-chain pattern
