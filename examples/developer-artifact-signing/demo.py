@@ -36,7 +36,7 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from artifact_verify import ReleaseV1, sha256_hex, verify_artifact
@@ -90,6 +90,7 @@ def publish_release(
         )
     except Exception as e:
         print(f"  (register_title {release_id}: {e})")
+    client.wait_for_title(release_id)
 
     # 2. Attach metadata via event on the title stream.
     client.emit_event(
@@ -129,16 +130,22 @@ def report_cve(
     client: QuidnugClient, reporter: Actor, release_id: str,
     cve_id: str, severity: str, description: str,
 ) -> None:
+    """Researcher publishes a CVE report on their OWN stream,
+    with the target release_id in the payload. Consumers who
+    subscribe to a researcher's feed pick it up during
+    verification. (The release's title stream can only be
+    written to by its owners.)"""
     client.emit_event(
         signer=reporter.quid,
-        subject_id=release_id,
-        subject_type="TITLE",
+        subject_id=reporter.quid.id,
+        subject_type="QUID",
         event_type="release.vulnerability-reported",
         domain=DOMAIN,
         payload={
             "cveId": cve_id,
             "severity": severity,
             "reporter": reporter.quid.id,
+            "targetReleaseId": release_id,
             "description": description,
             "reportedAt": int(time.time()),
         },
@@ -184,10 +191,21 @@ def revoke_release(
 
 def load_release_events(
     client: QuidnugClient, release_id: str,
+    researchers: Optional[List[Actor]] = None,
 ) -> List[dict]:
-    """Pull the release's event stream as plain dicts."""
-    events, _ = client.get_stream_events(release_id, limit=200)
+    """Pull the release's event stream, merged with any CVE
+    reports from trusted researchers' streams that target this
+    release.
+
+    Researchers publish CVEs on their own QUID stream because
+    the protocol forbids non-owners from writing to the
+    artifact's title stream. Consumers subscribe to a curated
+    researcher list and cross-reference.
+    """
     out: List[dict] = []
+
+    # 1. Lifecycle events on the release's title stream.
+    events, _ = client.get_stream_events(release_id, limit=200)
     for ev in events or []:
         out.append({
             "eventType": ev.event_type,
@@ -195,12 +213,29 @@ def load_release_events(
             "timestamp": ev.timestamp,
             "sequence": ev.sequence,
         })
+
+    # 2. CVE reports from trusted researcher streams, filtered
+    #    to this release.
+    for r in researchers or []:
+        r_events, _ = client.get_stream_events(r.quid.id, limit=200)
+        for ev in r_events or []:
+            if ev.event_type != "release.vulnerability-reported":
+                continue
+            p = ev.payload or {}
+            if p.get("targetReleaseId") == release_id:
+                out.append({
+                    "eventType": ev.event_type,
+                    "payload": p,
+                    "timestamp": ev.timestamp,
+                    "sequence": ev.sequence,
+                })
     return out
 
 
 def verify_and_show(
     client: QuidnugClient, consumer: Actor, release: ReleaseV1,
     artifact_bytes: bytes, label: str,
+    trusted_researchers: Optional[List[Actor]] = None,
 ) -> None:
     def trust_fn(obs: str, maint: str) -> float:
         try:
@@ -209,7 +244,9 @@ def verify_and_show(
         except Exception:
             return 0.0
 
-    events = load_release_events(client, release.release_id)
+    events = load_release_events(
+        client, release.release_id, trusted_researchers,
+    )
     v = verify_artifact(
         consumer.quid.id, release, artifact_bytes, events, trust_fn,
         min_trust=0.5,
@@ -231,6 +268,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     banner("Step 1: Register actors")
     alice     = register(client, "alice-maintainer",  "maintainer")
     bob       = register(client, "bob-maintainer",    "maintainer")
@@ -238,6 +277,7 @@ def main() -> None:
     consumer  = register(client, "consumer-acme",    "consumer")
     for a in (alice, bob, researcher, consumer):
         print(f"  {a.role:14s} {a.name:20s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in (alice, bob, researcher, consumer)])
 
     banner("Step 2: Consumer establishes direct trust in alice")
     client.grant_trust(
@@ -282,7 +322,7 @@ def main() -> None:
     time.sleep(1)
 
     banner("Step 6: Consumer re-verifies v1.0.0 (expect: warn)")
-    verify_and_show(client, consumer, r1, tarball_v1, "WITH UNPATCHED CVE")
+    verify_and_show(client, consumer, r1, tarball_v1, "WITH UNPATCHED CVE", [researcher])
 
     banner("Step 7: Alice publishes v1.0.1 with the fix")
     tarball_v2 = b"webapp-js@1.0.1: patched tarball contents " + os.urandom(64)
@@ -297,7 +337,7 @@ def main() -> None:
     time.sleep(1)
 
     banner("Step 8: Consumer verifies v1.0.1 (expect: accept)")
-    verify_and_show(client, consumer, r2, tarball_v2, "PATCHED v1.0.1")
+    verify_and_show(client, consumer, r2, tarball_v2, "PATCHED v1.0.1", [researcher])
 
     banner("Step 8b: v1.0.0 after patch-event posted")
     # Note: v1.0.0 still has the unpatched-high-sev tag because
@@ -305,12 +345,12 @@ def main() -> None:
     # when a patch event names this release's stream. A downstream
     # policy could instead resolve the chain via
     # `patchedInVersion` and mark earlier versions as superseded.
-    verify_and_show(client, consumer, r1, tarball_v1, "v1.0.0 SUPERSEDED")
+    verify_and_show(client, consumer, r1, tarball_v1, "v1.0.0 SUPERSEDED", [researcher])
 
     banner("Step 9: Alice's key is compromised -> she revokes v1.0.0")
     revoke_release(client, alice, release_id_v1, "key-compromise-2026-04-01")
     time.sleep(1)
-    verify_and_show(client, consumer, r1, tarball_v1, "POST-REVOCATION v1.0.0")
+    verify_and_show(client, consumer, r1, tarball_v1, "POST-REVOCATION v1.0.0", [researcher])
 
     banner("Step 10: Hash-mismatch sanity check")
     tampered = tarball_v2 + b"extra malicious payload"
