@@ -108,7 +108,7 @@ format:
 | 2 | credential-verification-network | 10/10 | pass | required node fixes: ownership sum 1.0 (not 100.0), free-form asset IDs, TITLE subject IDs free-form; demo refactored to issue credentials as jointly-owned TITLEs |
 | 3 | ai-agent-authorization | 17/17 | pass | demo refactored: each action is a jointly-owned TITLE (agent primary + guardians); cosign / veto events on the action's title stream |
 | 4 | developer-artifact-signing | 16/16 | pass | CVE reports moved to researcher's own QUID stream with targetReleaseId in payload; verifier merges release's title stream with trusted researchers' streams |
-| 5 | institutional-custody | _pending_ | _pending_ | |
+| 5 | institutional-custody | 14/14 | pass | transfers as jointly-owned TITLEs (wallet + proposer + all 7 signers); wallet policy / freeze events on ops officer's own stream with target-wallet pointer |
 | 6 | b2b-invoice-financing | _pending_ | _pending_ | |
 | 7 | interbank-wire-authorization | _pending_ | _pending_ | |
 | 8 | ai-content-authenticity | _pending_ | _pending_ | |

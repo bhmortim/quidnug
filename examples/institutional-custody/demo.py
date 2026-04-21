@@ -79,20 +79,32 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 def propose_transfer(
     client: QuidnugClient, proposer: Actor, wallet: Actor,
-    transfer: TransferAuthorization,
+    transfer: TransferAuthorization, signers: List[Actor],
 ) -> None:
-    """Register the transfer as a TITLE (owned by the wallet) and
-    emit a transfer.proposed event on that title's stream."""
+    """Register the transfer as a TITLE jointly owned by the
+    wallet, the proposer, and every authorized signer so all of
+    them can emit events on the title's stream. Then emit the
+    transfer.proposed event."""
+    # Distribute shares; wallet primary, proposer + signers each
+    # a small equal share summing with wallet to 1.0.
+    participant_count = 1 + len(signers)   # proposer + signers
+    participant_share = 0.02
+    wallet_share = round(1.0 - participant_share * participant_count, 6)
+    owners = [OwnershipStake(wallet.quid.id, wallet_share, "custody-wallet")]
+    owners.append(OwnershipStake(proposer.quid.id, participant_share, "proposer"))
+    for s in signers:
+        owners.append(OwnershipStake(s.quid.id, participant_share, "signer"))
     try:
         client.register_title(
             signer=proposer.quid,
             asset_id=transfer.transfer_id,
-            owners=[OwnershipStake(wallet.quid.id, 1.0, "custody-wallet")],
+            owners=owners,
             domain=DOMAIN,
             title_type="transfer-authorization",
         )
     except Exception as e:
         print(f"  (register_title {transfer.transfer_id}: {e})")
+    client.wait_for_title(transfer.transfer_id)
 
     client.emit_event(
         signer=proposer.quid,
@@ -138,13 +150,17 @@ def cosign(
 def freeze_wallet(
     client: QuidnugClient, ops: Actor, wallet: Actor, reason: str,
 ) -> None:
+    """Ops officer emits the freeze event on their OWN quid
+    stream with the target wallet in the payload. (Wallet QUID
+    streams are writable only by the wallet itself.)"""
     client.emit_event(
         signer=ops.quid,
-        subject_id=wallet.quid.id,
+        subject_id=ops.quid.id,
         subject_type="QUID",
         event_type="wallet.frozen",
         domain=DOMAIN,
         payload={
+            "targetWalletQuid": wallet.quid.id,
             "frozenBy": ops.quid.id,
             "reason": reason,
             "frozenAt": int(time.time()),
@@ -166,10 +182,15 @@ def load_transfer_events(client: QuidnugClient, transfer_id: str) -> List[dict]:
     return out
 
 
-def load_wallet_events(client: QuidnugClient, wallet: Actor) -> List[dict]:
-    events, _ = client.get_stream_events(wallet.quid.id, limit=200)
+def load_wallet_events(client: QuidnugClient, ops: Actor, wallet: Actor) -> List[dict]:
+    """Pull wallet-lifecycle events from the ops officer's own
+    stream, filtered to those targeting this wallet."""
+    events, _ = client.get_stream_events(ops.quid.id, limit=500)
     out: List[dict] = []
     for ev in events or []:
+        p = ev.payload or {}
+        if p.get("targetWalletQuid") and p.get("targetWalletQuid") != wallet.quid.id:
+            continue
         out.append({
             "eventType": ev.event_type,
             "payload": ev.payload or {},
@@ -180,11 +201,11 @@ def load_wallet_events(client: QuidnugClient, wallet: Actor) -> List[dict]:
 
 
 def evaluate_and_show(
-    client: QuidnugClient, policy: WalletPolicy, wallet: Actor,
+    client: QuidnugClient, ops: Actor, policy: WalletPolicy, wallet: Actor,
     transfer: TransferAuthorization, label: str,
 ) -> None:
-    # Pull the wallet's stream for freeze state.
-    wallet_evs = load_wallet_events(client, wallet)
+    # Pull wallet-lifecycle events from the ops officer's stream.
+    wallet_evs = load_wallet_events(client, ops, wallet)
     frozen = wallet_frozen_by_events(wallet_evs)
     # Pull the transfer's stream for cosignatures.
     transfer_evs = load_transfer_events(client, transfer.transfer_id)
@@ -212,6 +233,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     banner("Step 1: Register actors")
     ops      = register(client, "ops-officer-acme",  "ops-officer")
     auditor  = register(client, "compliance-audit",  "compliance-auditor")
@@ -221,6 +244,9 @@ def main() -> None:
         signers.append(register(client, f"signer-{i}", "signer"))
     for a in [ops, auditor, wallet] + signers:
         print(f"  {a.role:20s} {a.name:20s} -> {a.quid.id}")
+    client.wait_for_identities(
+        [a.quid.id for a in [ops, auditor, wallet] + signers]
+    )
 
     banner("Step 2: Install wallet signing policy (5-of-7)")
     # In a fuller deployment this would be a GuardianSet install
@@ -243,14 +269,17 @@ def main() -> None:
         signers=signer_configs,
     )
 
-    # Record the policy installation as an event on the wallet's stream.
+    # Record the policy installation as an event on the ops
+    # officer's own stream (with target-wallet pointer). Wallet
+    # QUID streams are writable only by the wallet itself.
     client.emit_event(
         signer=ops.quid,
-        subject_id=wallet.quid.id,
+        subject_id=ops.quid.id,
         subject_type="QUID",
         event_type="wallet.policy-installed",
         domain=DOMAIN,
         payload={
+            "targetWalletQuid": wallet.quid.id,
             "threshold": policy.threshold,
             "signerCount": len(policy.signers),
             "signers": [
@@ -280,7 +309,7 @@ def main() -> None:
         proposer_quid=ops.quid.id,
         purpose="quarterly rebalance per Q2 plan",
     )
-    propose_transfer(client, ops, wallet, transfer)
+    propose_transfer(client, ops, wallet, transfer, signers)
 
     time.sleep(1)
 
@@ -291,14 +320,14 @@ def main() -> None:
                signer_epoch=signer_configs[i].current_epoch)
         print(f"  {s.name:12s} cosigned (epoch {signer_configs[i].current_epoch})")
     time.sleep(0.5)
-    evaluate_and_show(client, policy, wallet, transfer, "AFTER 4 COSIGNS")
+    evaluate_and_show(client, ops, policy, wallet, transfer, "AFTER 4 COSIGNS")
 
     banner("Step 5: Signer 5 cosigns; verdict should be authorized")
     cosign(client, signers[4], transfer_id,
            signer_epoch=signer_configs[4].current_epoch)
     print(f"  {signers[4].name} cosigned")
     time.sleep(0.5)
-    evaluate_and_show(client, policy, wallet, transfer, "AFTER 5 COSIGNS")
+    evaluate_and_show(client, ops, policy, wallet, transfer, "AFTER 5 COSIGNS")
 
     banner("Step 6: Audit view  (retained for forensics)")
     events = load_transfer_events(client, transfer_id)
@@ -338,12 +367,12 @@ def main() -> None:
         proposer_quid=ops.quid.id,
         purpose="retry during freeze",
     )
-    propose_transfer(client, ops, wallet, transfer2)
+    propose_transfer(client, ops, wallet, transfer2, signers)
     for i in range(5):
         cosign(client, signers[i], transfer2_id,
                signer_epoch=signer_configs[i].current_epoch)
     time.sleep(0.5)
-    evaluate_and_show(client, policy, wallet, transfer2, "POST-FREEZE (EXPECT DENIED)")
+    evaluate_and_show(client, ops, policy, wallet, transfer2, "POST-FREEZE (EXPECT DENIED)")
 
     banner("Demo complete")
     print()

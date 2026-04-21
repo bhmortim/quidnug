@@ -220,7 +220,7 @@ def audit_report(verdict: TransferVerdict) -> str:
     if verdict.audit:
         lines.append("  audit:")
         for entry in verdict.audit:
-            mark = "✓" if entry.get("counted") else "✗"
+            mark = "[ok]" if entry.get("counted") else "[--]"
             lines.append(
                 f"    {mark} {entry['signer']:24s} "
                 f"epoch={entry['epoch']}"
