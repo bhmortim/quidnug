@@ -37,9 +37,16 @@ import java.security.spec.ECGenParameterSpec
  * // Later sessions — load by alias
  * val signer = AndroidKeystoreSigner.load("user-quid")
  *
- * // Sign a canonical Quidnug transaction
- * val signable = CanonicalBytes.of(tx, "signature", "txId")
- * val sig = signer.sign(signable)  // hex DER
+ * // Sign a canonical Quidnug transaction for a v1.0 node.
+ * // Pass tx fields in Go struct declaration order; v1Of will
+ * // preserve that order at the top level and sort nested map
+ * // keys alphabetically (matches Go's encoding/json default).
+ * val signable = CanonicalBytes.v1Of(tx, "signature", "txId")
+ * val sig = signer.sign(signable)  // hex IEEE-1363
+ *
+ * // (Legacy CanonicalBytes.of() sorts every level including the
+ * //  top and does NOT match v1.0 canonical form. Do not use for
+ * //  transactions bound for a v1.0 node.)
  * ```
  */
 class AndroidKeystoreSigner private constructor(
