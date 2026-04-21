@@ -307,6 +307,26 @@ Agent's capabilities are tightly scoped:
 - [`implementation.md`](implementation.md) — API calls
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/ai-agent-authorization/`](../../examples/ai-agent-authorization/):
+
+- `agent_authz.py` — pure decision logic (risk class → required
+  cosigner weight, grant coverage, veto override).
+- `agent_authz_test.py` — 17 pytest cases covering risk-class
+  routing, vetoes, grant scoping, expiry, duplicates, and
+  non-guardian cosignatures.
+- `demo.py` — seven-step end-to-end flow against a live node:
+  register actors, grant a time-bounded capability, propose
+  trivial / medium / high-with-veto / out-of-domain / expired
+  actions, and observe per-class verdicts.
+
+```bash
+cd examples/ai-agent-authorization
+python demo.py
+```
+
 ## Related
 
 - [`../ai-model-provenance/`](../ai-model-provenance/) — authorization
