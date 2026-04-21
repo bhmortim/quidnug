@@ -83,16 +83,35 @@ def sha256_hex(s: str) -> str:
 def capture_asset(
     client: QuidnugClient, camera: Actor, photographer: Actor,
     asset_id: str, original_hash: str,
+    editors: List[Actor] = None, publishers: List[Actor] = None,
+    checkers: List[Actor] = None,
 ) -> None:
-    """Register the asset as a TITLE owned by the photographer
-    and emit a media.captured event signed by the camera."""
+    """Register the asset as a TITLE jointly owned by every
+    party that might emit lifecycle events on it (camera,
+    photographer, editors, publisher, fact-checker). Then emit
+    the media.captured event."""
+    editors = editors or []
+    publishers = publishers or []
+    checkers = checkers or []
+    others = [camera] + editors + publishers + checkers
+    share = 0.02
+    photog_share = round(1.0 - share * len(others), 6)
+    owners = [OwnershipStake(photographer.quid.id, photog_share, "photographer")]
+    owners.append(OwnershipStake(camera.quid.id, share, "camera"))
+    for e in editors:
+        owners.append(OwnershipStake(e.quid.id, share, "editor"))
+    for p in publishers:
+        owners.append(OwnershipStake(p.quid.id, share, "publisher"))
+    for c in checkers:
+        owners.append(OwnershipStake(c.quid.id, share, "fact-checker"))
     client.register_title(
         signer=photographer.quid,
         asset_id=asset_id,
-        owners=[OwnershipStake(photographer.quid.id, 1.0, "photographer")],
+        owners=owners,
         domain=DOMAIN,
         title_type="media-asset",
     )
+    client.wait_for_title(asset_id)
     client.emit_event(
         signer=camera.quid,
         subject_id=asset_id,
@@ -111,15 +130,24 @@ def capture_asset(
 
 def generate_asset(
     client: QuidnugClient, model: Actor, asset_id: str, hash_: str,
+    publishers: List[Actor] = None,
 ) -> None:
-    """Register an AI-generated asset."""
+    """Register an AI-generated asset jointly with every
+    publisher that might emit events on it."""
+    publishers = publishers or []
+    share = 0.02
+    model_share = round(1.0 - share * len(publishers), 6)
+    owners = [OwnershipStake(model.quid.id, model_share, "generator")]
+    for p in publishers:
+        owners.append(OwnershipStake(p.quid.id, share, "publisher"))
     client.register_title(
         signer=model.quid,
         asset_id=asset_id,
-        owners=[OwnershipStake(model.quid.id, 1.0, "generator")],
+        owners=owners,
         domain=DOMAIN,
         title_type="media-asset",
     )
+    client.wait_for_title(asset_id)
     client.emit_event(
         signer=model.quid,
         subject_id=asset_id,
@@ -235,6 +263,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     banner("Step 1: Register actors")
     canon       = register(client, "canon-5d-serial-123", "camera")
     photog      = register(client, "photog-jane-doe",     "photographer")
@@ -247,6 +277,10 @@ def main() -> None:
     for a in (canon, photog, editor_r, reuters, fact_check_, ai_model,
               aggregator, consumer):
         print(f"  {a.role:14s} {a.name:24s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in (
+        canon, photog, editor_r, reuters, fact_check_, ai_model,
+        aggregator, consumer,
+    )])
 
     banner("Step 2: Consumer sets up trust graph")
     # Consumer trusts canon, photog, editor, reuters, fact-checker.
@@ -275,7 +309,7 @@ def main() -> None:
     hash_crop  = sha256_hex(f"{asset_a_id}:crop")
     hash_grade = sha256_hex(f"{asset_a_id}:grade")
 
-    capture_asset(client, canon, photog, asset_a_id, hash_raw)
+    capture_asset(client, canon, photog, asset_a_id, hash_raw, editors=[photog, editor_r], publishers=[reuters], checkers=[fact_check_])
     edit(client, photog,   asset_a_id, "media.cropped",      hash_raw,   hash_crop)
     edit(client, editor_r, asset_a_id, "media.color-graded", hash_crop,  hash_grade)
     publish(client, reuters, asset_a_id, f"reuters-story-{uuid.uuid4().hex[:6]}")
@@ -283,7 +317,7 @@ def main() -> None:
                "consistent-with-contextual-evidence")
     print(f"  Asset A: captured, cropped, graded, published, fact-checked")
 
-    time.sleep(0.5)
+    time.sleep(3)
     asset_a = MediaAssetV1(
         asset_id=asset_a_id, asset_type="photo", origin=ORIGIN_CAPTURED,
         creator_quid=canon.quid.id, original_hash=hash_raw,
@@ -298,7 +332,7 @@ def main() -> None:
     hash_crop_b = sha256_hex(f"{asset_b_id}:crop")
     tampered_input = "WRONG-HASH-00000"
 
-    capture_asset(client, canon, photog, asset_b_id, hash_raw_b)
+    capture_asset(client, canon, photog, asset_b_id, hash_raw_b, editors=[photog, editor_r], publishers=[reuters])
     # Cropped says output=hash_crop_b.
     edit(client, photog, asset_b_id, "media.cropped", hash_raw_b, hash_crop_b)
     # Next edit claims a different input than previous output.
@@ -306,7 +340,7 @@ def main() -> None:
           tampered_input, sha256_hex("irrelevant"))
     publish(client, reuters, asset_b_id, "broken-story")
 
-    time.sleep(0.5)
+    time.sleep(3)
     asset_b = MediaAssetV1(
         asset_id=asset_b_id, asset_type="photo", origin=ORIGIN_CAPTURED,
         creator_quid=canon.quid.id, original_hash=hash_raw_b,
@@ -318,10 +352,10 @@ def main() -> None:
     banner("Step 5 (C): AI-generated image")
     asset_c_id = f"asset-{uuid.uuid4().hex[:8]}"
     hash_c = sha256_hex(f"{asset_c_id}:generated")
-    generate_asset(client, ai_model, asset_c_id, hash_c)
+    generate_asset(client, ai_model, asset_c_id, hash_c, publishers=[aggregator])
     publish(client, aggregator, asset_c_id, f"aggregator-post-{uuid.uuid4().hex[:6]}")
 
-    time.sleep(0.5)
+    time.sleep(3)
     asset_c = MediaAssetV1(
         asset_id=asset_c_id, asset_type="photo", origin=ORIGIN_GENERATED,
         creator_quid=ai_model.quid.id, original_hash=hash_c,

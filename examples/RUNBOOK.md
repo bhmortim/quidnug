@@ -111,7 +111,7 @@ format:
 | 5 | institutional-custody | 14/14 | pass | transfers as jointly-owned TITLEs (wallet + proposer + all 7 signers); wallet policy / freeze events on ops officer's own stream with target-wallet pointer |
 | 6 | b2b-invoice-financing | 15/15 | pass | invoice jointly owned by supplier + buyer + carrier + financiers; longer 3s inter-step sleeps wait for block commit |
 | 7 | interbank-wire-authorization | 14/14 | pass | wire titles jointly owned by sender bank + all cosigning officers |
-| 8 | ai-content-authenticity | _pending_ | _pending_ | |
+| 8 | ai-content-authenticity | 12/12 | pass | media titles jointly owned by camera + photographer + editors + publishers + fact-checkers |
 | 9 | ai-model-provenance | _pending_ | _pending_ | |
 | 10 | defi-oracle-network | _pending_ | _pending_ | |
 | 11 | federated-learning-attestation | _pending_ | _pending_ | |
