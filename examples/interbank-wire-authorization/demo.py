@@ -80,19 +80,27 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 def propose_wire(
     client: QuidnugClient, sender_bank: Actor, wire: WireInstruction,
+    officers: List[Actor] = None,
 ) -> None:
-    """Register the wire as a TITLE owned by the sender bank, then
-    emit a wire.proposed event."""
+    """Register the wire as a TITLE jointly owned by the sender
+    bank and every officer who might cosign; emit the proposal."""
+    officers = officers or []
+    share = 0.02
+    bank_share = round(1.0 - share * len(officers), 6)
+    owners = [OwnershipStake(sender_bank.quid.id, bank_share, "sender-bank")]
+    for o in officers:
+        owners.append(OwnershipStake(o.quid.id, share, o.role))
     try:
         client.register_title(
             signer=sender_bank.quid,
             asset_id=wire.wire_id,
-            owners=[OwnershipStake(sender_bank.quid.id, 1.0, "sender-bank")],
+            owners=owners,
             domain=DOMAIN,
             title_type="wire-authorization",
         )
     except Exception as e:
         print(f"  (register_title {wire.wire_id}: {e})")
+    client.wait_for_title(wire.wire_id)
     client.emit_event(
         signer=sender_bank.quid,
         subject_id=wire.wire_id,
@@ -172,6 +180,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     sender   = register(client, "bank-acme-usa",        "sender-bank")
@@ -182,6 +192,8 @@ def main() -> None:
     carol    = register(client, "carol-compliance",     "compliance")
     for a in (sender, receiver, alice, bob, dave, carol):
         print(f"  {a.role:13s} {a.name:22s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in
+        (sender, receiver, alice, bob, dave, carol)])
 
     # -----------------------------------------------------------------
     banner("Step 2: Install bank's wire-authorization policy")
@@ -241,10 +253,10 @@ def main() -> None:
         reference="office-supplies",
         proposed_at_unix=int(time.time()),
     )
-    propose_wire(client, sender, w_small)
+    propose_wire(client, sender, w_small, [alice, bob, dave, carol])
     cosign_wire(client, alice, w_small.wire_id, nonce=1)
     print(f"  {alice.name} cosigned")
-    time.sleep(0.5)
+    time.sleep(3)
     evaluate_and_show(client, policy, w_small, "SMALL  (expect approved)", ledger)
 
     # -----------------------------------------------------------------
@@ -259,16 +271,16 @@ def main() -> None:
         reference="Q2-payables",
         proposed_at_unix=int(time.time()),
     )
-    propose_wire(client, sender, w_mid)
+    propose_wire(client, sender, w_mid, [alice, bob, dave, carol])
 
     cosign_wire(client, alice, w_mid.wire_id, nonce=2)
     print(f"  {alice.name} cosigned")
-    time.sleep(0.3)
+    time.sleep(3)
     evaluate_and_show(client, policy, w_mid, "MID @ 1 signer (expect pending)", ledger)
 
     cosign_wire(client, bob, w_mid.wire_id, nonce=1)
     print(f"  {bob.name} cosigned")
-    time.sleep(0.3)
+    time.sleep(3)
     evaluate_and_show(client, policy, w_mid, "MID @ 2 signers (expect approved)", NonceLedger())
 
     # -----------------------------------------------------------------
@@ -283,13 +295,13 @@ def main() -> None:
         reference="acquisition-closing",
         proposed_at_unix=int(time.time()),
     )
-    propose_wire(client, sender, w_large)
+    propose_wire(client, sender, w_large, [alice, bob, dave, carol])
 
     cosign_wire(client, alice, w_large.wire_id, nonce=3)
     cosign_wire(client, bob,   w_large.wire_id, nonce=2)
     cosign_wire(client, dave,  w_large.wire_id, nonce=1)
     print(f"  {alice.name}, {bob.name}, {dave.name} each cosigned (no compliance yet)")
-    time.sleep(0.3)
+    time.sleep(3)
     # NOTE: fresh ledger per evaluate to keep the demo hermetic.
     evaluate_and_show(client, policy, w_large,
                       "LARGE @ 3 officers (expect pending - need compliance role)",
@@ -297,7 +309,7 @@ def main() -> None:
 
     cosign_wire(client, carol, w_large.wire_id, nonce=1)
     print(f"  {carol.name} cosigned")
-    time.sleep(0.3)
+    time.sleep(3)
     evaluate_and_show(client, policy, w_large,
                       "LARGE @ +compliance (expect approved)",
                       NonceLedger())
@@ -330,12 +342,12 @@ def main() -> None:
         reference="attacker-beneficiary",
         proposed_at_unix=int(time.time()),
     )
-    propose_wire(client, sender, w_replay)
+    propose_wire(client, sender, w_replay, [alice, bob, dave, carol])
     # Attacker re-publishes alice's old cosignature against the new wire.
     cosign_wire(client, alice, w_replay.wire_id, nonce=3)   # reused nonce
     cosign_wire(client, bob,   w_replay.wire_id, nonce=10)  # fresh for bob
     print(f"  Attacker replayed alice@nonce=3 + bob@nonce=10")
-    time.sleep(0.3)
+    time.sleep(3)
     evaluate_and_show(client, policy, w_replay,
                       "REPLAY ATTEMPT", replay_ledger)
 
