@@ -129,6 +129,10 @@ type QuidnugNode struct {
 	// internal lock.
 	BlindKeyRegistry *BlindKeyRegistry
 
+	// QDP-0024: group encryption registry. Owns its own
+	// internal lock.
+	GroupRegistry *GroupRegistry
+
 	// QDP-0016: multi-layer write-admission rate limiter. Fires
 	// at the mempool-admission layer, after signature verification.
 	// The existing HTTP-ingress IP limiter (configured via
@@ -459,6 +463,7 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		PrivacyRegistry:           NewPrivacyRegistry(),
 		DNSAttestationRegistry:    NewDNSAttestationRegistry(),
 		BlindKeyRegistry:          NewBlindKeyRegistry(),
+		GroupRegistry:             NewGroupRegistry(),
 		WriteLimiter:              ratelimit.NewMultiLayerLimiter(ratelimit.DefaultWriteLimits()),
 		QuidDomainIndex:           NewQuidDomainIndex(),
 		IPFSClient:                ipfsClient,

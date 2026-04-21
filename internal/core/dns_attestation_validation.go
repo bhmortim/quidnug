@@ -352,6 +352,12 @@ func verifyDNSTxSignature(tx any) bool {
 	}
 }
 
+// verifyStructSig is the common signature-verification path
+// used by every new event type family we've added (DNS
+// attestation, blind-key attestation, group encryption,
+// etc.). The caller passes a closure that produces the
+// signable-bytes form of the tx (typically a copy with
+// Signature cleared); we marshal + verify against PublicKey.
 func verifyStructSig(publicKeyHex, signatureHex string, signableProducer func() any) bool {
 	if publicKeyHex == "" || signatureHex == "" {
 		return false

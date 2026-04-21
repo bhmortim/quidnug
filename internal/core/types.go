@@ -80,6 +80,30 @@ const (
 	// on this event to identify which RSA key they were
 	// issued under.
 	TxTypeBlindKeyAttestation TransactionType = "BLIND_KEY_ATTESTATION"
+	// QDP-0024 group-keyed encryption event types.
+	//
+	// TxTypeGroupCreate establishes a new encrypted-record
+	// group with a name, type (static/dynamic/hybrid), and
+	// initial membership.
+	TxTypeGroupCreate TransactionType = "GROUP_CREATE"
+	// TxTypeEpochAdvance advances the group to a new epoch
+	// secret, optionally on membership change (add/remove)
+	// or a scheduled rotation.
+	TxTypeEpochAdvance TransactionType = "EPOCH_ADVANCE"
+	// TxTypeMemberKeyPackage publishes a member's long-lived
+	// X25519 public key so other members can wrap epoch
+	// secrets to them.
+	TxTypeMemberKeyPackage TransactionType = "MEMBER_KEY_PACKAGE"
+	// TxTypeEncryptedRecord is the standard envelope for
+	// AES-GCM-256-encrypted payloads tagged to a group + epoch.
+	TxTypeEncryptedRecord TransactionType = "ENCRYPTED_RECORD"
+	// TxTypeMemberInvite delivers a welcome package (wrapped
+	// epoch secret + group state) to a newly-added member.
+	TxTypeMemberInvite TransactionType = "MEMBER_INVITE"
+	// TxTypeMemberKeyRecovery triggers guardian-recovered
+	// re-wrapping of past epoch secrets to a member's new
+	// X25519 key after key loss.
+	TxTypeMemberKeyRecovery TransactionType = "MEMBER_KEY_RECOVERY"
 )
 
 // Trust computation resource limits
@@ -403,6 +427,115 @@ type BallotProof struct {
 	BlindSignature    string `json:"blindSignature"`    // hex-encoded RSA signature
 	RSAKeyFingerprint string `json:"rsaKeyFingerprint"` // references a BLIND_KEY_ATTESTATION
 	BQEphemeralPubkey string `json:"bqEphemeralPubkey,omitempty"`
+}
+
+// ---------------------------------------------------------------
+// QDP-0024: group-keyed encryption (Phase 1)
+// ---------------------------------------------------------------
+
+// GroupPolicy — scheduled rotation + governance for a group.
+type GroupPolicy struct {
+	RotationIntervalSeconds int64    `json:"rotationIntervalSeconds"` // 0 = no scheduled rotation
+	GovernorQuids           []string `json:"governorQuids,omitempty"`
+	GovernanceQuorum        float64  `json:"governanceQuorum,omitempty"`
+	MaxMembers              int      `json:"maxMembers,omitempty"`
+	HistoryRetention        string   `json:"historyRetention,omitempty"` // "forever" | "90d" | "1y"
+	// KeyScheme: "direct-wrap" (Phase 1) or "treekem" (Phase 2).
+	KeyScheme string `json:"keyScheme,omitempty"`
+}
+
+// GroupCreateTransaction creates a new encrypted-record
+// group. Phase 1 supports type="static" (explicit member
+// list) and type="dynamic" (membership derived from a trust
+// domain).
+type GroupCreateTransaction struct {
+	BaseTransaction
+	GroupID                string      `json:"groupId"`
+	GroupName              string      `json:"groupName"`
+	GroupType              string      `json:"groupType"` // "static" | "dynamic" | "hybrid"
+	StaticMembers          []string    `json:"staticMembers,omitempty"`
+	DynamicTrustDomain     string      `json:"dynamicTrustDomain,omitempty"`
+	DynamicMinTrust        float64     `json:"dynamicMinTrust,omitempty"`
+	Policy                 GroupPolicy `json:"policy"`
+	InitialWrappedSecrets  map[string]string `json:"initialWrappedSecrets,omitempty"` // memberQuid -> hex(WrappedSecret)
+	Nonce                  int64       `json:"nonce"`
+}
+
+// EpochAdvanceTransaction moves the group to a new epoch,
+// optionally on add/remove. Phase 1: we store wrapped
+// secrets for each current member keyed by their quid. The
+// member list differs from the previous epoch exactly by
+// AddedMembers + RemovedMembers.
+type EpochAdvanceTransaction struct {
+	BaseTransaction
+	GroupID         string            `json:"groupId"`
+	PreviousEpoch   int64             `json:"previousEpoch"`
+	NewEpoch        int64             `json:"newEpoch"`
+	ReasonCode      string            `json:"reasonCode"` // "member-added" | "member-removed" | "scheduled" | "compromise-response"
+	AddedMembers    []string          `json:"addedMembers,omitempty"`
+	RemovedMembers  []string          `json:"removedMembers,omitempty"`
+	WrappedSecrets  map[string]string `json:"wrappedSecrets"` // memberQuid -> hex(WrappedSecret)
+	EffectiveAt     int64             `json:"effectiveAt"`
+	Nonce           int64             `json:"nonce"`
+}
+
+// MemberKeyPackageTransaction publishes a member's X25519
+// public key so senders can wrap epoch secrets to them. The
+// package is signed by the member's identity-signing key
+// (BaseTransaction.Signature + PublicKey derive the member's
+// quid).
+type MemberKeyPackageTransaction struct {
+	BaseTransaction
+	MemberQuid      string `json:"memberQuid"`
+	X25519PublicKey string `json:"x25519PublicKey"` // 32-byte hex
+	ValidUntil      int64  `json:"validUntil,omitempty"`
+	Ciphersuite     string `json:"ciphersuite,omitempty"` // e.g. "X25519-AESGCM256-HKDFSHA256"
+	Credential      string `json:"credential,omitempty"`
+	Nonce           int64  `json:"nonce"`
+}
+
+// EncryptedRecordTransaction wraps an arbitrary payload
+// encrypted under a group's epoch secret. The payload's
+// ContentType + inner schema is application-defined.
+type EncryptedRecordTransaction struct {
+	BaseTransaction
+	GroupID         string `json:"groupId"`
+	Epoch           int64  `json:"epoch"`
+	ContentType     string `json:"contentType"`
+	Nonce12Hex      string `json:"nonce12Hex"` // 12-byte AES-GCM nonce, hex
+	CiphertextHex   string `json:"ciphertextHex"`
+	AADHex          string `json:"aadHex,omitempty"`
+	SenderLeafIndex int    `json:"senderLeafIndex,omitempty"` // optional, for audit
+	TxNonce         int64  `json:"txNonce"`
+}
+
+// MemberInviteTransaction sends the welcome package (wrapped
+// epoch secret for the newly-added member) via the chain so
+// the member can pick it up and decrypt without prior
+// coordination.
+type MemberInviteTransaction struct {
+	BaseTransaction
+	GroupID            string `json:"groupId"`
+	InvitedMemberQuid  string `json:"invitedMemberQuid"`
+	InvitingMemberQuid string `json:"invitingMemberQuid"`
+	WelcomeHex         string `json:"welcomeHex"` // hex(WrappedSecret)
+	EpochSnapshot      int64  `json:"epochSnapshot"`
+	EffectiveAt        int64  `json:"effectiveAt"`
+	Nonce              int64  `json:"nonce"`
+}
+
+// MemberKeyRecoveryTransaction publishes a new X25519 public
+// key for a member who lost their old one, co-signed by
+// their guardian quorum. Peers re-wrap historical epoch
+// secrets to the new key.
+type MemberKeyRecoveryTransaction struct {
+	BaseTransaction
+	MemberQuid         string   `json:"memberQuid"`
+	GroupIDs           []string `json:"groupIds"`
+	NewX25519PublicKey string   `json:"newX25519PublicKey"`
+	GuardianSignatures []string `json:"guardianSignatures"`
+	PriorKeyRevoked    bool     `json:"priorKeyRevoked,omitempty"`
+	Nonce              int64    `json:"nonce"`
 }
 
 // AuthorityDelegateRevocationTransaction revokes a prior
