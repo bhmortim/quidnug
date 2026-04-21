@@ -274,6 +274,23 @@ the raw gradient stays encrypted. Best-of-both: accountability
 - [`implementation.md`](implementation.md) — API calls
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/federated-learning-attestation/`](../../examples/federated-learning-attestation/):
+
+- `fl_audit.py` — pure audit logic: registration / submission
+  matching, suspicious-gradient flagging by median-norm ratio,
+  fair-weights computation for coordinator-bias detection.
+- `fl_audit_test.py` — 11 pytest cases.
+- `demo.py` — four rounds showing valid / insufficient /
+  suspicious-gradient-flagged / strict-registration-violation.
+
+```bash
+cd examples/federated-learning-attestation
+python demo.py
+```
+
 ## Related
 
 - [`../ai-model-provenance/`](../ai-model-provenance/) — the resulting model's lineage
