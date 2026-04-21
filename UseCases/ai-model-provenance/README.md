@@ -343,6 +343,24 @@ a full signed evidence chain.
 - [`implementation.md`](implementation.md) — Quidnug API calls
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/ai-model-provenance/`](../../examples/ai-model-provenance/):
+
+- `model_provenance.py` — pure verifier: producer-trust gate,
+  derivative base-model gate, dataset-license filter, safety
+  strictness, benchmark requirement.
+- `model_provenance_test.py` — 14 pytest cases.
+- `demo.py` — eight-step end-to-end flow covering accept
+  foundation, accept derivative, reject prohibited dataset,
+  warn on missing safety.
+
+```bash
+cd examples/ai-model-provenance
+python demo.py
+```
+
 ## Related
 
 - [`../ai-agent-authorization/`](../ai-agent-authorization/) — authorizing the agent built on top of a model
