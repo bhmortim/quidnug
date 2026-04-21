@@ -257,6 +257,26 @@ pharmacy only `prescriptions`.
 - [`implementation.md`](implementation.md) — Quidnug API calls
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/healthcare-consent-management/`](../../examples/healthcare-consent-management/):
+
+- `consent_evaluate.py` — pure decision logic: direct consent,
+  transitive referrals, revocation, emergency guardian-quorum
+  override.
+- `consent_evaluate_test.py` — 16 pytest cases.
+- `demo.py` — seven-step end-to-end flow: register patient +
+  providers + guardians, grant and log direct access,
+  demonstrate transitive referral, revoke, then run an
+  emergency override with quorum and show denial without
+  quorum.
+
+```bash
+cd examples/healthcare-consent-management
+python demo.py
+```
+
 ## Related
 
 - [`../credential-verification-network/`](../credential-verification-network/)
