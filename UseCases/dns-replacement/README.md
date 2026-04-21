@@ -354,6 +354,25 @@ owned by you, and nobody could take it away."
   comparison with DNS/DNSSEC failure modes, limits of the
   design.
 
+## Runnable POC (Phase 0)
+
+Full end-to-end demo at
+[`examples/dns-replacement/`](../../examples/dns-replacement/):
+
+- `dns_resolve.py` — pure resolver: records as events,
+  governor-set filter against cache poisoning, revocation
+  handling, TTL policy, trust gating.
+- `dns_resolve_test.py` — 14 pytest cases.
+- `demo.py` — seven-step end-to-end flow: zone
+  registration, multi-type record publication, cache-poisoning
+  attempt, key rotation via revoke + publish, weak-trust
+  observer divergence.
+
+```bash
+cd examples/dns-replacement
+python demo.py
+```
+
 See also the companion use case
 [`UseCases/enterprise-domain-authority/`](../enterprise-domain-authority/)
 which demonstrates Phase-0 adoption end-to-end for a large
