@@ -68,13 +68,34 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 
 def open_round(
-    client: QuidnugClient, coordinator: Actor, round_actor: Actor,
+    client: QuidnugClient, coordinator: Actor, round_title_id: str,
     round_number: int, model_hash: str,
+    participants: list,
 ) -> None:
+    """Register the round as a jointly-owned TITLE (coordinator
+    + all participants) and emit the round.opened event."""
+    from quidnug import OwnershipStake
+    share = 0.02
+    coord_share = round(1.0 - share * len(participants), 6)
+    owners = [OwnershipStake(coordinator.quid.id, coord_share, "coordinator")]
+    for p in participants:
+        owners.append(OwnershipStake(p.quid.id, share, "participant"))
+    try:
+        client.register_title(
+            signer=coordinator.quid,
+            asset_id=round_title_id,
+            owners=owners,
+            domain=DOMAIN,
+            title_type="fl-round",
+        )
+    except Exception as e:
+        print(f"  (register_title {round_title_id}: {e})")
+    client.wait_for_title(round_title_id)
+
     client.emit_event(
         signer=coordinator.quid,
-        subject_id=round_actor.quid.id,
-        subject_type="QUID",
+        subject_id=round_title_id,
+        subject_type="TITLE",
         event_type="round.opened",
         domain=DOMAIN,
         payload={
@@ -87,13 +108,13 @@ def open_round(
 
 
 def register_participant(
-    client: QuidnugClient, round_actor: Actor, participant: Actor,
+    client: QuidnugClient, round_title_id: str, participant: Actor,
     data_size: int,
 ) -> None:
     client.emit_event(
         signer=participant.quid,
-        subject_id=round_actor.quid.id,
-        subject_type="QUID",
+        subject_id=round_title_id,
+        subject_type="TITLE",
         event_type="participant.registered",
         domain=DOMAIN,
         payload={
@@ -106,13 +127,13 @@ def register_participant(
 
 
 def submit_gradient(
-    client: QuidnugClient, round_actor: Actor, participant: Actor,
+    client: QuidnugClient, round_title_id: str, participant: Actor,
     gradient_norm: float, training_data_size: int,
 ) -> None:
     client.emit_event(
         signer=participant.quid,
-        subject_id=round_actor.quid.id,
-        subject_type="QUID",
+        subject_id=round_title_id,
+        subject_type="TITLE",
         event_type="gradient.submitted",
         domain=DOMAIN,
         payload={
@@ -127,13 +148,13 @@ def submit_gradient(
 
 
 def aggregate(
-    client: QuidnugClient, coordinator: Actor, round_actor: Actor,
+    client: QuidnugClient, coordinator: Actor, round_title_id: str,
     participant_weights: dict,
 ) -> None:
     client.emit_event(
         signer=coordinator.quid,
-        subject_id=round_actor.quid.id,
-        subject_type="QUID",
+        subject_id=round_title_id,
+        subject_type="TITLE",
         event_type="round.aggregated",
         domain=DOMAIN,
         payload={
@@ -158,11 +179,16 @@ def load_events(client: QuidnugClient, round_actor: Actor) -> List[dict]:
 
 
 def audit_and_show(
-    client: QuidnugClient, round_actor: Actor, label: str,
+    client: QuidnugClient, round_title_id: str, label: str,
     policy: RoundPolicy = None,
 ) -> None:
-    events = load_events(client, round_actor)
-    v = audit_round(round_actor.name, events, policy)
+    events, _ = client.get_stream_events(round_title_id, limit=500)
+    events = [{
+        "eventType": ev.event_type,
+        "payload": ev.payload or {},
+        "timestamp": ev.timestamp,
+    } for ev in events or []]
+    v = audit_round(round_title_id, events, policy)
     print(f"\n  [{label}]")
     print(f"    {v.short()}")
     for r in v.reasons:
@@ -186,6 +212,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     coord    = register(client, "fl-coordinator-consortium", "coordinator")
@@ -193,17 +221,20 @@ def main() -> None:
     auditor  = register(client, "fl-auditor",                 "auditor")
     for a in [coord, auditor] + banks:
         print(f"  {a.role:12s} {a.name:28s} -> {a.quid.id}")
+    client.wait_for_identities(
+        [a.quid.id for a in [coord, auditor] + banks]
+    )
 
     # -----------------------------------------------------------------
     banner("Step 2: Open round 1 and have all banks participate")
-    round1 = register(client, f"fl-round-1-{uuid.uuid4().hex[:6]}", "round")
-    open_round(client, coord, round1, 1, "model-hash-seed")
+    round1 = f"fl-round-1-{uuid.uuid4().hex[:6]}"
+    open_round(client, coord, round1, 1, "model-hash-seed", banks)
 
     for b in banks:
         register_participant(client, round1, b, data_size=1_000_000)
     print(f"  All 5 banks registered on round 1")
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     for b in banks:
         submit_gradient(client, round1, b,
@@ -214,13 +245,13 @@ def main() -> None:
     aggregate(client, coord, round1, {b.quid.id: 0.2 for b in banks})
     print(f"  Coordinator emitted round.aggregated")
 
-    time.sleep(0.5)
+    time.sleep(3)
     audit_and_show(client, round1, "ROUND 1 (expect valid)")
 
     # -----------------------------------------------------------------
     banner("Step 3: Round 2 -- one bank drops out, below threshold")
-    round2 = register(client, f"fl-round-2-{uuid.uuid4().hex[:6]}", "round")
-    open_round(client, coord, round2, 2, "model-hash-r1")
+    round2 = f"fl-round-2-{uuid.uuid4().hex[:6]}"
+    open_round(client, coord, round2, 2, "model-hash-r1", banks)
     for b in banks:
         register_participant(client, round2, b, data_size=1_000_000)
     # Only 2 banks actually submit (below min=5 default).
@@ -229,13 +260,13 @@ def main() -> None:
                         gradient_norm=1.0, training_data_size=1_000_000)
     # No aggregation event since the round is incomplete.
 
-    time.sleep(0.5)
+    time.sleep(3)
     audit_and_show(client, round2, "ROUND 2 (expect insufficient)")
 
     # -----------------------------------------------------------------
     banner("Step 4: Round 3 -- one bank submits a suspicious gradient")
-    round3 = register(client, f"fl-round-3-{uuid.uuid4().hex[:6]}", "round")
-    open_round(client, coord, round3, 3, "model-hash-r2")
+    round3 = f"fl-round-3-{uuid.uuid4().hex[:6]}"
+    open_round(client, coord, round3, 3, "model-hash-r2", banks)
     for b in banks:
         register_participant(client, round3, b, data_size=1_000_000)
     for i, b in enumerate(banks):
@@ -245,13 +276,13 @@ def main() -> None:
                         training_data_size=1_000_000)
     aggregate(client, coord, round3, {b.quid.id: 0.2 for b in banks})
 
-    time.sleep(0.5)
+    time.sleep(3)
     audit_and_show(client, round3, "ROUND 3 (expect valid, bank-E flagged)")
 
     # -----------------------------------------------------------------
     banner("Step 5: Round 4 -- strict-registration integrity violation")
-    round4 = register(client, f"fl-round-4-{uuid.uuid4().hex[:6]}", "round")
-    open_round(client, coord, round4, 4, "model-hash-r3")
+    round4 = f"fl-round-4-{uuid.uuid4().hex[:6]}"
+    open_round(client, coord, round4, 4, "model-hash-r3", banks)
     for b in banks:
         register_participant(client, round4, b, data_size=1_000_000)
     # All but bank-E submit.
@@ -260,7 +291,7 @@ def main() -> None:
                         training_data_size=1_000_000)
     aggregate(client, coord, round4, {b.quid.id: 0.25 for b in banks[:-1]})
 
-    time.sleep(0.5)
+    time.sleep(3)
     strict = RoundPolicy(min_participants=3, strict_registration=True)
     audit_and_show(client, round4, "ROUND 4 strict (expect integrity-violation)",
                     policy=strict)
