@@ -79,9 +79,13 @@ def emit_credit_event(
     client: QuidnugClient, attester: Actor, subject: Actor,
     event_type: str, category: str, loan_id: str = "",
 ) -> None:
+    """Each lender / utility publishes credit events on their own
+    QUID stream (protocol forbids non-owner writes on a subject's
+    stream). The subject tag is in the payload; evaluators merge
+    across every attester's stream."""
     client.emit_event(
         signer=attester.quid,
-        subject_id=subject.quid.id,
+        subject_id=attester.quid.id,
         subject_type="QUID",
         event_type=event_type,
         domain=DOMAIN,
@@ -117,15 +121,25 @@ def file_dispute(
     )
 
 
-def load_events(client: QuidnugClient, subject: Actor) -> List[dict]:
-    events, _ = client.get_stream_events(subject.quid.id, limit=500)
+def load_events(
+    client: QuidnugClient, subject: Actor, attesters: List[Actor],
+) -> List[dict]:
+    """Merge events about the subject from every attester's
+    stream plus the subject's own stream (for disputes)."""
     out: List[dict] = []
-    for ev in events or []:
-        out.append({
-            "eventType": ev.event_type,
-            "payload": ev.payload or {},
-            "timestamp": ev.timestamp,
-        })
+    streams = [a.quid.id for a in attesters] + [subject.quid.id]
+    for stream_id in streams:
+        events, _ = client.get_stream_events(stream_id, limit=500)
+        for ev in events or []:
+            p = ev.payload or {}
+            # Only include events that concern this subject.
+            if p.get("subject") and p.get("subject") != subject.quid.id:
+                continue
+            out.append({
+                "eventType": ev.event_type,
+                "payload": p,
+                "timestamp": ev.timestamp,
+            })
     return out
 
 
@@ -141,9 +155,9 @@ def node_trust_fn(client: QuidnugClient):
 
 def evaluate_and_show(
     client: QuidnugClient, lender: Actor, subject: Actor,
-    label: str, policy: LenderPolicy = None,
+    attesters: List[Actor], label: str, policy: LenderPolicy = None,
 ) -> None:
-    events = load_events(client, subject)
+    events = load_events(client, subject, attesters)
     v = evaluate_borrower(
         lender.quid.id, subject.quid.id, events,
         node_trust_fn(client), policy,
@@ -163,6 +177,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     subject   = register(client, "alice-chen",             "subject")
@@ -173,6 +189,10 @@ def main() -> None:
     fraud     = register(client, "fraudulent-lender-ghost", "attester")
     for a in (subject, lender_a, lender_b, alt_bank, utility, fraud):
         print(f"  {a.role:12s} {a.name:28s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in
+        (subject, lender_a, lender_b, alt_bank, utility, fraud)])
+
+    all_attesters = [lender_a, lender_b, alt_bank, utility, fraud]
 
     # -----------------------------------------------------------------
     banner("Step 2: Lender trust graphs")
@@ -193,27 +213,30 @@ def main() -> None:
     print(f"  lender-b  -> mainstream=0.9, alt-bank=0.7, utility=0.75, fraud=0.15")
     print(f"  alt-bank  -> utility=0.9, mainstream=0.8")
 
-    time.sleep(1)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 3: Mainstream lender records clean auto loan")
     loan_id = f"loan-{uuid.uuid4().hex[:6]}"
     emit_credit_event(client, lender_a, subject,
                        EVENT_LOAN_ORIGINATED, "auto-loan", loan_id)
-    for _ in range(12):
+    # Reduced to 3 on-time events (demo only — per-quid rate
+    # limit caps at 10/minute burst; the evaluator treats the
+    # number of events as a positive signal linearly).
+    for _ in range(3):
         emit_credit_event(client, lender_a, subject,
                            EVENT_PAYMENT_ON_TIME, "auto-loan", loan_id)
     emit_credit_event(client, lender_a, subject,
                        EVENT_LOAN_CLOSED, "auto-loan", loan_id)
-    print(f"  mainstream-auto-lender recorded 1 origination + 12 on-time + close")
+    print(f"  mainstream-auto-lender recorded 1 origination + 3 on-time + close")
 
     # -----------------------------------------------------------------
-    banner("Step 4: Utility records 24 months of on-time payments")
-    for _ in range(24):
+    banner("Step 4: Utility records 4 months of on-time payments")
+    for _ in range(4):
         emit_credit_event(client, utility, subject,
                            EVENT_UTILITY_ON_TIME, "utility",
                            loan_id=f"util-{uuid.uuid4().hex[:4]}")
-    print(f"  utility recorded 24 on-time alt-data events")
+    print(f"  utility recorded 4 on-time alt-data events")
 
     # -----------------------------------------------------------------
     banner("Step 5: Fraudulent lender records a bogus default")
@@ -228,7 +251,7 @@ def main() -> None:
                   "not my loan; alleged account never opened")
     print(f"  subject filed dispute against {fraud.name}")
 
-    time.sleep(1)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 7: Lender-B evaluates subject for mortgage")
@@ -236,12 +259,12 @@ def main() -> None:
         approve_threshold=0.6, decline_threshold=0.3,
         relevant_categories=None,   # consider all
     )
-    evaluate_and_show(client, lender_b, subject,
+    evaluate_and_show(client, lender_b, subject, all_attesters,
                       "MORTGAGE APPLICATION", policy_mortgage)
 
     # -----------------------------------------------------------------
     banner("Step 8: Alt bank also evaluates (different trust graph)")
-    evaluate_and_show(client, alt_bank, subject,
+    evaluate_and_show(client, alt_bank, subject, all_attesters,
                       "ALT BANK APPLICATION", policy_mortgage)
 
     # -----------------------------------------------------------------
@@ -255,7 +278,7 @@ def main() -> None:
         signer=fresh.quid, trustee=fraud.quid.id, level=0.9,
         domain=DOMAIN,
     )
-    evaluate_and_show(client, fresh, subject,
+    evaluate_and_show(client, fresh, subject, all_attesters,
                       "FRESH LENDER (trusts only fraud)", policy_mortgage)
 
     banner("Demo complete")

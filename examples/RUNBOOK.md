@@ -118,7 +118,7 @@ format:
 | 12 | elections (blind-flow) | n/a (Go demo) | pass | self-contained Go POC, runs out of the box; no node, no fix needed |
 | 13 | dns-replacement | 14/14 | pass | zone is a TITLE jointly owned by governors; rogue cache-poisoning attempt is rejected at node layer (stronger than original resolver-only filter) |
 | 14 | enterprise-domain-authority | 13/13 | pass | zone + employees group as governor-owned TITLEs; governor is sole owner so only governor can emit |
-| 15 | decentralized-credit-reputation | _pending_ | _pending_ | |
+| 15 | decentralized-credit-reputation | 11/11 | pass | attesters publish credit events on own streams; reduced event counts to fit per-quid rate limit |
 | 16 | healthcare-consent-management | _pending_ | _pending_ | |
 
 ## Fixes applied during this execution sweep
