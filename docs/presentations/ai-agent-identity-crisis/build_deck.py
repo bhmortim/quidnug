@@ -86,6 +86,37 @@ def add_footer(slide, slide_num, total=100, text_color=TEXT_MUTED):
     run.font.color.rgb = text_color
 
 
+def _force_color_override(element, rgb_hex):
+    """Inject an <a:defRPr> into a paragraph's <a:pPr> and an
+    <a:lstStyle> into the text body so OpenOffice / Impress
+    picks up the explicit color instead of falling back to the
+    theme's dk1 (often black). PowerPoint honors the existing
+    run-level srgbClr; this is purely defense in depth for
+    non-MS editors.
+
+    element may be an a:p element (paragraph) or a txBody.
+    """
+    ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    A = f"{{{ns}}}"
+    # Find or create a pPr
+    p_pr = element.find(f"{A}pPr")
+    if p_pr is None:
+        p_pr = etree.SubElement(element, f"{A}pPr")
+        element.insert(0, p_pr)
+    # Remove any existing defRPr
+    for old in p_pr.findall(f"{A}defRPr"):
+        p_pr.remove(old)
+    def_r = etree.SubElement(p_pr, f"{A}defRPr")
+    sf = etree.SubElement(def_r, f"{A}solidFill")
+    rgb = etree.SubElement(sf, f"{A}srgbClr")
+    rgb.set("val", rgb_hex)
+
+
+def _color_hex(rgb_color):
+    """Return a 6-char upper-case hex string from an RGBColor."""
+    return str(rgb_color).upper()
+
+
 def add_title(slide, text, x=Inches(0.6), y=Inches(0.5),
               w=Inches(12.1), h=Inches(1.0),
               size=36, color=TEXT_DARK, bold=True):
@@ -102,6 +133,7 @@ def add_title(slide, text, x=Inches(0.6), y=Inches(0.5),
     run.font.bold = bold
     run.font.name = HEADER_FONT
     run.font.color.rgb = color
+    _force_color_override(p._p, _color_hex(color))
     return box
 
 
@@ -121,6 +153,7 @@ def add_subtitle(slide, text, x=Inches(0.6), y=Inches(1.45),
     run.font.italic = italic
     run.font.name = BODY_FONT
     run.font.color.rgb = color
+    _force_color_override(p._p, _color_hex(color))
     return box
 
 
@@ -170,6 +203,7 @@ def add_bullets(slide, items, x=Inches(0.6), y=Inches(2.2),
             r.font.size = Pt(size)
             r.font.name = BODY_FONT
             r.font.color.rgb = color
+        _force_color_override(p._p, _color_hex(color))
 
     return box
 
@@ -234,6 +268,7 @@ def add_text_in(slide, x, y, w, h, text, size=14,
     run.font.bold = bold
     run.font.italic = italic
     run.font.color.rgb = color
+    _force_color_override(p._p, _color_hex(color))
     return box
 
 
