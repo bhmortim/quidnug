@@ -74,14 +74,26 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 def issue_invoice(
     client: QuidnugClient, supplier: Actor, buyer: Actor,
     invoice_id: str, amount_cents: int,
+    participants: List[Actor] = None,
 ) -> InvoiceV1:
+    """Register the invoice title with joint ownership so every
+    listed participant (supplier + buyer + carrier + potential
+    financiers) can emit lifecycle events on its stream."""
+    participants = participants or []
+    share = 0.02
+    supplier_share = round(1.0 - share * (1 + len(participants)), 6)
+    owners = [OwnershipStake(supplier.quid.id, supplier_share, "supplier")]
+    owners.append(OwnershipStake(buyer.quid.id, share, "buyer"))
+    for p in participants:
+        owners.append(OwnershipStake(p.quid.id, share, p.role))
     client.register_title(
         signer=supplier.quid,
         asset_id=invoice_id,
-        owners=[OwnershipStake(supplier.quid.id, 1.0, "supplier")],
+        owners=owners,
         domain=DOMAIN,
         title_type="invoice",
     )
+    client.wait_for_title(invoice_id)
     issued_at = int(time.time())
     due_at = issued_at + 60 * 86400
     client.emit_event(
@@ -176,6 +188,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     supplier    = register(client, "supplier-acme-widgets", "supplier")
@@ -186,6 +200,8 @@ def main() -> None:
     financier_g = register(client, "financier-second-cap",  "financier")
     for a in (supplier, buyer, carrier, bureau, financier_f, financier_g):
         print(f"  {a.role:14s} {a.name:26s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in
+        (supplier, buyer, carrier, bureau, financier_f, financier_g)])
 
     # -----------------------------------------------------------------
     banner("Step 2: Credit bureau asserts trust in trading parties")
@@ -218,7 +234,10 @@ def main() -> None:
     # -----------------------------------------------------------------
     banner("Step 4: Supplier issues an invoice")
     invoice_id = f"inv-{uuid.uuid4().hex[:8]}"
-    invoice = issue_invoice(client, supplier, buyer, invoice_id, 50_000_00)
+    invoice = issue_invoice(
+        client, supplier, buyer, invoice_id, 50_000_00,
+        participants=[carrier, financier_f, financier_g],
+    )
 
     # -----------------------------------------------------------------
     banner("Step 5: Financier F evaluates PRE-DELIVERY (expect pending)")
@@ -241,7 +260,7 @@ def main() -> None:
     })
     print(f"  {carrier.name} emitted shipped + delivered")
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 7: Financier F evaluates POST-DELIVERY (still pending, no ack)")
@@ -255,7 +274,7 @@ def main() -> None:
     })
     print(f"  {buyer.name} acknowledged")
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 9: Financier F evaluates FULL (expect approve)")
@@ -271,7 +290,7 @@ def main() -> None:
         })
         print(f"  {financier_f.name} factored at 3% discount")
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 11: Financier G tries the SAME invoice (expect reject)")
@@ -280,7 +299,10 @@ def main() -> None:
     # -----------------------------------------------------------------
     banner("Step 12: Second invoice with a fraud signal")
     invoice2_id = f"inv-{uuid.uuid4().hex[:8]}"
-    invoice2 = issue_invoice(client, supplier, buyer, invoice2_id, 80_000_00)
+    invoice2 = issue_invoice(
+        client, supplier, buyer, invoice2_id, 80_000_00,
+        participants=[carrier, financier_f, financier_g],
+    )
     emit(client, carrier, invoice2_id, "carrier.shipped", {
         "carrierQuid": carrier.quid.id, "bol": "BOL-x", "shipDate": int(time.time()),
     })
@@ -298,7 +320,7 @@ def main() -> None:
     })
     print(f"  {financier_g.name} emitted fraud.signal.invoice-forged")
 
-    time.sleep(0.5)
+    time.sleep(3)
     evaluate_and_show(client, financier_f, invoice2, policy, "F @ fraud-flagged")
 
     # -----------------------------------------------------------------
