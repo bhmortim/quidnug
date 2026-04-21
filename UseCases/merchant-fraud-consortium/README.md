@@ -268,6 +268,28 @@ signals in their subscribed subdomains.
 - [`implementation.md`](implementation.md) — Quidnug API calls & sample code
 - [`threat-model.md`](threat-model.md) — attackers & mitigations
 
+## Runnable POC
+
+A working end-to-end demo lives at
+[`examples/merchant-fraud-consortium/`](../../examples/merchant-fraud-consortium/):
+
+- `fraud_weighting.py` — standalone weighted-aggregation
+  math (no SDK dependency).
+- `fraud_weighting_test.py` — pytest suite, 9 tests
+  covering observer-relative correctness + decay.
+- `demo.py` — end-to-end flow against a live Quidnug node
+  exercising all four actors (bootstrapping merchants,
+  asymmetric trust edges, emitting signals, observer-
+  relative aggregate scoring).
+
+Running:
+
+```bash
+cd deploy/compose && docker compose up -d   # start local node
+cd examples/merchant-fraud-consortium
+python demo.py
+```
+
 ## Related
 
 - [`../interbank-wire-authorization/`](../interbank-wire-authorization/) —
