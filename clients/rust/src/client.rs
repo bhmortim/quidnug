@@ -175,6 +175,125 @@ impl Client {
     }
 
     /// Get a quid's direct outbound trust edges.
+    // --- Domain helpers -----------------------------------------------
+    //
+    // Every non-default trust domain must be registered with the
+    // node before any identity / trust / title / event tx in that
+    // domain will be accepted. `ensure_domain` is the idempotent
+    // bootstrap helper to call once during app startup.
+
+    /// Register a new trust domain. Fails with an "already exists"
+    /// error if the domain is already known; see [`ensure_domain`]
+    /// for an idempotent wrapper.
+    pub async fn register_domain(&self, domain: &str) -> Result<Value> {
+        let body = serde_json::json!({ "name": domain });
+        self.post("domains", &body).await
+    }
+
+    /// Idempotent domain registration. Returns normally on both
+    /// fresh-register and already-exists; propagates any other
+    /// error.
+    pub async fn ensure_domain(&self, domain: &str) -> Result<Value> {
+        match self.register_domain(domain).await {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                let msg = format!("{}", e).to_lowercase();
+                if msg.contains("already exists") {
+                    Ok(serde_json::json!({
+                        "status": "success",
+                        "domain": domain,
+                        "message": "trust domain already exists",
+                    }))
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    // --- Commit-wait helpers ------------------------------------------
+    //
+    // Identity and title transactions live in the node's pending
+    // pool until the next block is sealed. Code that immediately
+    // emits events or title transactions referencing the new quid
+    // must wait for commit first; these helpers poll until the
+    // record is visible in the committed registry.
+
+    /// Block until the identity with `quid_id` is visible in the
+    /// committed registry, or return `Error::Timeout` when the
+    /// caller-supplied deadline expires.
+    pub async fn wait_for_identity(
+        &self,
+        quid_id: &str,
+        domain: &str,
+        timeout: std::time::Duration,
+        poll_interval: std::time::Duration,
+    ) -> Result<IdentityRecord> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(rec) = self.get_identity(quid_id, domain).await? {
+                return Ok(rec);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(Error::validation(format!(
+                    "identity {} did not commit within {:?}",
+                    quid_id, timeout
+                )));
+            }
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
+    /// Block until every listed quid_id is committed, sharing one
+    /// total deadline across the whole batch.
+    pub async fn wait_for_identities(
+        &self,
+        quid_ids: &[&str],
+        domain: &str,
+        timeout: std::time::Duration,
+        poll_interval: std::time::Duration,
+    ) -> Result<()> {
+        let deadline = std::time::Instant::now() + timeout;
+        for qid in quid_ids {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(Error::validation(format!(
+                    "identities not all committed within {:?} (blocked on {})",
+                    timeout, qid
+                )));
+            }
+            self.wait_for_identity(qid, domain, remaining, poll_interval)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Block until the title with `asset_id` is visible in the
+    /// committed registry. Analogous to
+    /// [`wait_for_identity`][Self::wait_for_identity]; required
+    /// before emitting events on a freshly-registered title.
+    pub async fn wait_for_title(
+        &self,
+        asset_id: &str,
+        domain: &str,
+        timeout: std::time::Duration,
+        poll_interval: std::time::Duration,
+    ) -> Result<Title> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            if let Some(t) = self.get_title(asset_id, domain).await? {
+                return Ok(t);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(Error::validation(format!(
+                    "title {} did not commit within {:?}",
+                    asset_id, timeout
+                )));
+            }
+            tokio::time::sleep(poll_interval).await;
+        }
+    }
+
     pub async fn get_trust_edges(&self, quid_id: &str) -> Result<Vec<TrustEdge>> {
         #[derive(serde::Deserialize)]
         struct Wrap {

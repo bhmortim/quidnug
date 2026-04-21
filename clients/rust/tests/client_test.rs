@@ -98,3 +98,109 @@ async fn level_validation_fails_before_network() {
         .unwrap_err();
     assert!(matches!(err, Error::Validation(_)));
 }
+
+// ---------------------------------------------------------------
+// Domain + commit-wait helpers (against wiremock).
+// ---------------------------------------------------------------
+
+#[tokio::test]
+async fn ensure_domain_swallows_already_exists() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/domains"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "success": false,
+            "error": { "code": "BAD_REQUEST", "message": "trust domain test.dom already exists" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    let out = client.ensure_domain("test.dom").await.unwrap();
+    assert_eq!(out["status"], "success");
+    assert_eq!(out["domain"], "test.dom");
+}
+
+#[tokio::test]
+async fn ensure_domain_propagates_other_errors() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/domains"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({
+            "success": false,
+            "error": { "code": "INTERNAL", "message": "database connection lost" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    assert!(client.ensure_domain("test.dom").await.is_err());
+}
+
+#[tokio::test]
+async fn wait_for_identity_returns_once_committed() {
+    let server = MockServer::start().await;
+    // First two polls 404, third returns the identity.
+    Mock::given(method("GET"))
+        .and(path("/api/identity/abc123"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": { "code": "NOT_FOUND", "message": "identity not found" }
+        })))
+        .up_to_n_times(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/identity/abc123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true,
+            "data": {
+                "quidId": "abc123",
+                "publicKey": "04...",
+                "creator": "abc123",
+                "updateNonce": 1,
+                "name": "alice"
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = Client::new(&server.uri()).unwrap();
+    let rec = client
+        .wait_for_identity(
+            "abc123",
+            "",
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rec.quid_id, "abc123");
+}
+
+#[tokio::test]
+async fn wait_for_identity_respects_deadline() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/identity/nope"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false,
+            "error": { "code": "NOT_FOUND", "message": "none" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    let err = client
+        .wait_for_identity(
+            "nope",
+            "",
+            std::time::Duration::from_millis(200),
+            std::time::Duration::from_millis(50),
+        )
+        .await
+        .unwrap_err();
+    let s = format!("{}", err).to_lowercase();
+    assert!(
+        s.contains("did not commit") || s.contains("timeout"),
+        "unexpected error: {}",
+        s
+    );
+}
