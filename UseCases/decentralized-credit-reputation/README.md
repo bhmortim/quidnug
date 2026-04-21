@@ -852,6 +852,25 @@ enforceable; it makes them enforceable cryptographically
 - [`implementation.md`](implementation.md) — concrete flows per role
 - [`threat-model.md`](threat-model.md) — attackers, threats, mitigations
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/decentralized-credit-reputation/`](../../examples/decentralized-credit-reputation/):
+
+- `credit_evaluate.py` — pure per-lender evaluator over the
+  subject's event stream: untrusted-attester filter,
+  subject-dispute discount, alt-data lift, category filter.
+- `credit_evaluate_test.py` — 11 pytest cases.
+- `demo.py` — nine-step end-to-end flow showing three
+  different lenders reaching different verdicts on the same
+  subject, a fraudulent-default scenario, and the
+  subject-filed dispute that neutralizes it.
+
+```bash
+cd examples/decentralized-credit-reputation
+python demo.py
+```
+
 ## Related
 
 - [`../elections/`](../elections/) — similar BYOQ + cryptographic-privacy pattern
