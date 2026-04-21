@@ -20,6 +20,24 @@ docker compose logs -f n1
 docker compose down -v     # -v wipes named volumes too
 ```
 
+## Block interval
+
+The compose file sets `BLOCK_INTERVAL=2s` on every node by
+default. This is the **dev-friendly** setting: transactions
+commit within a couple of seconds rather than the protocol
+default of 60 seconds. Demos, tutorials, and integration
+tests rely on it to finish in reasonable wall-clock time.
+
+For **production**, override to the protocol default:
+
+```bash
+BLOCK_INTERVAL=60s docker compose up -d
+```
+
+or remove the env var entirely in your own compose overlay.
+Long block intervals reduce validator load and align with
+QDP-0001's expected timing for nonce-ledger gossip.
+
 ## What it runs
 
 | Container | Purpose | Host port |

@@ -28,6 +28,12 @@ services:
       - n1-data:/var/lib/quidnug
     environment:
       CONFIG_FILE: /etc/quidnug/config.yaml
+      # Dev default: 2-second blocks so demos and tutorials see
+      # their own transactions commit within seconds. Production
+      # deployments should override to 60s via their own compose
+      # overlay or by unsetting this env var. See the README in
+      # this directory for details.
+      BLOCK_INTERVAL: "${BLOCK_INTERVAL:-2s}"
     depends_on: [ipfs]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
@@ -45,6 +51,7 @@ services:
       - n2-data:/var/lib/quidnug
     environment:
       CONFIG_FILE: /etc/quidnug/config.yaml
+      BLOCK_INTERVAL: "${BLOCK_INTERVAL:-2s}"
     depends_on: [ipfs, n1]
     networks: [quidnug]
 
@@ -57,6 +64,7 @@ services:
       - n3-data:/var/lib/quidnug
     environment:
       CONFIG_FILE: /etc/quidnug/config.yaml
+      BLOCK_INTERVAL: "${BLOCK_INTERVAL:-2s}"
     depends_on: [ipfs, n1]
     networks: [quidnug]
 
