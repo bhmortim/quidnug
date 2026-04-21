@@ -73,13 +73,13 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 
 def publish_record(
-    client: QuidnugClient, governor: Actor, zone: Actor,
+    client: QuidnugClient, governor: Actor, zone_id: str,
     name: str, rtype: str, value: str, visibility: str,
 ) -> None:
     client.emit_event(
         signer=governor.quid,
-        subject_id=zone.quid.id,
-        subject_type="QUID",
+        subject_id=zone_id,
+        subject_type="TITLE",
         event_type="edns.record-published",
         domain=DOMAIN,
         payload={
@@ -93,23 +93,23 @@ def publish_record(
 
 
 def add_member(
-    client: QuidnugClient, governor: Actor, group: Actor, member: Actor,
+    client: QuidnugClient, governor: Actor, group_id: str, member: Actor,
 ) -> None:
     client.emit_event(
         signer=governor.quid,
-        subject_id=group.quid.id,
-        subject_type="QUID",
+        subject_id=group_id,
+        subject_type="TITLE",
         event_type="group.member-added",
         domain=DOMAIN,
         payload={"memberQuid": member.quid.id,
                   "addedBy": governor.quid.id,
                   "addedAt": int(time.time())},
     )
-    print(f"  {member.name} added to group {group.name}")
+    print(f"  {member.name} added to group {group_id}")
 
 
-def load_events(client: QuidnugClient, subject: Actor) -> List[dict]:
-    events, _ = client.get_stream_events(subject.quid.id, limit=200)
+def load_events(client: QuidnugClient, subject_id: str) -> List[dict]:
+    events, _ = client.get_stream_events(subject_id, limit=200)
     out: List[dict] = []
     for ev in events or []:
         out.append({
@@ -132,19 +132,16 @@ def node_trust_fn(client: QuidnugClient):
 
 
 def run_query(
-    client: QuidnugClient, observer: Actor, zone: Actor,
-    employees_group: Actor, label: str,
+    client: QuidnugClient, observer: Actor, zone_id: str,
+    employees_group_id: str, label: str,
 ) -> None:
-    zone_events = load_events(client, zone)
-    group_events = load_events(client, employees_group)
+    zone_events = load_events(client, zone_id)
+    group_events = load_events(client, employees_group_id)
     records = extract_records(zone_events)
     memberships = extract_group_memberships(group_events)
 
     def groups_fn(obs: str, group_label: str) -> bool:
-        # Our POC uses the group's quid id as the visibility suffix.
-        # Resolve the group_label to the actual group quid.
-        # For the demo we match against employees_group by name.
-        if group_label == employees_group.quid.id:
+        if group_label == employees_group_id:
             return obs in memberships
         return False
 
@@ -169,35 +166,49 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     banner("Step 1: Register actors")
     gov         = register(client, "bigcorp-gov",         "governor")
-    zone        = register(client, "bigcorp.com-zone",    "zone")
     partners_g  = register(client, "bigcorp-partners",    "trust-gating-quid")
-    employees_g = register(client, "bigcorp-employees",   "group")
     partner     = register(client, "vendor-xyz-corp",     "partner")
     employee    = register(client, "employee-alice",      "employee")
     outsider    = register(client, "random-visitor",      "outsider")
-    for a in (gov, zone, partners_g, employees_g, partner, employee, outsider):
+    for a in (gov, partners_g, partner, employee, outsider):
         print(f"  {a.role:18s} {a.name:24s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in (gov, partners_g, partner, employee, outsider)])
+
+    # Zone and employees-group are TITLEs owned by the governor
+    # (so only the governor can emit events on them).
+    from quidnug import OwnershipStake
+    import uuid as _uuid
+    zone_id = f"bigcorp.com-zone-{_uuid.uuid4().hex[:6]}"
+    employees_group_id = f"bigcorp-employees-{_uuid.uuid4().hex[:6]}"
+    for aid, ttype in ((zone_id, "dns-zone"), (employees_group_id, "membership-group")):
+        client.register_title(
+            signer=gov.quid, asset_id=aid,
+            owners=[OwnershipStake(gov.quid.id, 1.0, "governor")],
+            domain=DOMAIN, title_type=ttype,
+        )
+        client.wait_for_title(aid)
+    print(f"  {'zone':18s} {zone_id}")
+    print(f"  {'employees group':18s} {employees_group_id}")
 
     banner("Step 2: Governor publishes three records with different visibility")
-    publish_record(client, gov, zone, "bigcorp.com",
+    publish_record(client, gov, zone_id, "bigcorp.com",
                     "A", "203.0.113.1", "public")
-    publish_record(client, gov, zone, "api.bigcorp.com",
+    publish_record(client, gov, zone_id, "api.bigcorp.com",
                     "A", "203.0.113.10",
                     f"trust-gated:{partners_g.quid.id}")
-    publish_record(client, gov, zone, "internal.bigcorp.com",
+    publish_record(client, gov, zone_id, "internal.bigcorp.com",
                     "A", "10.0.0.5",
-                    f"private:{employees_g.quid.id}")
+                    f"private:{employees_group_id}")
 
     banner("Step 3: Trust graph for the partner org")
     client.grant_trust(
         signer=partners_g.quid, trustee=partner.quid.id, level=0.9,
         domain=DOMAIN, description="approved partner",
     )
-    # Make the trust flow both directions: partner trusts the
-    # partners-group at strong level, so the trust-gated check
-    # walks from the partner observer to the gating quid.
     client.grant_trust(
         signer=partner.quid, trustee=partners_g.quid.id, level=0.9,
         domain=DOMAIN, description="we are a partner",
@@ -205,14 +216,14 @@ def main() -> None:
     print(f"  partner <-> partners-group mutual trust 0.9")
 
     banner("Step 4: Employee group membership")
-    add_member(client, gov, employees_g, employee)
+    add_member(client, gov, employees_group_id, employee)
 
-    time.sleep(1)
+    time.sleep(3)
 
     banner("Step 5: Each observer queries the zone")
-    run_query(client, outsider, zone, employees_g, "OUTSIDER")
-    run_query(client, partner,  zone, employees_g, "PARTNER")
-    run_query(client, employee, zone, employees_g, "EMPLOYEE")
+    run_query(client, outsider, zone_id, employees_group_id, "OUTSIDER")
+    run_query(client, partner,  zone_id, employees_group_id, "PARTNER")
+    run_query(client, employee, zone_id, employees_group_id, "EMPLOYEE")
 
     banner("Demo complete")
     print()
