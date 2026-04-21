@@ -189,14 +189,11 @@ def revoke_credential(
 def load_revocations(client: QuidnugClient, student: Actor) -> Dict[str, str]:
     """Scan the student's event stream for revocation events.
     Returns a dict mapping credential_id -> reason."""
-    events = client.get_stream_events(
-        subject_id=student.quid.id, limit=100,
-    ) or []
+    events, _ = client.get_stream_events(student.quid.id, limit=100)
     out: Dict[str, str] = {}
-    for ev in events:
-        et = ev.get("eventType") or ev.get("event_type") or ""
-        if et == "credential.revoked":
-            p = ev.get("payload") or {}
+    for ev in events or []:
+        if ev.event_type == "credential.revoked":
+            p = ev.payload or {}
             out[p.get("credentialId", "")] = p.get("reason", "revoked")
     return out
 
