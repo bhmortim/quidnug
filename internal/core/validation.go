@@ -252,14 +252,9 @@ func (node *QuidnugNode) ValidateEventTransaction(tx EventTransaction) bool {
 		return false
 	}
 
-	// Validate SubjectID is present and has valid format
+	// Validate SubjectID is present
 	if tx.SubjectID == "" {
 		logger.Warn("Event transaction missing subject ID", "txId", tx.ID)
-		return false
-	}
-
-	if !IsValidQuidID(tx.SubjectID) {
-		logger.Warn("Invalid subject ID format", "subjectId", tx.SubjectID, "txId", tx.ID)
 		return false
 	}
 
@@ -267,6 +262,22 @@ func (node *QuidnugNode) ValidateEventTransaction(tx EventTransaction) bool {
 	if tx.SubjectType != "QUID" && tx.SubjectType != "TITLE" {
 		logger.Warn("Invalid subject type: must be 'QUID' or 'TITLE'", "subjectType", tx.SubjectType, "txId", tx.ID)
 		return false
+	}
+
+	// Subject ID format: QUID subjects must be valid 16-hex quids;
+	// TITLE subjects are free-form asset identifiers per v1.0 spec.
+	if tx.SubjectType == "QUID" {
+		if !IsValidQuidID(tx.SubjectID) {
+			logger.Warn("Invalid subject ID format (QUID must be 16 hex chars)",
+				"subjectId", tx.SubjectID, "txId", tx.ID)
+			return false
+		}
+	} else {
+		if !ValidateStringField(tx.SubjectID, MaxNameLength) {
+			logger.Warn("Invalid subject ID: too long or contains control characters",
+				"subjectId", tx.SubjectID, "txId", tx.ID)
+			return false
+		}
 	}
 
 	// Validate EventType (not empty, max 64 chars)
@@ -422,9 +433,16 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 		return false
 	}
 
-	// Validate asset quid ID format
-	if tx.AssetID != "" && !IsValidQuidID(tx.AssetID) {
-		logger.Warn("Invalid asset quid ID format", "assetId", tx.AssetID, "txId", tx.ID)
+	// AssetID is a free-form asset identifier per v1.0 spec
+	// (cf. docs/test-vectors/v1.0/title-tx.json using
+	// "asset-sku-000001"). No quid-format check here.
+	if tx.AssetID == "" {
+		logger.Warn("Title transaction missing asset id", "txId", tx.ID)
+		return false
+	}
+	if !ValidateStringField(tx.AssetID, MaxNameLength) {
+		logger.Warn("Invalid asset id: too long or contains control characters",
+			"assetId", tx.AssetID, "txId", tx.ID)
 		return false
 	}
 
@@ -435,6 +453,18 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 			return false
 		}
 	}
+
+	// Every listed owner must exist in the identity registry.
+	node.IdentityRegistryMutex.RLock()
+	for _, stake := range tx.Owners {
+		if _, exists := node.IdentityRegistry[stake.OwnerID]; !exists {
+			node.IdentityRegistryMutex.RUnlock()
+			logger.Warn("Owner quid not found in identity registry",
+				"ownerId", stake.OwnerID, "assetId", tx.AssetID, "txId", tx.ID)
+			return false
+		}
+	}
+	node.IdentityRegistryMutex.RUnlock()
 
 	// Validate string field lengths and control characters
 	if tx.TrustDomain != "" && !ValidateStringField(tx.TrustDomain, MaxDomainLength) {
@@ -447,25 +477,21 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 		return false
 	}
 
-	// Check if asset exists in identity registry
-	node.IdentityRegistryMutex.RLock()
-	_, assetExists := node.IdentityRegistry[tx.AssetID]
-	node.IdentityRegistryMutex.RUnlock()
-
-	if !assetExists {
-		logger.Warn("Asset not found in identity registry", "assetId", tx.AssetID, "txId", tx.ID)
-		return false
-	}
-
-	// Verify total ownership percentage adds up to 100%
+	// Verify total ownership shares sum to 1.0 (v1.0 spec uses
+	// fractional shares in the wire form). We accept 100.0 as a
+	// legacy alias for 1.0 for compatibility with pre-v1.0 clients
+	// and tests.
 	var totalPercentage float64
 	for _, stake := range tx.Owners {
 		totalPercentage += stake.Percentage
 	}
 
-	if totalPercentage != 100.0 {
-		logger.Warn("Total ownership percentage doesn't equal 100%",
-			"totalPercentage", totalPercentage,
+	const fracTolerance = 1e-6
+	matchesFraction := totalPercentage > 1.0-fracTolerance && totalPercentage < 1.0+fracTolerance
+	matchesPercent := totalPercentage > 100.0-fracTolerance && totalPercentage < 100.0+fracTolerance
+	if !matchesFraction && !matchesPercent {
+		logger.Warn("Total ownership shares don't equal 1.0 (or 100.0 legacy)",
+			"totalShare", totalPercentage,
 			"assetId", tx.AssetID,
 			"txId", tx.ID)
 		return false

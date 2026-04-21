@@ -83,6 +83,9 @@ def bootstrap(client: QuidnugClient) -> Dict[str, Actor]:
         a = _register(client, name, kind)
         actors[name] = a
         print(f"  {kind:12s} {name:18s} -> {a.quid.id}")
+    # Wait for every identity to reach the committed registry
+    # before follow-on trust / event transactions reference them.
+    client.wait_for_identities([a.quid.id for a in actors.values()])
     return actors
 
 
@@ -128,11 +131,36 @@ def issue_credential(
     client: QuidnugClient, actors: Dict[str, Actor],
     university_name: str, credential_id: str, credential_type: str, grade: str,
 ) -> CredentialV1:
-    """University issues a credential to a student as an EVENT
-    on the student's stream."""
+    """University issues a credential to a student as a TITLE
+    jointly owned (student primary + university issuer stake),
+    plus a `credential.issued` event on the title's stream.
+
+    The protocol requires events on a TITLE stream to come from
+    an owner; joint ownership lets both the student (hold) and
+    the university (issue/revoke) sign events on the same
+    credential.
+    """
+    from quidnug import OwnershipStake
     uni = actors[university_name]
     student = actors["alice-student"]
     now = int(time.time())
+
+    # Create the title with joint ownership. The student holds
+    # the credential (1.0 weight for presentation); the issuer
+    # retains an issuer stake for revocation authority.
+    client.register_title(
+        signer=uni.quid,
+        asset_id=credential_id,
+        owners=[
+            OwnershipStake(student.quid.id, 0.99, "holder"),
+            OwnershipStake(uni.quid.id,     0.01, "issuer"),
+        ],
+        domain=DOMAIN,
+        title_type="academic-credential",
+    )
+    # Wait for the title to commit before emitting events on it.
+    client.wait_for_title(credential_id)
+
     payload = {
         "credentialId": credential_id,
         "credentialType": credential_type,
@@ -143,8 +171,8 @@ def issue_credential(
     }
     client.emit_event(
         signer=uni.quid,
-        subject_id=student.quid.id,
-        subject_type="QUID",
+        subject_id=credential_id,
+        subject_type="TITLE",
         event_type="credential.issued",
         domain=DOMAIN,
         payload=payload,
@@ -167,9 +195,9 @@ def revoke_credential(
     client: QuidnugClient, actors: Dict[str, Actor],
     university_name: str, credential_id: str, reason: str,
 ) -> None:
-    """University publishes a revocation event."""
+    """University publishes a revocation event on the credential's
+    title stream."""
     uni = actors[university_name]
-    student = actors["alice-student"]
     payload = {
         "credentialId": credential_id,
         "reason": reason,
@@ -178,23 +206,26 @@ def revoke_credential(
     }
     client.emit_event(
         signer=uni.quid,
-        subject_id=student.quid.id,
-        subject_type="QUID",
+        subject_id=credential_id,
+        subject_type="TITLE",
         event_type="credential.revoked",
         domain=DOMAIN,
         payload=payload,
     )
 
 
-def load_revocations(client: QuidnugClient, student: Actor) -> Dict[str, str]:
-    """Scan the student's event stream for revocation events.
+def load_revocations_for(
+    client: QuidnugClient, credential_ids: list,
+) -> Dict[str, str]:
+    """Scan each credential title's stream for revocation events.
     Returns a dict mapping credential_id -> reason."""
-    events, _ = client.get_stream_events(student.quid.id, limit=100)
     out: Dict[str, str] = {}
-    for ev in events or []:
-        if ev.event_type == "credential.revoked":
-            p = ev.payload or {}
-            out[p.get("credentialId", "")] = p.get("reason", "revoked")
+    for cid in credential_ids:
+        events, _ = client.get_stream_events(cid, limit=100)
+        for ev in events or []:
+            if ev.event_type == "credential.revoked":
+                p = ev.payload or {}
+                out[p.get("credentialId", cid)] = p.get("reason", "revoked")
     return out
 
 
@@ -235,11 +266,15 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     actors = bootstrap(client)
     establish_accreditation(client, actors)
     employers_trust_accreditors(client, actors)
 
     time.sleep(1)
+
+    issued_ids: list = []
 
     banner("Step 4: Stanford issues Alice's degree")
     cred_id = f"cred-{uuid.uuid4().hex[:8]}"
@@ -247,11 +282,12 @@ def main() -> None:
         client, actors, "stanford-uni", cred_id,
         "degree.bachelors.cs", "3.8",
     )
+    issued_ids.append(cred_id)
 
-    time.sleep(1)
+    time.sleep(3)   # wait for title + issue event to commit
 
-    # Fresh load of the student's revocation events.
-    revocations = load_revocations(client, actors["alice-student"])
+    # Fresh load of revocation events on each known title stream.
+    revocations = load_revocations_for(client, issued_ids)
 
     # US employer verifies (should accept via sacscoc chain).
     verify_via_node(client, actors["us-employer"], credential, revocations, "US EMPLOYER")
@@ -261,8 +297,8 @@ def main() -> None:
     # Revoke + re-verify.
     banner("Step 6: Stanford revokes Alice's degree")
     revoke_credential(client, actors, "stanford-uni", cred_id, "academic-integrity-violation")
-    time.sleep(1)
-    revocations = load_revocations(client, actors["alice-student"])
+    time.sleep(3)
+    revocations = load_revocations_for(client, issued_ids)
     verify_via_node(client, actors["us-employer"], credential, revocations, "US EMPLOYER POST-REVOCATION")
 
     # Demonstrate cross-jurisdiction gap: APAC university
@@ -274,8 +310,9 @@ def main() -> None:
         client, actors, "apac-tech-u", apac_cred_id,
         "degree.bachelors.eng", "first-class",
     )
-    time.sleep(1)
-    revocations = load_revocations(client, actors["alice-student"])
+    issued_ids.append(apac_cred_id)
+    time.sleep(3)
+    revocations = load_revocations_for(client, issued_ids)
     # US employer's chain: us-employer -[0.3]-> higher-ed-apac -[0.95]-> apac-tech-u
     # Composed ~ 0.285, below 0.6 threshold → indeterminate.
     verify_via_node(client, actors["us-employer"], apac_cred, revocations, "US EMPLOYER (CROSS-JURISDICTION)")

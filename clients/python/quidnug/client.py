@@ -835,6 +835,28 @@ class QuidnugClient:
                 )
             self.wait_for_identity(qid, timeout=remaining, poll=poll)
 
+    def wait_for_title(
+        self, asset_id: str, *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> "Title":
+        """Block until the title with ``asset_id`` is visible in
+        the committed registry, or raise TimeoutError.
+
+        A just-submitted title transaction lives in the pending
+        pool until the next block is sealed. Code that immediately
+        emits events referencing the title subject must wait for
+        commit first.
+        """
+        import time as _time
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            rec = self.get_title(asset_id)
+            if rec is not None:
+                return rec
+            _time.sleep(poll)
+        raise TimeoutError(
+            f"title {asset_id} did not commit within {timeout}s"
+        )
+
     def get_node_domains(self) -> Dict[str, Any]:
         return self._request("GET", "node/domains")
 

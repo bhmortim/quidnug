@@ -100,6 +100,34 @@ func newTestNode() *QuidnugNode {
 		UpdateNonce: 1,
 	}
 
+	// Additional test owners used by TitleTransaction tests.
+	node.IdentityRegistry["000000000000000c"] = IdentityTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_identity_00c",
+			Type:        TxTypeIdentity,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000006,
+			PublicKey:   nodePublicKey,
+		},
+		QuidID:      "000000000000000c",
+		Name:        "Test Owner 3",
+		Creator:     "000000000000000b",
+		UpdateNonce: 1,
+	}
+	node.IdentityRegistry["00000000000000f3"] = IdentityTransaction{
+		BaseTransaction: BaseTransaction{
+			ID:          "tx_identity_0f3",
+			Type:        TxTypeIdentity,
+			TrustDomain: "test.domain.com",
+			Timestamp:   1000007,
+			PublicKey:   nodePublicKey,
+		},
+		QuidID:      "00000000000000f3",
+		Name:        "Test Owner 4",
+		Creator:     "000000000000000d",
+		UpdateNonce: 1,
+	}
+
 	// Add a test title for transfer testing
 	node.TitleRegistry["0000000000000003"] = TitleTransaction{
 		BaseTransaction: BaseTransaction{
@@ -647,22 +675,24 @@ func TestValidateTitleTransaction(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid: asset not in identity registry", func(t *testing.T) {
+	t.Run("invalid: owner not in identity registry", func(t *testing.T) {
 		tx := signTitleTx(node, TitleTransaction{
 			BaseTransaction: BaseTransaction{
-				ID:          "tx_title_no_asset",
+				ID:          "tx_title_no_owner",
 				Type:        TxTypeTitle,
 				TrustDomain: "test.domain.com",
 				Timestamp:   1000000,
 			},
-			AssetID: "000000000000000e",
+			// AssetID is a free-form asset identifier per v1.0
+			// spec; not required to be a quid in the registry.
+			AssetID: "asset-sku-000001",
 			Owners: []OwnershipStake{
-				{OwnerID: "0000000000000004", Percentage: 100.0},
+				{OwnerID: "00000000000000aa", Percentage: 100.0},
 			},
 			Signatures: make(map[string]string),
 		})
 		if node.ValidateTitleTransaction(tx) {
-			t.Error("Expected nonexistent asset to fail")
+			t.Error("Expected nonexistent owner to fail")
 		}
 	})
 

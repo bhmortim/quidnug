@@ -105,7 +105,7 @@ format:
 | # | Use case | Unit tests | Demo | Notes |
 |---|---|---|---|---|
 | 1 | merchant-fraud-consortium | 9/9 | pass | required 4 fixes: ensure_domain + wait_for_identities + Go-compat payload-key sort + short BLOCK_INTERVAL |
-| 2 | credential-verification-network | _pending_ | _pending_ | |
+| 2 | credential-verification-network | 10/10 | pass | required node fixes: ownership sum 1.0 (not 100.0), free-form asset IDs, TITLE subject IDs free-form; demo refactored to issue credentials as jointly-owned TITLEs |
 | 3 | ai-agent-authorization | _pending_ | _pending_ | |
 | 4 | developer-artifact-signing | _pending_ | _pending_ | |
 | 5 | institutional-custody | _pending_ | _pending_ | |
@@ -163,3 +163,38 @@ verification.
 The same bug exists in the JS and Rust SDKs and will need the
 same fix there before they can be used against a live node
 with multi-key payloads.
+
+### 4. Title ownership shares use 1.0-scale fractions
+
+Server `ValidateTitleTransaction` required ownership
+percentages to sum to `100.0`, but the v1.0 spec's test
+vectors encode shares as `1` (fractions summing to 1.0), and
+the Python SDK normalizes to fractions before signing.
+Updated the server to accept either form (fractions summing
+to 1.0 or legacy percentages summing to 100.0, within a 1e-6
+tolerance).
+
+### 5. Title AssetID is a free-form asset identifier
+
+Server required AssetID to be a 16-hex quid and pre-existing
+in the identity registry, but the spec's test vectors use
+free-form identifiers like `asset-sku-000001`. Relaxed the
+check so AssetID accepts any non-empty printable string up to
+256 chars. The `every listed owner must exist in the identity
+registry` invariant is retained (and enforced for every owner,
+not just one asset).
+
+### 6. Event SubjectID format depends on SubjectType
+
+Server rejected event transactions whose `subjectId` wasn't a
+16-hex quid. For `subjectType=QUID` that's right; for
+`subjectType=TITLE` the subject is the title's AssetID, which
+is free-form. Split the check by subject type.
+
+### 7. Title transactions commit asynchronously
+
+Same as identity: titles land in the pending pool until the
+next block is sealed, and events on the title fail with
+"Subject TITLE not found" until commit. Added
+`client.wait_for_title(asset_id)` analogous to
+`wait_for_identity`.
