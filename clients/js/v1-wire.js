@@ -336,6 +336,182 @@ async function sha256OfBytes(bytes) {
   return subtle.digest("SHA-256", bytes);
 }
 
+// ---------------------------------------------------------------
+// Node-integration helpers: ensureDomain + waitForIdentity +
+// waitForTitle
+//
+// These are the ergonomics layer that demos and bootstrap code
+// need when talking to a live v1.0 node. Without them, every
+// first-time integrator hits the same two issues we surfaced
+// during the POC sweep:
+//
+//   1. Non-default trust domains must be registered before any
+//      identity/trust/title/event tx in that domain will be
+//      accepted (ensureDomain, idempotent).
+//
+//   2. Identity and title transactions live in the node's
+//      pending pool until the next block is sealed; follow-on
+//      tx referencing the new quid/title fail with
+//      "Subject QUID/TITLE not found" until commit
+//      (waitForIdentity / waitForTitle poll until visible).
+//
+// These helpers do not depend on any particular HTTP client;
+// each one accepts a baseUrl and uses fetch. They are designed
+// to be copy-pasteable into a new app, not tied to the
+// QuidnugClient class.
+// ---------------------------------------------------------------
+
+/**
+ * Unwrap the standard {success, data, error} response envelope.
+ * Throws an Error with .code and .message on success:false.
+ */
+async function parseEnvelope(resp) {
+  const text = await resp.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`HTTP ${resp.status}: non-JSON body: ${text.slice(0, 200)}`);
+  }
+  if (body && body.success && "data" in body) return body.data;
+  const e = (body && body.error) || {};
+  const err = new Error(e.message || `HTTP ${resp.status}`);
+  err.code = e.code || "UNKNOWN";
+  err.status = resp.status;
+  throw err;
+}
+
+/**
+ * Register a trust domain. Rejects with "already exists" when
+ * the domain is already known; prefer `ensureDomain` for
+ * idempotent bootstrap code.
+ *
+ * @param {string} baseUrl  e.g. "http://localhost:8080"
+ * @param {string} domain   e.g. "payments.merchants"
+ * @param {object} [attrs]  extra fields merged into the POST body
+ */
+export async function registerDomain(baseUrl, domain, attrs = {}) {
+  const body = { name: domain, ...attrs };
+  const resp = await fetch(`${baseUrl}/api/v1/domains`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return parseEnvelope(resp);
+}
+
+/**
+ * Idempotent domain registration. Returns normally on both
+ * fresh-register and already-exists; propagates any other error.
+ */
+export async function ensureDomain(baseUrl, domain, attrs = {}) {
+  try {
+    return await registerDomain(baseUrl, domain, attrs);
+  } catch (err) {
+    const msg = String(err.message || "").toLowerCase();
+    if (msg.includes("already exists")) {
+      return {
+        status: "success",
+        domain,
+        message: "trust domain already exists",
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Fetch an identity record by quid ID. Returns null on 404.
+ */
+export async function getIdentity(baseUrl, quidId, domain) {
+  const params = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+  const resp = await fetch(
+    `${baseUrl}/api/v1/identity/${encodeURIComponent(quidId)}${params}`,
+  );
+  if (resp.status === 404) return null;
+  try {
+    return await parseEnvelope(resp);
+  } catch (err) {
+    if (err.code === "NOT_FOUND") return null;
+    throw err;
+  }
+}
+
+/**
+ * Fetch a title by asset ID. Returns null on 404.
+ */
+export async function getTitle(baseUrl, assetId, domain) {
+  const params = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+  const resp = await fetch(
+    `${baseUrl}/api/v1/title/${encodeURIComponent(assetId)}${params}`,
+  );
+  if (resp.status === 404) return null;
+  try {
+    return await parseEnvelope(resp);
+  } catch (err) {
+    if (err.code === "NOT_FOUND") return null;
+    throw err;
+  }
+}
+
+/**
+ * Block until the identity with `quidId` is visible in the
+ * committed registry, or throw a timeout error.
+ *
+ * @param {string} baseUrl
+ * @param {string} quidId
+ * @param {object} [opts] { domain, timeoutMs=30000, pollMs=500 }
+ */
+export async function waitForIdentity(baseUrl, quidId, opts = {}) {
+  const { domain, timeoutMs = 30000, pollMs = 500 } = opts;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rec = await getIdentity(baseUrl, quidId, domain);
+    if (rec) return rec;
+    if (Date.now() > deadline) {
+      throw new Error(`identity ${quidId} did not commit within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+/**
+ * Block until every quid ID is committed; shares one deadline
+ * across the whole list.
+ */
+export async function waitForIdentities(baseUrl, quidIds, opts = {}) {
+  const { domain, timeoutMs = 30000, pollMs = 500 } = opts;
+  const deadline = Date.now() + timeoutMs;
+  for (const id of quidIds) {
+    const remaining = Math.max(0, deadline - Date.now());
+    if (remaining <= 0) {
+      throw new Error(`identities not all committed within ${timeoutMs}ms (blocked on ${id})`);
+    }
+    await waitForIdentity(baseUrl, id, {
+      domain,
+      timeoutMs: remaining,
+      pollMs,
+    });
+  }
+}
+
+/**
+ * Block until the title with `assetId` is visible in the
+ * committed registry, or throw a timeout error.
+ */
+export async function waitForTitle(baseUrl, assetId, opts = {}) {
+  const { domain, timeoutMs = 30000, pollMs = 500 } = opts;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const t = await getTitle(baseUrl, assetId, domain);
+    if (t) return t;
+    if (Date.now() > deadline) {
+      throw new Error(`title ${assetId} did not commit within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
 async function _seedId(fields) {
   const obj = {};
   for (const [k, v] of fields) obj[k] = v;
@@ -404,8 +580,14 @@ export async function buildIdentityTx(params) {
     name,
     description = "",
     attributes = null,
-    creator,
-    updateNonce,
+    // Defaults matter: these fields are NOT `omitempty` on the
+    // Go struct, so a re-marshaled wire at the server will emit
+    // `"creator":""` and `"updateNonce":0` even when the client
+    // supplied nothing. Without matching defaults here the
+    // canonical bytes would diverge and signature verification
+    // would fail.
+    creator = "",
+    updateNonce = 0,
     homeDomain = "",
   } = params;
 
