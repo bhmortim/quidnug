@@ -116,14 +116,18 @@ def record_access(
     client: QuidnugClient, provider: Actor, patient: Actor,
     category: str, purpose: str,
 ) -> None:
+    """Provider logs the access on their OWN quid stream with a
+    patient-id pointer (patient QUID streams are writable only
+    by the patient)."""
     client.emit_event(
         signer=provider.quid,
-        subject_id=patient.quid.id,
+        subject_id=provider.quid.id,
         subject_type="QUID",
         event_type="record.accessed",
         domain=DOMAIN,
         payload={
             "accessor": provider.quid.id,
+            "patient": patient.quid.id,
             "category": category,
             "purpose": purpose,
             "accessedAt": int(time.time()),
@@ -156,10 +160,14 @@ def emergency_override(
     client: QuidnugClient, patient: Actor, provider: Actor,
     guardians: List[Actor], reason: str,
 ) -> None:
+    """Each guardian emits an emergency-override event on their
+    OWN quid stream (patient QUID streams are writable only by
+    the patient). The payload carries the patient pointer plus
+    the full guardian-signature list for quorum verification."""
     for guardian in guardians:
         client.emit_event(
             signer=guardian.quid,
-            subject_id=patient.quid.id,
+            subject_id=guardian.quid.id,
             subject_type="QUID",
             event_type="consent.emergency-override",
             domain=DOMAIN,
@@ -175,15 +183,28 @@ def emergency_override(
         print(f"  {guardian.name} signed emergency override")
 
 
-def load_patient_events(client: QuidnugClient, patient: Actor) -> List[dict]:
-    events, _ = client.get_stream_events(patient.quid.id, limit=500)
+def load_patient_events(
+    client: QuidnugClient, patient: Actor,
+    ambient_actors: List[Actor] = None,
+) -> List[dict]:
+    """Merge events about the patient from the patient's own
+    stream (consent + dispute events) plus every ambient actor's
+    stream (emergency-override, access-log events that the
+    protocol routes to the signer's own stream)."""
     out: List[dict] = []
-    for ev in events or []:
-        out.append({
-            "eventType": ev.event_type,
-            "payload": ev.payload or {},
-            "timestamp": ev.timestamp,
-        })
+    streams = [patient.quid.id] + [a.quid.id for a in ambient_actors or []]
+    for stream_id in streams:
+        events, _ = client.get_stream_events(stream_id, limit=500)
+        for ev in events or []:
+            p = ev.payload or {}
+            # Only include events concerning this patient.
+            if p.get("patient") and p.get("patient") != patient.quid.id:
+                continue
+            out.append({
+                "eventType": ev.event_type,
+                "payload": p,
+                "timestamp": ev.timestamp,
+            })
     return out
 
 
@@ -201,8 +222,9 @@ def show(
     client: QuidnugClient, patient: Actor, request: AccessRequest,
     consents: List[ConsentGrant], guardian_set: Set[str],
     label: str, guardian_threshold: int = 2,
+    ambient_actors: List[Actor] = None,
 ) -> None:
-    events = load_patient_events(client, patient)
+    events = load_patient_events(client, patient, ambient_actors or [])
     v = evaluate_access(
         request, consents, events,
         trust_fn=node_trust_fn(client),
@@ -224,6 +246,8 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     patient   = register(client, "patient-alice",      "patient")
@@ -234,6 +258,12 @@ def main() -> None:
     proxy     = register(client, "bob-healthcare-proxy","guardian")
     for a in (patient, pcp, cardio, er_doc, spouse, proxy):
         print(f"  {a.role:14s} {a.name:22s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in
+        (patient, pcp, cardio, er_doc, spouse, proxy)])
+
+    # All ambient actors the evaluator consults for access /
+    # override events routed onto their own streams.
+    ambient = [pcp, cardio, er_doc, spouse, proxy]
 
     guardian_set = {spouse.quid.id, proxy.quid.id}
 
@@ -252,8 +282,7 @@ def main() -> None:
         requested_at_unix=int(time.time()),
         purpose="annual physical",
     )
-    show(client, patient, req_pcp, consents, guardian_set,
-          "PCP direct access")
+    show(client, patient, req_pcp, consents, guardian_set, "PCP direct access", ambient_actors=ambient)
     record_access(client, pcp, patient, "clinical-notes", "annual physical")
 
     # -----------------------------------------------------------------
@@ -265,6 +294,7 @@ def main() -> None:
         signer=pcp.quid, trustee=cardio.quid.id, level=0.85,
         domain=DOMAIN, description="referral to trusted cardiologist",
     )
+    time.sleep(3)   # wait for referral trust edge to commit
     req_cardio = AccessRequest(
         provider_quid=cardio.quid.id,
         patient_quid=patient.quid.id,
@@ -272,8 +302,7 @@ def main() -> None:
         requested_at_unix=int(time.time()),
         purpose="cardiac consultation prep",
     )
-    show(client, patient, req_cardio, consents, guardian_set,
-          "CARDIO transitive access")
+    show(client, patient, req_cardio, consents, guardian_set, "CARDIO transitive access", ambient_actors=ambient)
     record_access(client, cardio, patient, "clinical-notes",
                    "cardiac consultation")
 
@@ -285,20 +314,19 @@ def main() -> None:
     # Simpler demo: grant direct consent to cardio then revoke it.
     consents.append(grant_consent(client, patient, cardio,
                                     "clinical-notes", 0.9))
-    time.sleep(0.5)
+    time.sleep(3)
     # Now the direct consent exists; patient then revokes.
     revoke_consent(client, patient, cardio,
                     category="clinical-notes",
                     reason="switching cardiologist")
-    time.sleep(0.5)
-    show(client, patient, req_cardio, consents, guardian_set,
-          "CARDIO after revocation")
+    time.sleep(3)
+    show(client, patient, req_cardio, consents, guardian_set, "CARDIO after revocation", ambient_actors=ambient)
 
     # -----------------------------------------------------------------
     banner("Step 6: ER emergency with quorum (expect emergency-allowed)")
     emergency_override(client, patient, er_doc, [spouse, proxy],
                         reason="patient unconscious, ER admission")
-    time.sleep(0.5)
+    time.sleep(3)
     req_er = AccessRequest(
         provider_quid=er_doc.quid.id,
         patient_quid=patient.quid.id,
@@ -306,8 +334,7 @@ def main() -> None:
         requested_at_unix=int(time.time()),
         purpose="emergency triage",
     )
-    show(client, patient, req_er, consents, guardian_set,
-          "ER with 2-of-2 guardian override")
+    show(client, patient, req_er, consents, guardian_set, "ER with 2-of-2 guardian override", ambient_actors=ambient)
 
     # -----------------------------------------------------------------
     banner("Step 7: ER emergency with insufficient quorum (expect deny)")
@@ -316,7 +343,7 @@ def main() -> None:
     # Only spouse signs this time (below threshold of 2).
     client.emit_event(
         signer=spouse.quid,
-        subject_id=patient.quid.id,
+        subject_id=spouse.quid.id,
         subject_type="QUID",
         event_type="consent.emergency-override",
         domain=DOMAIN,
@@ -329,7 +356,8 @@ def main() -> None:
             "signerQuid": spouse.quid.id,
         },
     )
-    time.sleep(0.5)
+    client.wait_for_identity(er_doc_2.quid.id)
+    time.sleep(3)
     req_er2 = AccessRequest(
         provider_quid=er_doc_2.quid.id,
         patient_quid=patient.quid.id,
@@ -338,7 +366,8 @@ def main() -> None:
         purpose="emergency triage",
     )
     show(client, patient, req_er2, consents, guardian_set,
-          "ER2 with only 1 guardian sig")
+          "ER2 with only 1 guardian sig",
+          ambient_actors=ambient)
 
     banner("Demo complete")
     print()
