@@ -219,6 +219,53 @@ test("event vectors conform to v1.0 canonical form", async () => {
   }
 });
 
+test("payload with non-alphabetical insertion order is sorted in canonical form", async () => {
+  // REGRESSION GUARD: this test does NOT load its payload from
+  // the vector JSON file — because JSON.parse normalizes key
+  // order on load, the vector-driven test can't catch the bug.
+  // Instead we construct the payload as a JavaScript object
+  // literal with keys in deliberately reverse-alphabetical
+  // insertion order (matching how a user would build one), and
+  // assert the canonical bytes come out alphabetically sorted.
+  const keys = loadKeys();
+  const aliceKey = keys.alice;
+
+  // User-side: object literal, non-alphabetical keys, including
+  // a nested object also in non-alphabetical order.
+  const payload = {
+    zebra: 1,
+    apple: 2,
+    mango: 3,
+    nested: {
+      yankee: "A",
+      alpha: "B",
+      mike: "C",
+    },
+  };
+
+  const { signable } = await buildEventTx({
+    trustDomain: "reviews.public.technology.laptops",
+    timestamp: 1729641600,
+    publicKey: aliceKey.public_key_sec1_hex,
+    subjectId: aliceKey.quid_id,
+    subjectType: "QUID",
+    sequence: 3,
+    eventType: "generic.test-payload",
+    payload,
+  });
+
+  // Canonical bytes must contain the nested payload with keys
+  // sorted alphabetically ("alpha","mike","yankee") and
+  // ("apple","mango","nested","zebra") — NOT in insertion order.
+  const canonical = new TextDecoder().decode(signable);
+  const expectedPayloadFragment =
+    '"payload":{"apple":2,"mango":3,"nested":{"alpha":"B","mike":"C","yankee":"A"},"zebra":1}';
+  assert.ok(
+    canonical.includes(expectedPayloadFragment),
+    `expected canonical bytes to contain sorted nested payload; got:\n${canonical}`,
+  );
+});
+
 test("Quid.generate produces 64-byte IEEE-1363 signatures", async () => {
   const q = await Quid.generate();
   const data = encoderUtf8("hello-quidnug");

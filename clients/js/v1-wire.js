@@ -254,15 +254,64 @@ export class Quid {
  * an array of [key, value, omitempty] tuples emitted in declared
  * order. When `omitempty` is true and the value is zero/empty
  * (matching Go's `omitempty` semantics), the field is omitted.
+ *
+ * Nested `map[string]interface{}` values (plain JS objects used
+ * as payloads / attributes) are recursively normalized with
+ * keys in Unicode codepoint order — matching Go's
+ * `encoding/json` default map-marshal behavior. Struct-typed
+ * top-level fields are NOT sorted; their order is fixed by the
+ * caller's tuple list (Go struct declaration order).
+ *
+ * Arrays preserve index order; their element objects are
+ * recursively normalized.
+ *
+ * Without this normalization, payloads constructed by users via
+ * object literals with non-alphabetical key insertion order
+ * produce canonical bytes that differ from what a Go server
+ * computes after re-marshaling from `map[string]interface{}` —
+ * and signature verification fails. (Fixed 2026-04; prior
+ * versions of this SDK shipped with the bug masked by test
+ * vectors whose payloads happened to already be sorted.)
  */
 function emitSignable(fields) {
   const obj = {};
   for (const [k, v, omitempty] of fields) {
     if (omitempty && isZero(v)) continue;
-    obj[k] = v;
+    obj[k] = goCompatValue(v);
   }
-  const json = JSON.stringify(obj);
-  return new TextEncoder().encode(json);
+  // Stringify the top-level object in its insertion order (which
+  // matches the Go struct's declaration order by construction).
+  return new TextEncoder().encode(stringifyTopLevel(obj));
+}
+
+/**
+ * Recursively normalize a value so nested plain-object keys
+ * come out sorted when stringified. Arrays recurse but keep
+ * their order. Primitives pass through.
+ */
+function goCompatValue(v) {
+  if (v === null || v === undefined) return v;
+  if (Array.isArray(v)) return v.map(goCompatValue);
+  if (typeof v === "object") {
+    // Plain object — sort keys.
+    const out = {};
+    const keys = Object.keys(v).sort();
+    for (const k of keys) out[k] = goCompatValue(v[k]);
+    return out;
+  }
+  return v;
+}
+
+/**
+ * Stringify a top-level object preserving its own key insertion
+ * order (caller has ordered the top-level fields via the tuple
+ * list). Nested objects were already alphabetized by
+ * goCompatValue before being inserted.
+ */
+function stringifyTopLevel(obj) {
+  // JSON.stringify respects insertion order for non-integer keys
+  // — which is what we want at the top level.
+  return JSON.stringify(obj);
 }
 
 function isZero(v) {
