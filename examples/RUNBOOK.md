@@ -113,7 +113,7 @@ format:
 | 7 | interbank-wire-authorization | 14/14 | pass | wire titles jointly owned by sender bank + all cosigning officers |
 | 8 | ai-content-authenticity | 12/12 | pass | media titles jointly owned by camera + photographer + editors + publishers + fact-checkers |
 | 9 | ai-model-provenance | 14/14 | pass | model titles jointly owned by producer + safety evaluators + benchmark orgs; derivative base-model trust check relaxed (base isn't a quid) |
-| 10 | defi-oracle-network | _pending_ | _pending_ | |
+| 10 | defi-oracle-network | 10/10 | pass | reporters publish price reports on their own streams with feedQuid in payload; consumers merge across all reporter streams |
 | 11 | federated-learning-attestation | _pending_ | _pending_ | |
 | 12 | elections (blind-flow) | n/a (Go demo) | _pending_ | |
 | 13 | dns-replacement | _pending_ | _pending_ | |
