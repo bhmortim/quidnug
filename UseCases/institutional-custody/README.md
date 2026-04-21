@@ -262,6 +262,26 @@ implicitly grant US access.
 - [`implementation.md`](implementation.md) — Quidnug API calls
 - [`threat-model.md`](threat-model.md) — attackers & mitigations
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/institutional-custody/`](../../examples/institutional-custody/):
+
+- `custody_policy.py` — pure decision logic: wallet policy,
+  signer approvals, epoch-aware counting, frozen-wallet denial.
+- `custody_policy_test.py` — 14 pytest cases covering the
+  threshold / impostor / stale-epoch / freeze matrix.
+- `demo.py` — eight-step end-to-end flow: register 7 signers,
+  install a 5-of-7 policy, propose a transfer, watch the
+  verdict transition pending -> authorized as cosignatures
+  accumulate, render the forensic audit, freeze, and observe
+  denial of a follow-on transfer.
+
+```bash
+cd examples/institutional-custody
+python demo.py
+```
+
 ## Related
 
 - [`../interbank-wire-authorization/`](../interbank-wire-authorization/) — similar M-of-N model
