@@ -962,6 +962,115 @@ func (c *Client) ListDomains(ctx context.Context) (map[string]any, error) {
 	return out, c.do(ctx, http.MethodGet, "domains", nil, nil, &out)
 }
 
+// RegisterDomain submits a new trust domain to the node. Fails
+// with an "already exists" error if the domain is already known;
+// see EnsureDomain for an idempotent variant.
+//
+// Extra attributes beyond the domain name can be passed via the
+// attrs map; they are merged into the POST body alongside
+// {"name": domain}.
+func (c *Client) RegisterDomain(ctx context.Context, domain string, attrs map[string]any) (map[string]any, error) {
+	body := map[string]any{"name": domain}
+	for k, v := range attrs {
+		body[k] = v
+	}
+	var out map[string]any
+	return out, c.do(ctx, http.MethodPost, "domains", nil, body, &out)
+}
+
+// EnsureDomain registers a trust domain if it does not already
+// exist. It is idempotent — calling it twice is cheap and does
+// not error.
+//
+// This is the recommended way for demo code and bootstrap scripts
+// to guarantee a domain is registered before issuing identity,
+// trust, title, or event transactions against it. Every
+// non-default domain must be registered first; the node rejects
+// any tx whose trust-domain is unknown.
+func (c *Client) EnsureDomain(ctx context.Context, domain string, attrs map[string]any) (map[string]any, error) {
+	out, err := c.RegisterDomain(ctx, domain, attrs)
+	if err == nil {
+		return out, nil
+	}
+	// Already-exists is the expected idempotent path.
+	if strings.Contains(strings.ToLower(err.Error()), "already exists") {
+		return map[string]any{
+			"status":  "success",
+			"domain":  domain,
+			"message": "trust domain already exists",
+		}, nil
+	}
+	return nil, err
+}
+
+// WaitForIdentity blocks until the identity with the given quid
+// ID is visible in the committed registry, or returns
+// context.DeadlineExceeded / the passed ctx error on timeout.
+//
+// A just-submitted identity transaction lives in the node's
+// pending pool until the next block is sealed. Code that
+// immediately emits events or title transactions referencing the
+// new quid must wait for commit first; this helper polls
+// GetIdentity at the given interval.
+//
+// Pass a context with a deadline to bound the wait (recommended
+// ~30 seconds for a dev node with short BLOCK_INTERVAL).
+func (c *Client) WaitForIdentity(ctx context.Context, quidID, domain string, pollInterval time.Duration) (*IdentityRecord, error) {
+	if pollInterval <= 0 {
+		pollInterval = 500 * time.Millisecond
+	}
+	for {
+		rec, err := c.GetIdentity(ctx, quidID, domain)
+		if err != nil {
+			return nil, err
+		}
+		if rec != nil {
+			return rec, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
+// WaitForIdentities blocks until every listed quid ID is
+// committed, sharing one context deadline across all ids.
+func (c *Client) WaitForIdentities(ctx context.Context, quidIDs []string, domain string, pollInterval time.Duration) error {
+	for _, id := range quidIDs {
+		if _, err := c.WaitForIdentity(ctx, id, domain, pollInterval); err != nil {
+			return fmt.Errorf("wait for identity %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// WaitForTitle blocks until the title with the given asset ID is
+// visible in the committed registry. Same rationale as
+// WaitForIdentity: just-submitted title transactions live in the
+// pending pool until the next block is sealed, and events on the
+// title fail with "Subject TITLE not found" until commit.
+func (c *Client) WaitForTitle(ctx context.Context, assetID, domain string, pollInterval time.Duration) (*Title, error) {
+	if pollInterval <= 0 {
+		pollInterval = 500 * time.Millisecond
+	}
+	for {
+		t, err := c.GetTitle(ctx, assetID, domain)
+		if err != nil {
+			return nil, err
+		}
+		if t != nil {
+			return t, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+}
+
 // --- Helpers -------------------------------------------------------------
 
 func signTx(signer *Quid, tx map[string]any) error {

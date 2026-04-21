@@ -258,3 +258,137 @@ func TestGetIdentityReturnsNilOn404(t *testing.T) {
 		t.Fatalf("want nil, got %+v", rec)
 	}
 }
+
+// --- EnsureDomain idempotence ------------------------------------------
+
+func TestEnsureDomainRegistersFirstCall(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"domain": "test.dom", "status": "success",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, WithMaxRetries(0))
+	if _, err := c.EnsureDomain(context.Background(), "test.dom", nil); err != nil {
+		t.Fatalf("EnsureDomain: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("want 1 POST, got %d", calls)
+	}
+}
+
+func TestEnsureDomainSwallowsAlreadyExists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"error": map[string]any{
+				"code":    "BAD_REQUEST",
+				"message": "trust domain test.dom already exists",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, WithMaxRetries(0))
+	out, err := c.EnsureDomain(context.Background(), "test.dom", nil)
+	if err != nil {
+		t.Fatalf("EnsureDomain should swallow already-exists, got err: %v", err)
+	}
+	if out["status"] != "success" {
+		t.Fatalf("want success envelope, got %v", out)
+	}
+}
+
+func TestEnsureDomainPropagatesOtherErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"error": map[string]any{
+				"code":    "INTERNAL",
+				"message": "database connection lost",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, WithMaxRetries(0))
+	if _, err := c.EnsureDomain(context.Background(), "test.dom", nil); err == nil {
+		t.Fatalf("expected error to propagate")
+	}
+}
+
+// --- WaitForIdentity polling -------------------------------------------
+
+func TestWaitForIdentityReturnsOnceCommitted(t *testing.T) {
+	// Simulate the commit race: first two GET /identity/{id}
+	// calls return 404, the third returns the record.
+	var attempt int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt++
+		w.Header().Set("Content-Type", "application/json")
+		if attempt < 3 {
+			w.WriteHeader(404)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"success": false,
+				"error": map[string]any{
+					"code": "NOT_FOUND", "message": "identity not found",
+				},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"quidId": "abc123", "name": "alice", "publicKey": "pk",
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, WithMaxRetries(0))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rec, err := c.WaitForIdentity(ctx, "abc123", "", 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("WaitForIdentity: %v", err)
+	}
+	if rec == nil || rec.QuidID != "abc123" {
+		t.Fatalf("unexpected record: %+v", rec)
+	}
+	if attempt != 3 {
+		t.Fatalf("want 3 polls, got %d", attempt)
+	}
+}
+
+func TestWaitForIdentityRespectsDeadline(t *testing.T) {
+	// Always 404 — deadline must trigger.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(404)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"error":   map[string]any{"code": "NOT_FOUND", "message": "none"},
+		})
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, WithMaxRetries(0))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := c.WaitForIdentity(ctx, "nope", "", 50*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected deadline error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded, got %v", err)
+	}
+}
