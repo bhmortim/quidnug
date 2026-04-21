@@ -36,27 +36,51 @@ Every election system must solve:
 - **Auditability** — the event stream is the audit log, and every
   Title / stream is queryable post-hoc.
 
-What Quidnug does **not** provide:
+What Quidnug does **not** provide in this demo set:
 
-- **Vote secrecy** beyond plain hash commitment. For a real
-  election, pair Quidnug with a proper mix-net or ZKP voting
-  protocol (Helios, STAR-Vote, Microsoft ElectionGuard). Quidnug
-  records the outputs of those protocols; it doesn't implement
-  them.
+- **End-to-end mix-net integration.** The blind-flow demo
+  covers voter unlinkability at the ballot-issuance layer
+  (the authority cannot link blinded requests to cast
+  ballots), which is the primary cryptographic property most
+  voting schemes need. Compound protocols like Helios,
+  STAR-Vote, or ElectionGuard layer additional properties on
+  top (coercion resistance, end-to-end verifiable
+  re-encryption mix-nets). Those are separable protocols that
+  Quidnug records the outputs of.
 
-## Runnable example
+## Runnable examples
 
-See [`election_flow.go`](election_flow.go) for a Go end-to-end
-simulation:
+Two companion demos live here:
+
+### 1. Full election flow against a live node (`election_flow.go`)
 
 ```bash
 cd examples/elections
 go run election_flow.go
 ```
 
-It simulates a small election (3 candidates, 5 voters, 2
-observers), runs through every phase, and prints the final audit
-log with relational-trust scores.
+Simulates a small election (3 candidates, 5 voters, 2
+observers), runs through every phase against a live Quidnug
+node, and prints the audit log with relational-trust scores.
+Uses a simple hash-commit pattern for ballots (ballot secrecy
+is not the focus of this demo).
+
+### 2. Anonymous ballot blind-signature flow (`blind-flow/main.go`)
+
+```bash
+cd examples/elections
+go run ./blind-flow/
+```
+
+Self-contained demo of the QDP-0021 RSA-FDH blind-signature
+flow (via `pkg/crypto/blindrsa`). The authority blindly signs
+each voter's ballot token without learning the token. Voters
+then cast signed ballots that are verifiable under the
+authority's public key yet unlinkable to the signing session.
+The demo also exercises two failure modes: a forged signature
+from an attacker's key is rejected, and a replay of an
+already-cast ballot is rejected. No live node required for
+this one.
 
 ## Stream schema
 
