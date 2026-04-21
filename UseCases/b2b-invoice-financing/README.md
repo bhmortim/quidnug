@@ -312,6 +312,27 @@ weighting.
 - [`implementation.md`](implementation.md) — concrete code
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/b2b-invoice-financing/`](../../examples/b2b-invoice-financing/):
+
+- `invoice_factor.py` — pure decision logic: missing-events ->
+  pending, double-factoring -> reject, trust-weighted discount,
+  fraud-signal veto.
+- `invoice_factor_test.py` — 15 pytest cases covering the full
+  decision surface.
+- `demo.py` — twelve-step end-to-end flow: register six actors
+  across supplier / buyer / carrier / bureau / two financiers,
+  issue invoice, cross-party lifecycle attestation, race two
+  financiers on the same invoice (second rejected for
+  double-factoring), second invoice rejected via fraud signal.
+
+```bash
+cd examples/b2b-invoice-financing
+python demo.py
+```
+
 ## Related
 
 - [`../merchant-fraud-consortium/`](../merchant-fraud-consortium/) —
