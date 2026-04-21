@@ -108,22 +108,69 @@ A transaction's **signable bytes** are computed by:
    signing. This means `ID` is bound by the signature.
 4. Serialize the struct with Go `encoding/json` default
    settings:
-   - Struct fields emitted in declaration order.
+   - Top-level struct fields emitted in **declaration
+     order** (NOT alphabetical).
    - Keys use the `json:` tag names where present.
    - `omitempty` fields are omitted when zero-valued.
    - No whitespace beyond JSON-required separators (Go
      default).
-5. The resulting UTF-8 byte sequence is the signable
+5. Any nested `map[string]interface{}` field (payload,
+   attributes, and any other generic map the schema accepts)
+   MUST be serialized with its keys in **Unicode codepoint
+   order** (ascending). This matches Go's default
+   `encoding/json` map-marshal behavior, which sorts
+   map keys alphabetically. Arrays preserve their element
+   order; dict elements nested inside arrays recursively
+   follow this rule.
+6. The resulting UTF-8 byte sequence is the signable
    payload.
 
-**[OPEN: canonical byte form across SDKs]**
-The Go reference node uses `encoding/json` default ordering
-(struct declaration order). The Python SDK's `types.py`
-builds a hand-ordered dict in `to_signable_dict` to match.
-JS and Rust SDKs must produce byte-identical output.
-Required action: §13 test vector appendix must include a
-full round-trip example per transaction type; `pkg/client`
-test suite must exercise cross-SDK comparison.
+#### 2.2.1 Why the two-rule split
+
+Go's `encoding/json` treats structs and maps differently:
+
+- `struct` values are serialized in field declaration order
+  (the order fields appear in the Go source). This is stable
+  and the v1.0 spec's transaction shapes pin specific orders
+  per tx type in §4.
+- `map[K]V` values are serialized with keys sorted
+  alphabetically; this is the default because Go map
+  iteration order is random.
+
+Transaction shapes are fixed up-front (they are Go structs),
+so the top-level serialization is determined by the schema
+tables in §4. Nested user-supplied data (a payload JSON
+object, an attributes map) is not tied to any Go struct — it
+is marshaled as a generic map and therefore sorted.
+
+**SDKs MUST implement both halves:** preserve caller-supplied
+top-level field order (mirroring the Go struct declaration
+listed per tx type), AND recursively sort keys of any nested
+generic map. An SDK that sorts the top-level struct fields
+alphabetically, or that preserves insertion order for nested
+maps, will produce canonical bytes that diverge from the
+reference node's re-marshal output — and server-side
+signature verification will fail.
+
+Reference implementations and their specific handling:
+
+| SDK | Top level | Nested maps |
+|---|---|---|
+| Go (`pkg/client`) | preserved by `json.Marshal` on typed struct | sorted by `encoding/json` default |
+| Python (`clients/python`) | explicit `(key, value, omitempty)` tuple list per tx type | `_go_compat_value` sorts nested dicts |
+| Rust (`clients/rust`) | preserved by `serde::Serialize` on typed `Tx` struct | `serde_json`'s default `BTreeMap` is alphabetical |
+| JS (`clients/js/v1-wire.js`) | explicit field tuple list | `goCompatValue` recursively sorts nested objects |
+| Java (`CanonicalBytes.v1Of`) | preserved via Jackson `LinkedHashMap` tree | `sortNestedKeysOnly` recurses into nested objects |
+| Swift (`CanonicalBytes.v1OfOrdered`) | caller supplies an array of `(String, Any)` pairs | `sortKeysDeep` recurses into nested dictionaries |
+
+A regression-guard test vector
+(`event_payload_key_sort_regression_guard` in
+[`docs/test-vectors/v1.0/event-tx.json`](./test-vectors/v1.0/event-tx.json))
+locks in this rule. The vector's payload is constructed with
+keys in deliberately non-alphabetical insertion order at
+both the top and one nested level; any SDK that reproduces
+the expected canonical bytes for that case is correctly
+implementing the rule.
 
 ### 2.3 Signature algorithm
 
@@ -659,6 +706,73 @@ increasing `Sequence`.
 
 **ID derivation:** hash of
 `{SubjectID, EventType, Sequence, TrustDomain, Timestamp}`.
+
+#### 4.5.1 Authorship: who can write to a stream
+
+Every `EVENT` transaction must be signed by a quid that is
+authorized to write to the subject's stream. The v1.0 rules:
+
+1. **`SubjectType == "QUID"`.** The signer's public key MUST
+   match the subject quid's registered public key. In effect:
+   a QUID stream is writable only by the quid itself.
+2. **`SubjectType == "TITLE"`.** The signer MUST be one of
+   the title's current owners (any listed
+   `OwnershipStake.OwnerID` whose registered public key
+   matches `tx.PublicKey`).
+
+These are hard rules. The node rejects events that violate
+them at validation time — there is no policy knob to relax
+them.
+
+#### 4.5.2 Convention: shared logs as jointly-owned titles
+
+Many use cases need a **shared event stream** that multiple
+parties can write to — a cosign ledger, a multi-party
+authorization, a consortium audit log. The v1.0 rules above
+mean a shared log CANNOT be a plain QUID (only the quid
+itself could write to it).
+
+The idiomatic pattern: model the shared log as a **`TITLE`
+jointly owned by every party that needs to write to it.**
+Each writer is listed as an `OwnershipStake` (share can be
+small); events on the title's stream then satisfy rule (2).
+
+Worked examples:
+- An AI agent action: title jointly owned by the agent
+  (primary share) and every guardian (small shares each).
+- A custody wallet transfer: title jointly owned by the
+  wallet, the proposer, and every authorized signer.
+- A federated-learning round: title jointly owned by the
+  coordinator and every participant.
+- A DNS zone: title jointly owned by every governor.
+
+#### 4.5.3 Convention: external attestations on the attester's own stream
+
+The complementary pattern for **third-party attestations
+about a subject** (a researcher reporting a CVE about a
+release, a credit bureau attesting to a borrower, a
+fact-checker endorsing media, an oracle reporting a price).
+Such attestations cannot ride on the subject's stream
+because the attester is not the subject's owner.
+
+The idiomatic pattern: **the attester emits the event on
+their OWN quid stream with a subject pointer in the
+payload.** Downstream consumers subscribe to a curated list
+of attester streams, filter by payload subject, and merge.
+
+Worked examples:
+- `release.vulnerability-reported` lives on the security
+  researcher's own stream with `targetReleaseId` in the
+  payload.
+- `credit.payment.on-time` lives on the lender's own stream
+  with `subject` (borrower quid) in the payload.
+- `oracle.price-report` lives on each reporter's stream with
+  `feedQuid` in the payload.
+- `consent.emergency-override` lives on each guardian's
+  stream with `patient` (subject quid) in the payload.
+
+These two conventions (4.5.2 and 4.5.3) cover every
+multi-party workflow the 16 reference use cases exercise.
 
 ### 4.6 `ANCHOR` (AnchorTransaction)
 
