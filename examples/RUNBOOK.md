@@ -112,7 +112,7 @@ format:
 | 6 | b2b-invoice-financing | 15/15 | pass | invoice jointly owned by supplier + buyer + carrier + financiers; longer 3s inter-step sleeps wait for block commit |
 | 7 | interbank-wire-authorization | 14/14 | pass | wire titles jointly owned by sender bank + all cosigning officers |
 | 8 | ai-content-authenticity | 12/12 | pass | media titles jointly owned by camera + photographer + editors + publishers + fact-checkers |
-| 9 | ai-model-provenance | _pending_ | _pending_ | |
+| 9 | ai-model-provenance | 14/14 | pass | model titles jointly owned by producer + safety evaluators + benchmark orgs; derivative base-model trust check relaxed (base isn't a quid) |
 | 10 | defi-oracle-network | _pending_ | _pending_ | |
 | 11 | federated-learning-attestation | _pending_ | _pending_ | |
 | 12 | elections (blind-flow) | n/a (Go demo) | _pending_ | |

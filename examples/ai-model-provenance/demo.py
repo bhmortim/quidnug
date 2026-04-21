@@ -75,6 +75,7 @@ def register(client: QuidnugClient, name: str, role: str, domain: str) -> Actor:
 def register_dataset(
     client: QuidnugClient, curator: Actor, dataset_id: str, license: str,
 ) -> DatasetV1:
+    # dataset is sole-owner; we don't need other signers on its stream
     try:
         client.register_title(
             signer=curator.quid,
@@ -85,6 +86,7 @@ def register_dataset(
         )
     except Exception as e:
         print(f"  (register_title {dataset_id}: {e})")
+    client.wait_for_title(dataset_id)
     client.emit_event(
         signer=curator.quid,
         subject_id=dataset_id,
@@ -112,17 +114,28 @@ def register_model(
     client: QuidnugClient, producer: Actor, model_id: str,
     training_datasets: List[str], base_model_id: str = "",
     domain: str = MODEL_DOMAIN,
+    attestors: List[Actor] = None,
 ) -> ModelV1:
+    """Register the model as a TITLE jointly owned by producer
+    + every attestor (safety evaluator, benchmark org) that
+    will emit events on the model's stream."""
+    attestors = attestors or []
+    share = 0.02
+    producer_share = round(1.0 - share * len(attestors), 6)
+    owners = [OwnershipStake(producer.quid.id, producer_share, "producer")]
+    for a in attestors:
+        owners.append(OwnershipStake(a.quid.id, share, a.role))
     try:
         client.register_title(
             signer=producer.quid,
             asset_id=model_id,
-            owners=[OwnershipStake(producer.quid.id, 1.0, "producer")],
+            owners=owners,
             domain=domain,
             title_type="ai-model",
         )
     except Exception as e:
         print(f"  (register_title {model_id}: {e})")
+    client.wait_for_title(model_id)
 
     # Training events.
     client.emit_event(
@@ -260,6 +273,9 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    for d in (DATASET_DOMAIN, MODEL_DOMAIN, FINETUNE_DOMAIN):
+        client.ensure_domain(d)
+
     banner("Step 1: Register actors")
     curator     = register(client, "common-crawl-fdn",   "curator",   DATASET_DOMAIN)
     curator_bad = register(client, "scraper-anonymous",  "curator",   DATASET_DOMAIN)
@@ -270,6 +286,9 @@ def main() -> None:
     consumer    = register(client, "enterprise-consumer", "consumer",         MODEL_DOMAIN)
     for a in [curator, curator_bad, producer, ft_producer, evaluator, benchmarker, consumer]:
         print(f"  {a.role:18s} {a.name:22s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in [
+        curator, curator_bad, producer, ft_producer, evaluator, benchmarker, consumer,
+    ]])
 
     banner("Step 2: Consumer trust graph")
     for party, level in [
@@ -296,11 +315,12 @@ def main() -> None:
     base_model_id = f"model-acme-7b-{uuid.uuid4().hex[:6]}"
     base_model = register_model(
         client, producer, base_model_id, [ds_clean_id],
+        attestors=[evaluator, benchmarker],
     )
     attest_safety(client, evaluator, base_model_id, "acceptable")
     report_benchmark(client, benchmarker, base_model_id, "MMLU", 0.78)
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     banner("Step 5: Consumer evaluates the foundation model")
     evaluate_and_show(client, consumer, base_model, [ds_clean],
@@ -308,23 +328,25 @@ def main() -> None:
 
     banner("Step 6: Fine-tune producer registers a derivative")
     ft_model_id = f"ft-acme-{uuid.uuid4().hex[:6]}"
-    # Grant trust in the base model quid so the derivative check passes.
-    # (In a fuller deployment the producer's trust would chain here.)
-    client.grant_trust(
-        signer=consumer.quid, trustee=base_model_id, level=0.85,
-        domain=FINETUNE_DOMAIN, description="trust in base model",
-    )
+    # Note: the evaluator's base-model trust check uses the
+    # base model's asset id. On the live node, trust edges are
+    # quid-to-quid only; we can't grant a trust edge against an
+    # asset id. The pure evaluator handles this by accepting a
+    # trust_fn that returns 0 and by relaxing min_base_model_trust
+    # in policy (which this demo does below).
     ft_model = register_model(
         client, ft_producer, ft_model_id, [ds_clean_id],
         base_model_id=base_model_id,
         domain=FINETUNE_DOMAIN,
+        attestors=[evaluator],
     )
     attest_safety(client, evaluator, ft_model_id, "acceptable",
                    domain=FINETUNE_DOMAIN)
 
-    time.sleep(0.5)
+    time.sleep(3)
+    ft_policy = ModelPolicy(min_base_model_trust=0.0)
     evaluate_and_show(client, consumer, ft_model, [ds_clean],
-                      "DERIVATIVE (expect accept)")
+                      "DERIVATIVE (expect accept)", policy=ft_policy)
 
     banner("Step 7: Bad-actor scenario  (prohibited dataset license)")
     ds_pirate_id = f"ds-pirate-{uuid.uuid4().hex[:6]}"
@@ -333,9 +355,10 @@ def main() -> None:
     bad_model = register_model(
         client, producer, bad_model_id,
         [ds_clean_id, ds_pirate_id],
+        attestors=[evaluator],
     )
     attest_safety(client, evaluator, bad_model_id, "acceptable")
-    time.sleep(0.5)
+    time.sleep(3)
     evaluate_and_show(client, consumer, bad_model, [ds_clean, ds_pirate],
                       "BAD-DATASET (expect reject)")
 
@@ -343,7 +366,7 @@ def main() -> None:
     naked_model_id = f"model-naked-{uuid.uuid4().hex[:6]}"
     naked_model = register_model(client, producer, naked_model_id, [ds_clean_id])
     # No safety.evaluated event.
-    time.sleep(0.5)
+    time.sleep(3)
     evaluate_and_show(client, consumer, naked_model, [ds_clean],
                       "NO-SAFETY (expect warn)")
 
