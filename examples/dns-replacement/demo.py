@@ -71,13 +71,13 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 
 def publish_record(
-    client: QuidnugClient, governor: Actor, zone: Actor,
+    client: QuidnugClient, governor: Actor, zone_id: str,
     name: str, rtype: str, value: str, ttl: int = 300,
 ) -> None:
     client.emit_event(
         signer=governor.quid,
-        subject_id=zone.quid.id,
-        subject_type="QUID",
+        subject_id=zone_id,
+        subject_type="TITLE",
         event_type="dns.record-published",
         domain=DOMAIN,
         payload={
@@ -93,13 +93,13 @@ def publish_record(
 
 
 def revoke_record(
-    client: QuidnugClient, governor: Actor, zone: Actor,
+    client: QuidnugClient, governor: Actor, zone_id: str,
     name: str, rtype: str, revokes_seq: int,
 ) -> None:
     client.emit_event(
         signer=governor.quid,
-        subject_id=zone.quid.id,
-        subject_type="QUID",
+        subject_id=zone_id,
+        subject_type="TITLE",
         event_type="dns.record-revoked",
         domain=DOMAIN,
         payload={
@@ -113,8 +113,8 @@ def revoke_record(
     print(f"  {governor.name} revoked {rtype} {name} seq={revokes_seq}")
 
 
-def load_events(client: QuidnugClient, zone: Actor) -> List[dict]:
-    events, _ = client.get_stream_events(zone.quid.id, limit=500)
+def load_events(client: QuidnugClient, zone_id: str) -> List[dict]:
+    events, _ = client.get_stream_events(zone_id, limit=500)
     out: List[dict] = []
     for ev in events or []:
         out.append({
@@ -138,11 +138,11 @@ def node_trust_fn(client: QuidnugClient):
 
 
 def resolve_and_show(
-    client: QuidnugClient, resolver: Actor, zone: Actor,
+    client: QuidnugClient, resolver: Actor, zone_id: str,
     governors: Set[str], query_name: str, query_type: str, label: str,
     policy: ResolvePolicy = None,
 ) -> None:
-    events = load_events(client, zone)
+    events = load_events(client, zone_id)
     r = resolve(
         resolver.quid.id, governors, query_name, query_type,
         events, node_trust_fn(client),
@@ -165,16 +165,34 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
-    zone       = register(client, "example.quidnug",    "zone")
     gov_p      = register(client, "gov-example-primary", "governor")
     gov_b      = register(client, "gov-example-backup",  "governor")
     rogue      = register(client, "rogue-cache-poisoner","attacker")
     resolver   = register(client, "resolver-acme",       "resolver")
     weak_obs   = register(client, "resolver-weak-trust", "resolver")
-    for a in (zone, gov_p, gov_b, rogue, resolver, weak_obs):
+    for a in (gov_p, gov_b, rogue, resolver, weak_obs):
         print(f"  {a.role:12s} {a.name:28s} -> {a.quid.id}")
+    client.wait_for_identities([a.quid.id for a in (gov_p, gov_b, rogue, resolver, weak_obs)])
+
+    # Zone is a TITLE jointly owned by both governors.
+    zone_id = f"example.quidnug.{uuid.uuid4().hex[:6]}"
+    from quidnug import OwnershipStake
+    client.register_title(
+        signer=gov_p.quid,
+        asset_id=zone_id,
+        owners=[
+            OwnershipStake(gov_p.quid.id, 0.7, "governor-primary"),
+            OwnershipStake(gov_b.quid.id, 0.3, "governor-backup"),
+        ],
+        domain=DOMAIN,
+        title_type="dns-zone",
+    )
+    client.wait_for_title(zone_id)
+    print(f"  {'zone (title)':12s} {zone_id}")
 
     governors: Set[str] = {gov_p.quid.id, gov_b.quid.id}
 
@@ -201,49 +219,54 @@ def main() -> None:
 
     # -----------------------------------------------------------------
     banner("Step 3: Governor publishes zone records")
-    publish_record(client, gov_p, zone,
+    publish_record(client, gov_p, zone_id,
                     "example.quidnug", "A",    "192.0.2.1")
-    publish_record(client, gov_p, zone,
+    publish_record(client, gov_p, zone_id,
                     "example.quidnug", "AAAA", "2001:db8::1")
-    publish_record(client, gov_p, zone,
+    publish_record(client, gov_p, zone_id,
                     "example.quidnug", "MX",   "mail.example.quidnug")
-    publish_record(client, gov_p, zone,
+    publish_record(client, gov_p, zone_id,
                     "www.example.quidnug", "A", "192.0.2.2")
 
-    time.sleep(0.5)
+    time.sleep(3)
 
     # -----------------------------------------------------------------
     banner("Step 4: Resolver resolves each record type")
-    resolve_and_show(client, resolver, zone, governors,
+    resolve_and_show(client, resolver, zone_id, governors,
                       "example.quidnug", "A",    "A @ example.quidnug")
-    resolve_and_show(client, resolver, zone, governors,
+    resolve_and_show(client, resolver, zone_id, governors,
                       "example.quidnug", "AAAA", "AAAA @ example.quidnug")
-    resolve_and_show(client, resolver, zone, governors,
+    resolve_and_show(client, resolver, zone_id, governors,
                       "example.quidnug", "MX",   "MX @ example.quidnug")
-    resolve_and_show(client, resolver, zone, governors,
+    resolve_and_show(client, resolver, zone_id, governors,
                       "www.example.quidnug", "A", "A @ www.example.quidnug")
 
     # -----------------------------------------------------------------
     banner("Step 5: Rogue quid attempts cache poisoning")
-    client.emit_event(
-        signer=rogue.quid,
-        subject_id=zone.quid.id,
-        subject_type="QUID",
-        event_type="dns.record-published",
-        domain=DOMAIN,
-        payload={
-            "recordType": "A",
-            "name": "example.quidnug",
-            "value": "198.51.100.99",   # attacker's IP
-            "ttl": 300,
-            "signerQuid": rogue.quid.id,
-            "signedAt": int(time.time()),
-        },
-    )
-    print(f"  {rogue.name} published A example.quidnug -> 198.51.100.99")
-    time.sleep(0.5)
+    try:
+        client.emit_event(
+            signer=rogue.quid,
+            subject_id=zone_id,
+            subject_type="TITLE",
+            event_type="dns.record-published",
+            domain=DOMAIN,
+            payload={
+                "recordType": "A",
+                "name": "example.quidnug",
+                "value": "198.51.100.99",   # attacker's IP
+                "ttl": 300,
+                "signerQuid": rogue.quid.id,
+                "signedAt": int(time.time()),
+            },
+        )
+        print(f"  {rogue.name} submitted A example.quidnug -> 198.51.100.99")
+    except Exception as e:
+        print(f"  {rogue.name} REJECTED by node (not a zone owner): {e}")
+    print("  Whether the node accepted the tx or not, the resolver's")
+    print("  governor-set filter would also discard non-governor records:")
+    time.sleep(3)
     resolve_and_show(
-        client, resolver, zone, governors,
+        client, resolver, zone_id, governors,
         "example.quidnug", "A",
         "A @ example.quidnug AFTER POISONING ATTEMPT",
     )
@@ -253,7 +276,7 @@ def main() -> None:
     # Find the original sequence for the A record we published
     # first. For the POC, we know it was seq 1 in this run's context,
     # but let's scan the stream to be correct.
-    events = load_events(client, zone)
+    events = load_events(client, zone_id)
     orig_seq = None
     for ev in events:
         p = ev["payload"]
@@ -266,13 +289,13 @@ def main() -> None:
             break
     assert orig_seq is not None, "couldn't locate original A record in stream"
 
-    revoke_record(client, gov_p, zone, "example.quidnug", "A", orig_seq)
-    publish_record(client, gov_p, zone,
+    revoke_record(client, gov_p, zone_id, "example.quidnug", "A", orig_seq)
+    publish_record(client, gov_p, zone_id,
                     "example.quidnug", "A", "192.0.2.100")
 
-    time.sleep(0.5)
+    time.sleep(3)
     resolve_and_show(
-        client, resolver, zone, governors,
+        client, resolver, zone_id, governors,
         "example.quidnug", "A",
         "A @ example.quidnug AFTER KEY ROTATION",
     )
@@ -280,7 +303,7 @@ def main() -> None:
     # -----------------------------------------------------------------
     banner("Step 7: Weak-trust observer queries the same zone")
     resolve_and_show(
-        client, weak_obs, zone, governors,
+        client, weak_obs, zone_id, governors,
         "example.quidnug", "A",
         "WEAK OBSERVER (expect indeterminate)",
     )
