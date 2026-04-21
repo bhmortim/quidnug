@@ -1,28 +1,73 @@
 # Use-case examples
 
-Runnable end-to-end examples covering the high-impact use cases
-from the Quidnug overview deck. Each example walks a complete
-workflow — actors, trust setup, transactions, and the audit path
-downstream consumers would use.
+Runnable end-to-end examples covering every high-impact use
+case in the Quidnug overview deck. Each example walks a
+complete workflow — actors, trust setup, transactions, and the
+audit path downstream consumers would use.
+
+**Start here:** [`RUNBOOK.md`](RUNBOOK.md) — environment setup,
+how to run each POC, a "run everything" one-liner, the demo-
+authoring recipe, and the consolidated list of fixes the sweep
+surfaced.
+
+## Use-case POCs (16)
+
+Each POC below ships a three-file layout:
+`<name>.py` (pure decision logic, no SDK), `<name>_test.py`
+(unit tests, no node required), and `demo.py` (end-to-end
+against a live node).
+
+| # | Use case | Path |
+|---|---|---|
+| 1 | Merchant fraud consortium | [`merchant-fraud-consortium/`](merchant-fraud-consortium/) |
+| 2 | Credential verification network | [`credential-verification-network/`](credential-verification-network/) |
+| 3 | AI agent capability authorization | [`ai-agent-authorization/`](ai-agent-authorization/) |
+| 4 | Developer artifact signing (GPG replacement) | [`developer-artifact-signing/`](developer-artifact-signing/) |
+| 5 | Institutional crypto custody (5-of-7 signing) | [`institutional-custody/`](institutional-custody/) |
+| 6 | B2B invoice financing | [`b2b-invoice-financing/`](b2b-invoice-financing/) |
+| 7 | Interbank wire authorization (tiered M-of-N) | [`interbank-wire-authorization/`](interbank-wire-authorization/) |
+| 8 | AI content authenticity (C2PA-plus) | [`ai-content-authenticity/`](ai-content-authenticity/) |
+| 9 | AI model provenance + supply chain | [`ai-model-provenance/`](ai-model-provenance/) |
+| 10 | DeFi oracle network (consumer-weighted) | [`defi-oracle-network/`](defi-oracle-network/) |
+| 11 | Federated learning attestation | [`federated-learning-attestation/`](federated-learning-attestation/) |
+| 12 | Elections + anonymous ballot blind-signature | [`elections/`](elections/) (see `blind-flow/` for QDP-0021) |
+| 13 | DNS replacement (Phase 0) | [`dns-replacement/`](dns-replacement/) |
+| 14 | Enterprise domain authority (split-horizon) | [`enterprise-domain-authority/`](enterprise-domain-authority/) |
+| 15 | Decentralized credit reputation | [`decentralized-credit-reputation/`](decentralized-credit-reputation/) |
+| 16 | Healthcare consent management | [`healthcare-consent-management/`](healthcare-consent-management/) |
+
+Every row above has been verified end-to-end against a freshly-
+built single-node deployment. See
+[`RUNBOOK.md`](RUNBOOK.md) for the full execution matrix.
+
+## Companion demos (earlier work)
+
+Smaller-scope demos predating the 16-POC sweep; kept for their
+per-SDK / per-pattern value:
 
 | Use case | Language(s) | Path |
-| --- | --- | --- |
+|---|---|---|
 | AI agent identity + LLM attribution | Python | [`ai-agents/`](ai-agents/) |
-| Election integrity (candidates + voters + observers + tabulation) | Go | [`elections/`](elections/) |
 | W3C Verifiable Credentials on Quidnug | JavaScript | [`verifiable-credentials/`](verifiable-credentials/) |
-| Trust-weighted reviews & comments (QRP-0001) | Python orchestrator + Go signing helper + HTML render | [`reviews-and-comments/`](reviews-and-comments/) |
+| Trust-weighted reviews & comments (QRP-0001) | Python + Go + HTML | [`reviews-and-comments/`](reviews-and-comments/) |
 
-All examples assume a local node at `http://localhost:8080`
-(the reviews demo runs on `:8087` via its own config). Fastest
-way to a local node:
+## Environment
+
+All POCs assume a local node at `http://localhost:8080`.
+Fastest way to bring one up — see
+[`RUNBOOK.md`](RUNBOOK.md) for details:
 
 ```bash
-cd deploy/compose
-docker compose up -d
+# From the repo root:
+go build -o bin/quidnug ./cmd/quidnug
+BLOCK_INTERVAL=2s ./bin/quidnug &
+cd clients/python && pip install -e .
 ```
 
-Per-SDK quickstarts and smaller per-API examples live in each
-client's `examples/` folder:
+## Per-SDK quickstarts
+
+Smaller per-API examples live in each client's `examples/`
+folder:
 
 - [`clients/python/examples/`](../clients/python/examples/)
 - [`pkg/client/examples/`](../pkg/client/examples/)
@@ -30,24 +75,6 @@ client's `examples/` folder:
 - [`clients/java/examples/`](../clients/java/examples/)
 - [`clients/dotnet/examples/`](../clients/dotnet/examples/)
 - [`clients/swift/examples/`](../clients/swift/examples/)
-
-## Why these four?
-
-The [product audit](../docs/audit/product-adoption-audit.md)
-identified AI agents, elections, and credentials as the three
-largest use cases marketed in the overview deck with **zero
-runnable example code**. A prospective integrator looking at our
-website today for "how do I use Quidnug for X" would have found
-nothing for these three. This directory closes that gap.
-
-The reviews-and-comments example is the fourth: a full
-working end-to-end demo for the Quidnug Reviews Protocol
-(QRP-0001). It shows the same 5 raw reviews producing three
-divergent per-observer ratings and ships drop-in widgets for
-every major web framework.
-
-Additional use cases (decentralized credit, escrow, KYC workflows,
-healthcare patient record signing) remain on the backlog.
 
 ## License
 

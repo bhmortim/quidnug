@@ -4,6 +4,22 @@ Reproducible end-to-end verification of every POC in this
 repository against a live Quidnug node. Last executed
 2026-04-20 on Windows 11 + Go 1.25 + Python 3.14.
 
+## Status: 16/16 POCs pass against a live node
+
+Every POC in `examples/` has been verified end-to-end: unit
+tests pass under pytest, and each `demo.py` runs cleanly
+against a freshly-built single-node deployment with a 2-second
+block interval. The fixes that surfaced during this sweep are
+listed at the end of this document; they are already applied
+to the SDK, node, and demos on `main`.
+
+| Layer | Status |
+|---|---|
+| Go node (`./cmd/quidnug`) | builds clean; full core test sweep green |
+| Python SDK (`clients/python`) | 79/79 unit tests green; new `ensure_domain`, `wait_for_identity`, `wait_for_identities`, `wait_for_title` helpers |
+| 16 POC unit-test suites | 196/196 tests green |
+| 16 POC live demos | 16/16 pass against running node |
+
 ## One-time environment setup
 
 ### Option A: Build and run the node from source (recommended)
@@ -60,6 +76,47 @@ Verify:
 pip show quidnug
 # should print: Name: quidnug  Version: 2.0.0
 ```
+
+## Run everything
+
+Smoke test: unit tests for all 16 POCs in one shot.
+
+```bash
+cd examples
+for d in merchant-fraud-consortium credential-verification-network \
+          ai-agent-authorization developer-artifact-signing \
+          institutional-custody b2b-invoice-financing \
+          interbank-wire-authorization ai-content-authenticity \
+          ai-model-provenance defi-oracle-network \
+          federated-learning-attestation dns-replacement \
+          enterprise-domain-authority decentralized-credit-reputation \
+          healthcare-consent-management ; do
+  echo "=== $d ==="
+  (cd "$d" && python -m pytest -q) || break
+done
+```
+
+Full end-to-end (requires a running node per the setup above):
+
+```bash
+for d in merchant-fraud-consortium credential-verification-network \
+          ai-agent-authorization developer-artifact-signing \
+          institutional-custody b2b-invoice-financing \
+          interbank-wire-authorization ai-content-authenticity \
+          ai-model-provenance defi-oracle-network \
+          federated-learning-attestation dns-replacement \
+          enterprise-domain-authority decentralized-credit-reputation \
+          healthcare-consent-management ; do
+  echo "=== $d ==="
+  (cd examples/$d && python demo.py) || break
+done
+# Plus the standalone Go POC:
+go run ./examples/elections/blind-flow/
+```
+
+End-to-end runtime is roughly 8–12 minutes at `BLOCK_INTERVAL=2s`
+(dominated by commit waits and the 10-tx-per-minute per-quid rate
+limit). Individual demos take 30–120 seconds each.
 
 ## How each POC is structured
 
@@ -120,6 +177,108 @@ format:
 | 14 | enterprise-domain-authority | 13/13 | pass | zone + employees group as governor-owned TITLEs; governor is sole owner so only governor can emit |
 | 15 | decentralized-credit-reputation | 11/11 | pass | attesters publish credit events on own streams; reduced event counts to fit per-quid rate limit |
 | 16 | healthcare-consent-management | 16/16 | pass | provider access-logs + guardian emergency-overrides route to each actor's own quid stream with patient pointer; resolver merges across ambient actors |
+
+## Demo-authoring recipe (applies to every new POC)
+
+After writing 16 of these, the same pattern works everywhere.
+Every new demo that uses the live SDK should follow these
+rules:
+
+### 1. Each actor is a QUID. Each shared object is a TITLE.
+
+Quidnug's security model: any event on a QUID stream must be
+signed by the quid itself; any event on a TITLE stream must be
+signed by one of the title's owners. If your POC has multiple
+parties who need to write to a shared log, model that log as a
+TITLE with all writers as joint owners. If you tried modelling
+a shared object as a plain QUID, the first non-owner write will
+fail with `"Signer is not the subject owner"` at server
+validation.
+
+Examples of "shared object as TITLE":
+- `examples/ai-agent-authorization/` — each action is a TITLE
+  jointly owned by agent + all guardians.
+- `examples/institutional-custody/` — each transfer is a TITLE
+  jointly owned by wallet + all signers.
+- `examples/federated-learning-attestation/` — each round is a
+  TITLE jointly owned by coordinator + all participants.
+- `examples/dns-replacement/` — zone is a TITLE jointly owned
+  by all governors.
+
+### 2. Attestations from external parties go on the attester's own stream
+
+When a non-owner of some subject wants to attest something
+about the subject (a researcher reporting a CVE, a lender
+reporting a payment, a utility reporting an on-time payment),
+emit the event on the attester's OWN quid stream with the
+target subject in the payload. Verifiers subscribe to a
+curated list of attester streams and cross-reference.
+
+Examples:
+- `examples/developer-artifact-signing/` — researcher publishes
+  CVE reports on the researcher's own stream, with
+  `targetReleaseId` in the payload.
+- `examples/decentralized-credit-reputation/` — every lender
+  and utility publishes credit events on their own stream, with
+  `subject` in the payload.
+- `examples/defi-oracle-network/` — every reporter publishes
+  prices on its own stream, with `feedQuid` in the payload.
+- `examples/healthcare-consent-management/` — providers log
+  accesses, guardians log emergency overrides, both on their
+  own streams with `patient` in the payload.
+
+### 3. Template for the top of `main()`
+
+Every demo follows this opening sequence:
+
+```python
+def main() -> None:
+    client = QuidnugClient(NODE_URL)
+    try:
+        client.info()
+    except Exception as e:
+        print(f"node unreachable: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # A. Register the trust domain(s) the demo operates in.
+    client.ensure_domain(DOMAIN)
+
+    # B. Register every actor identity, then block until they
+    #    commit so follow-on tx can reference them.
+    alice = register(client, "alice", "role")
+    bob   = register(client, "bob",   "role")
+    # ...
+    client.wait_for_identities([alice.quid.id, bob.quid.id, ...])
+
+    # C. Register any shared TITLEs, then block until commit.
+    client.register_title(
+        signer=alice.quid, asset_id="shared-id",
+        owners=[
+            OwnershipStake(alice.quid.id, 0.7, "primary"),
+            OwnershipStake(bob.quid.id,   0.3, "secondary"),
+        ],
+        domain=DOMAIN, title_type="some-type",
+    )
+    client.wait_for_title("shared-id")
+
+    # D. Now emit events. Sleep ~3s between rapid bursts to stay
+    #    under the 10-tx-per-minute per-quid rate limit and to
+    #    allow batched events to commit before the next step
+    #    reads the stream.
+    ...
+```
+
+### 4. Common gotchas (and their symptoms)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `invalid identity transaction` / `unknown trust domain` | domain not registered | `client.ensure_domain(DOMAIN)` at top of main |
+| `invalid trust transaction` / `subject QUID not found` | referenced quid not yet committed | `client.wait_for_identities([...])` after bootstrap |
+| `invalid event transaction` / `Subject TITLE not found` | title not yet committed | `client.wait_for_title(asset_id)` after register_title |
+| `invalid event transaction` / `Invalid signature` | non-alphabetical nested-dict keys in payload | Python SDK now sorts automatically; use latest SDK |
+| `invalid event transaction` / `Signer is not the subject owner` | wrong authorship model | model shared object as TITLE with signer as owner, or route event to signer's own stream |
+| `rate limit exceeded at quid layer` | >10 tx in 60s from one quid | sleep between bursts, or reduce loop counts |
+| empty stream reads, missing events | read races commit | `time.sleep(3)` between emit and read, or use wait helpers |
 
 ## Fixes applied during this execution sweep
 
