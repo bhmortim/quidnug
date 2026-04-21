@@ -123,6 +123,25 @@ all run Quidnug nodes.
 | Regulatory reporting cost              | Manual reconciliation                      | Deterministic chain replay                                    |
 | Cross-bank counterparty validation     | Call their ops desk                        | Verify guardian set signature cryptographically               |
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/interbank-wire-authorization/`](../../examples/interbank-wire-authorization/):
+
+- `wire_approval.py` — pure decision logic: tier selection,
+  weighted signers, role gating, per-signer NonceLedger,
+  counterparty verification.
+- `wire_approval_test.py` — 14 pytest cases across the full
+  decision surface.
+- `demo.py` — seven-step end-to-end flow: install tiered
+  policy, run three wires across the tier boundaries,
+  receiver re-verification, replay-defense demonstration.
+
+```bash
+cd examples/interbank-wire-authorization
+python demo.py
+```
+
 ## What's in this folder
 
 - [`README.md`](README.md) — this document (high-level)
