@@ -106,7 +106,7 @@ format:
 |---|---|---|---|---|
 | 1 | merchant-fraud-consortium | 9/9 | pass | required 4 fixes: ensure_domain + wait_for_identities + Go-compat payload-key sort + short BLOCK_INTERVAL |
 | 2 | credential-verification-network | 10/10 | pass | required node fixes: ownership sum 1.0 (not 100.0), free-form asset IDs, TITLE subject IDs free-form; demo refactored to issue credentials as jointly-owned TITLEs |
-| 3 | ai-agent-authorization | _pending_ | _pending_ | |
+| 3 | ai-agent-authorization | 17/17 | pass | demo refactored: each action is a jointly-owned TITLE (agent primary + guardians); cosign / veto events on the action's title stream |
 | 4 | developer-artifact-signing | _pending_ | _pending_ | |
 | 5 | institutional-custody | _pending_ | _pending_ | |
 | 6 | b2b-invoice-financing | _pending_ | _pending_ | |

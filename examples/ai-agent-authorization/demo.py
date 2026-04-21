@@ -47,7 +47,7 @@ from agent_authz import (
     extract_vetoes,
 )
 
-from quidnug import Quid, QuidnugClient
+from quidnug import OwnershipStake, Quid, QuidnugClient
 
 NODE_URL = os.environ.get("QUIDNUG_NODE", "http://localhost:8080")
 DOMAIN = "ai.agents.finance"
@@ -82,11 +82,31 @@ def register(client: QuidnugClient, name: str, role: str) -> Actor:
 
 def propose_action(
     client: QuidnugClient, agent: Actor, action: AgentAction,
+    stakeholders: List[Actor],
 ) -> str:
+    """Register the action as a jointly-owned TITLE (agent +
+    every guardian) so any stakeholder can emit events on it,
+    then emit the proposal event."""
+    # Distribute ownership so the agent holds the largest stake
+    # and each guardian has a small but non-zero share.
+    guardian_share = 0.1
+    agent_share = round(1.0 - guardian_share * len(stakeholders), 6)
+    owners = [OwnershipStake(agent.quid.id, agent_share, "agent")]
+    for g in stakeholders:
+        owners.append(OwnershipStake(g.quid.id, guardian_share, "guardian"))
+    client.register_title(
+        signer=agent.quid,
+        asset_id=action.action_id,
+        owners=owners,
+        domain=DOMAIN,
+        title_type="agent-action",
+    )
+    client.wait_for_title(action.action_id)
+
     client.emit_event(
         signer=agent.quid,
-        subject_id=agent.quid.id,
-        subject_type="QUID",
+        subject_id=action.action_id,
+        subject_type="TITLE",
         event_type="agent.action.proposed",
         domain=DOMAIN,
         payload={
@@ -104,12 +124,12 @@ def propose_action(
 
 
 def cosign(
-    client: QuidnugClient, agent: Actor, guardian: Actor, action_id: str,
+    client: QuidnugClient, guardian: Actor, action_id: str,
 ) -> None:
     client.emit_event(
         signer=guardian.quid,
-        subject_id=agent.quid.id,   # event lands on the agent's stream
-        subject_type="QUID",
+        subject_id=action_id,
+        subject_type="TITLE",
         event_type="agent.action.cosigned",
         domain=DOMAIN,
         payload={
@@ -121,13 +141,12 @@ def cosign(
 
 
 def veto(
-    client: QuidnugClient, agent: Actor, guardian: Actor,
-    action_id: str, reason: str,
+    client: QuidnugClient, guardian: Actor, action_id: str, reason: str,
 ) -> None:
     client.emit_event(
         signer=guardian.quid,
-        subject_id=agent.quid.id,
-        subject_type="QUID",
+        subject_id=action_id,
+        subject_type="TITLE",
         event_type="agent.action.vetoed",
         domain=DOMAIN,
         payload={
@@ -139,10 +158,10 @@ def veto(
     )
 
 
-def agent_stream_as_dicts(client: QuidnugClient, agent: Actor) -> List[dict]:
-    """Pull the agent's stream and normalize Events back to dicts
-    so we can reuse the extract_* helpers."""
-    events, _ = client.get_stream_events(agent.quid.id, limit=200)
+def action_stream_as_dicts(client: QuidnugClient, action_id: str) -> List[dict]:
+    """Pull an action's event stream and normalize Events to
+    dicts so the extract_* helpers can consume them."""
+    events, _ = client.get_stream_events(action_id, limit=200)
     out: List[dict] = []
     for ev in events or []:
         out.append({
@@ -173,6 +192,10 @@ def main() -> None:
         print(f"node unreachable: {e}", file=sys.stderr)
         sys.exit(1)
 
+    client.ensure_domain(DOMAIN)
+    client.ensure_domain(SPEND_DOMAIN)
+    client.ensure_domain("code.acme-backend")
+
     # -----------------------------------------------------------------
     banner("Step 1: Register actors")
     principal = register(client, "acme-ceo",          "principal")
@@ -181,6 +204,8 @@ def main() -> None:
     safety    = register(client, "acme-safety-cmte",  "safety-committee")
     for a in (principal, agent, audit_bot, safety):
         print(f"  {a.role:18s} {a.name:20s} -> {a.quid.id}")
+    client.wait_for_identities([principal.quid.id, agent.quid.id,
+                                  audit_bot.quid.id, safety.quid.id])
 
     # Guardian set for this agent: principal (w=1), safety (w=2),
     # audit-bot (w=1). threshold 2.
@@ -234,9 +259,9 @@ def main() -> None:
         target="contractor-x",
         reason="SaaS subscription",
     )
-    propose_action(client, agent, a1)
+    propose_action(client, agent, a1, [principal, audit_bot, safety])
     time.sleep(0.5)
-    events = agent_stream_as_dicts(client, agent)
+    events = action_stream_as_dicts(client, a1.action_id)
     d1 = evaluate_authorization(
         a1, [grant], guardian_set,
         extract_cosignatures(events), extract_vetoes(events),
@@ -257,11 +282,11 @@ def main() -> None:
         target="vendor-abc",
         reason="quarterly payment",
     )
-    propose_action(client, agent, a2)
+    propose_action(client, agent, a2, [principal, audit_bot, safety])
     time.sleep(0.5)
 
     # First pass: no cosignatures yet.
-    events = agent_stream_as_dicts(client, agent)
+    events = action_stream_as_dicts(client, a2.action_id)
     d2a = evaluate_authorization(
         a2, [grant], guardian_set,
         extract_cosignatures(events), extract_vetoes(events),
@@ -270,12 +295,12 @@ def main() -> None:
     show_verdict("MEDIUM pre-cosign", a2, d2a)
 
     # Cosigners append.
-    cosign(client, agent, audit_bot, a2.action_id)
+    cosign(client, audit_bot, a2.action_id)
     time.sleep(0.3)
-    cosign(client, agent, principal, a2.action_id)
-    time.sleep(0.5)
+    cosign(client, principal, a2.action_id)
+    time.sleep(1.0)
 
-    events = agent_stream_as_dicts(client, agent)
+    events = action_stream_as_dicts(client, a2.action_id)
     d2b = evaluate_authorization(
         a2, [grant], guardian_set,
         extract_cosignatures(events), extract_vetoes(events),
@@ -297,14 +322,13 @@ def main() -> None:
         target="new-vendor-ltd",
         reason="large purchase order",
     )
-    propose_action(client, agent, a3)
-    time.sleep(0.3)
+    propose_action(client, agent, a3, [principal, audit_bot, safety])
     # Safety committee publishes a veto event before cosigners can sign.
-    veto(client, agent, safety, a3.action_id,
+    veto(client, safety, a3.action_id,
          "anomalous pattern: vendor not previously seen")
-    time.sleep(0.5)
+    time.sleep(3.0)   # allow proposal + veto events to commit
 
-    events = agent_stream_as_dicts(client, agent)
+    events = action_stream_as_dicts(client, a3.action_id)
     d3 = evaluate_authorization(
         a3, [grant], guardian_set,
         extract_cosignatures(events), extract_vetoes(events),
@@ -326,9 +350,9 @@ def main() -> None:
         target="main branch",
         reason="dependency bump",
     )
-    propose_action(client, agent, a4)
-    time.sleep(0.3)
-    events = agent_stream_as_dicts(client, agent)
+    propose_action(client, agent, a4, [principal, audit_bot, safety])
+    time.sleep(0.5)
+    events = action_stream_as_dicts(client, a4.action_id)
     d4 = evaluate_authorization(
         a4, [grant], guardian_set,
         extract_cosignatures(events), extract_vetoes(events),
