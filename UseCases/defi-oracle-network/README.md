@@ -307,6 +307,24 @@ substrate that makes the economic model work cleanly.
 - [`implementation.md`](implementation.md) — concrete code
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/defi-oracle-network/`](../../examples/defi-oracle-network/):
+
+- `oracle_aggregation.py` — pure weighted-median aggregation
+  with MAD-based outlier filter, freshness window, trust
+  floor, and minimum-reporter count.
+- `oracle_aggregation_test.py` — 10 pytest cases.
+- `demo.py` — five-step end-to-end flow: four reporters, two
+  consumers with different trust graphs, consensus scenario,
+  outlier scenario across three policy variants.
+
+```bash
+cd examples/defi-oracle-network
+python demo.py
+```
+
 ## Related
 
 - [QDP-0005 Push Gossip](../../docs/design/0005-push-based-gossip.md) — propagation
