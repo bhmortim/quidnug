@@ -329,6 +329,24 @@ minutes.
 - [`implementation.md`](implementation.md) — concrete code
 - [`threat-model.md`](threat-model.md) — security analysis
 
+## Runnable POC
+
+Full end-to-end demo at
+[`examples/ai-content-authenticity/`](../../examples/ai-content-authenticity/):
+
+- `content_authenticity.py` — pure decision logic: hash-chain
+  check, min-of-chain trust, fact-check bonus, AI-generation
+  policy knob.
+- `content_authenticity_test.py` — 12 pytest cases.
+- `demo.py` — three scenarios (authentic news photo, tampered
+  chain, AI-generated) with three policy variants for the AI
+  case.
+
+```bash
+cd examples/ai-content-authenticity
+python demo.py
+```
+
 ## Related
 
 - [`../ai-model-provenance/`](../ai-model-provenance/) — for
