@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "NODE_ADVERTISEMENT",
-  "generated_at": "2026-04-20T23:11:58Z",
-  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
+  "generated_at": "2026-04-21T03:18:45Z",
+  "generator_commit": "066e4ae849dc1e54d414f9295f950de7569d6803",
   "canonical_form_notes": "json.Marshal(txCopy) on typed NodeAdvertisementTransaction struct with Signature=''",
   "cases": [
     {

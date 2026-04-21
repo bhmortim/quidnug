@@ -709,6 +709,51 @@ func genEventVectors(outDir string, keys []*testKey, commit, now string) error {
 				}
 			},
 		},
+		{
+			// REGRESSION GUARD: payload has keys inserted in
+			// deliberately non-alphabetical order, with a nested
+			// object also in non-alphabetical order. Any SDK that
+			// preserves insertion order instead of sorting
+			// nested-map keys alphabetically (to match Go's
+			// encoding/json default) will produce different
+			// canonical bytes than this vector expects and will
+			// fail signature verification server-side.
+			//
+			// This vector exists because several SDKs shipped with
+			// the alphabetical-keys-by-accident bug masked by
+			// test payloads that happened to already be sorted.
+			name: "event_payload_key_sort_regression_guard",
+			cmt: "Payload keys in non-alphabetical insertion order; nested object also non-alphabetical. SDKs MUST sort nested map keys alphabetically to match Go's encoding/json.",
+			signer: alice,
+			build: func(k *testKey) core.EventTransaction {
+				return core.EventTransaction{
+					BaseTransaction: core.BaseTransaction{
+						Type:        core.TxTypeEvent,
+						TrustDomain: "reviews.public.technology.laptops",
+						Timestamp:   baseTS + 172800,
+						PublicKey:   k.PubHex,
+					},
+					SubjectID:   k.QuidID,
+					SubjectType: "QUID",
+					Sequence:    3,
+					EventType:   "generic.test-payload",
+					Payload: map[string]interface{}{
+						// Reverse-alphabetical insertion order at top of payload.
+						"zebra":  1,
+						"apple":  2,
+						"mango":  3,
+						// Nested object with reverse-alphabetical insertion
+						// order. Serializers that only sort the top level of
+						// the payload but not nested objects will diverge here.
+						"nested": map[string]interface{}{
+							"yankee": "A",
+							"alpha":  "B",
+							"mike":   "C",
+						},
+					},
+				}
+			},
+		},
 	}
 
 	vf := vectorFile{

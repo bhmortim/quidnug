@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0",
   "tx_type": "EVENT",
-  "generated_at": "2026-04-20T23:11:58Z",
-  "generator_commit": "f95e709657fa5e131730ce877497c6c04ef3a3e3",
+  "generated_at": "2026-04-21T03:18:45Z",
+  "generator_commit": "066e4ae849dc1e54d414f9295f950de7569d6803",
   "canonical_form_notes": "json.Marshal(txCopy) on typed EventTransaction struct with Signature=''",
   "cases": [
     {
@@ -88,6 +88,41 @@
         "sha256_of_canonical_hex": "97d9cebf40301a669f1758f4549340d3cc023b9b457486d1c9d4ee0fae7f5114",
         "expected_id": "524981946931dc6867cd6fd99e8347ecf732f6dd0b94fb58d176db3fd01f400b",
         "reference_signature_hex": "f19215b0bc984e9d42993d52c9b2d1e8b289f3a589a434564156ff24a763b7af340b7d5017fd6f8c959643ebd73abbae9f0702d27977bbc0e311404cba82423b",
+        "signature_length_bytes": 64
+      }
+    },
+    {
+      "name": "event_payload_key_sort_regression_guard",
+      "comments": "Payload keys in non-alphabetical insertion order; nested object also non-alphabetical. SDKs MUST sort nested map keys alphabetically to match Go's encoding/json.",
+      "signer_key_ref": "alice",
+      "input": {
+        "id": "43551be631e3674fc2ea5c615eb95090e8ddc673cce1296a67696d1936181f66",
+        "type": "EVENT",
+        "trustDomain": "reviews.public.technology.laptops",
+        "timestamp": 1729641600,
+        "signature": "3e71a105797794826203b1466922bfce84ec72b59f572409c40bed6db9f99287451c41477695f2e3ea3ae0f875b97fc735703347c45a61d567500233d90e5396",
+        "publicKey": "0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243",
+        "subjectId": "c31907f180e6e1e0",
+        "subjectType": "QUID",
+        "sequence": 3,
+        "eventType": "generic.test-payload",
+        "payload": {
+          "apple": 2,
+          "mango": 3,
+          "nested": {
+            "alpha": "B",
+            "mike": "C",
+            "yankee": "A"
+          },
+          "zebra": 1
+        }
+      },
+      "expected": {
+        "canonical_signable_bytes_hex": "7b226964223a2234333535316265363331653336373466633265613563363135656239353039306538646463363733636365313239366136373639366431393336313831663636222c2274797065223a224556454e54222c227472757374446f6d61696e223a22726576696577732e7075626c69632e746563686e6f6c6f67792e6c6170746f7073222c2274696d657374616d70223a313732393634313630302c227369676e6174757265223a22222c227075626c69634b6579223a2230343231616663383739336563613130653966386163613561393937366631333338616366316266396138373139386632383930623634383034306562343561313662303937343038613539653736636361346338303761656631643334623061313263343036623331636366623239653834346365386133646232623630323433222c227375626a6563744964223a2263333139303766313830653665316530222c227375626a65637454797065223a2251554944222c2273657175656e6365223a332c226576656e7454797065223a2267656e657269632e746573742d7061796c6f6164222c227061796c6f6164223a7b226170706c65223a322c226d616e676f223a332c226e6573746564223a7b22616c706861223a2242222c226d696b65223a2243222c2279616e6b6565223a2241227d2c227a65627261223a317d7d",
+        "canonical_signable_bytes_utf8": "{\"id\":\"43551be631e3674fc2ea5c615eb95090e8ddc673cce1296a67696d1936181f66\",\"type\":\"EVENT\",\"trustDomain\":\"reviews.public.technology.laptops\",\"timestamp\":1729641600,\"signature\":\"\",\"publicKey\":\"0421afc8793eca10e9f8aca5a9976f1338acf1bf9a87198f2890b648040eb45a16b097408a59e76cca4c807aef1d34b0a12c406b31ccfb29e844ce8a3db2b60243\",\"subjectId\":\"c31907f180e6e1e0\",\"subjectType\":\"QUID\",\"sequence\":3,\"eventType\":\"generic.test-payload\",\"payload\":{\"apple\":2,\"mango\":3,\"nested\":{\"alpha\":\"B\",\"mike\":\"C\",\"yankee\":\"A\"},\"zebra\":1}}",
+        "sha256_of_canonical_hex": "4d500fe76c9333f27fbf299fc88d464038188867d395d936d2be12e71970bb95",
+        "expected_id": "43551be631e3674fc2ea5c615eb95090e8ddc673cce1296a67696d1936181f66",
+        "reference_signature_hex": "3e71a105797794826203b1466922bfce84ec72b59f572409c40bed6db9f99287451c41477695f2e3ea3ae0f875b97fc735703347c45a61d567500233d90e5396",
         "signature_length_bytes": 64
       }
     }
