@@ -305,7 +305,8 @@ No new wire format needed — reuse the base protocol.
 - **True deletion:** not possible in an append-only log.
   GDPR-right-to-erasure is handled at the presentation layer
   by suppressing display of any content from a quid that has
-  published a valid ERASE_REQUEST event (spec TBD in QRP-0002).
+  published a valid ERASE_REQUEST event (spec in
+  [QRP-0002 §5.4](QRP-0002.md#54-erase_request-event-type)).
 
 ## 7. Governance of the public tree
 

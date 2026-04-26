@@ -58,6 +58,12 @@ take a proposal from idea to Landed.
 ## Related namespaces
 
 - **QRP-NNNN** Quidnug Reviews Protocol, application-layer
-  spec for the reviews ecosystem. See
-  [`examples/reviews-and-comments/PROTOCOL.md`](../../examples/reviews-and-comments/PROTOCOL.md)
-  for QRP-0001.
+  spec for the reviews ecosystem. Active QRPs:
+  - [QRP-0001](../../examples/reviews-and-comments/PROTOCOL.md)
+    base protocol (event types, domain scheme).
+  - [QRP-0002](../../examples/reviews-and-comments/QRP-0002.md)
+    Reviews Protocol Amendments (Draft): DISCLOSURE event,
+    mandatory disclosure field in REVIEW, validation-tier
+    resolution, ERASE_REQUEST, PROFILE_DECLARATION, TIP,
+    BRAND_BID/BID_ACCEPT, moderation subdomain spec,
+    PURCHASE multi-currency, federation discount handling.
