@@ -1,10 +1,16 @@
-"""Trust-weighted review rating — reference Python implementation.
+"""Trust-weighted review rating - reference Python implementation.
 
 Implements QRP-0001 §Algorithm with the four factors described
 in algorithm.md: topical transitive trust (T), helpfulness
 reputation (H), activity (A), recency (R).
 
-The implementation is intentionally dependency-light — only the
+Extended per QRP-0002 to return:
+- anonymous baseline rating (operator-rooted) alongside per-observer
+- polarization (weighted spread of contributors)
+- confidence percentage (graph-density signal)
+- top intermediary per contribution (path explanation)
+
+The implementation is intentionally dependency-light: only the
 Quidnug Python SDK is imported. Any web framework, async
 runtime, or cache layer can wrap this.
 
@@ -14,7 +20,10 @@ Usage:
     from quidnug_reviews.algorithm import TrustWeightedRater
 
     client = QuidnugClient("http://localhost:8080")
-    rater = TrustWeightedRater(client)
+    rater = TrustWeightedRater(
+        client,
+        baseline_observer_quid="operators_root_quid",  # the operator-baseline observer
+    )
 
     result = rater.effective_rating(
         observer="alice1234abcd5678",
@@ -22,8 +31,11 @@ Usage:
         topic="reviews.public.technology.laptops",
     )
 
-    print(f"Rating: {result.rating:.2f} ± {result.confidence_range:.2f}")
-    print(f"Based on {result.contributing_reviews} weighted reviews")
+    print(f"For you:    {result.rating:.2f} ± {result.confidence_range:.2f}")
+    print(f"Anonymous:  {result.anonymous_baseline_rating:.2f}")
+    print(f"Delta:      {result.personalization_delta:+.2f}")
+    print(f"Confidence: {result.confidence_pct:.0f}%")
+    print(f"Spread:     {result.polarization:.2f} (0=tight, 1=wide)")
 """
 
 from __future__ import annotations
@@ -61,6 +73,15 @@ class RaterConfig:
     # Maximum votes to load per reviewer (caps worst-case cost).
     max_votes_per_reviewer: int = 1000
 
+    # QRP-0002 additions:
+    # Total weight at which confidence reaches 100%. Below this,
+    # confidence scales linearly toward 0.
+    confidence_full_weight: float = 5.0
+    # Contributing-reviews count at which confidence reaches 100%.
+    confidence_full_contributors: int = 10
+    # Display rating scale (5 by convention; observers may render at any scale).
+    display_max_rating: float = 5.0
+
 
 # --- Result shapes ---------------------------------------------------------
 
@@ -78,11 +99,19 @@ class ReviewContribution:
     a_component: float
     r_component: float
     age_days: float
+    # QRP-0002: best-known intermediary on the trust path (when SDK
+    # exposes it). None means direct edge or path not surfaced.
+    top_intermediary_quid: Optional[str] = None
 
 
 @dataclass
 class WeightedRatingResult:
-    """The full per-observer rating computation."""
+    """The full per-observer rating computation.
+
+    QRP-0002 extends this with anonymous_baseline_rating,
+    personalization_delta, confidence_pct, and polarization to
+    support the design brief's first-class dual-rating UI.
+    """
 
     product: str
     topic: str
@@ -95,6 +124,13 @@ class WeightedRatingResult:
     confidence_range: float = 0.0
     computed_at: float = 0.0
 
+    # QRP-0002 additions:
+    anonymous_baseline_rating: Optional[float] = None
+    anonymous_baseline_total_weight: float = 0.0
+    personalization_delta: Optional[float] = None
+    confidence_pct: float = 0.0
+    polarization: float = 0.0
+
 
 # --- Algorithm -------------------------------------------------------------
 
@@ -102,9 +138,19 @@ class WeightedRatingResult:
 class TrustWeightedRater:
     """Compute per-observer effective ratings for a product title."""
 
-    def __init__(self, client: QuidnugClient, config: Optional[RaterConfig] = None):
+    def __init__(
+        self,
+        client: QuidnugClient,
+        config: Optional[RaterConfig] = None,
+        baseline_observer_quid: Optional[str] = None,
+    ):
         self.client = client
         self.config = config or RaterConfig()
+        # The "anonymous observer" used for baseline computation. Per
+        # QRP-0002 §5.3, this is typically the recognized validation-
+        # operator root, so the baseline is "what everyone with operator-
+        # trust sees" rather than an empty graph.
+        self.baseline_observer_quid = baseline_observer_quid
         # Simple in-process caches keyed by (observer, target, topic).
         # Real deployments substitute Redis / Memcached.
         self._trust_cache: Dict[Tuple[str, str, str, int], Optional[float]] = {}
@@ -119,7 +165,13 @@ class TrustWeightedRater:
         product: str,
         topic: str,
     ) -> WeightedRatingResult:
-        """Compute the observer's effective rating for the product."""
+        """Compute the observer's effective rating + anonymous baseline.
+
+        Returns a WeightedRatingResult populated with both the per-
+        observer rating and the anonymous baseline (when
+        baseline_observer_quid is configured), along with confidence
+        percentage and polarization.
+        """
         result = WeightedRatingResult(
             product=product,
             topic=topic,
@@ -138,6 +190,11 @@ class TrustWeightedRater:
         weighted_sum = 0.0
         total_weight = 0.0
 
+        # Parallel sums for the anonymous baseline.
+        baseline_weighted_sum = 0.0
+        baseline_total_weight = 0.0
+        compute_baseline = self.baseline_observer_quid is not None
+
         for ev in reviews:
             reviewer = ev.creator
             if not reviewer or reviewer == observer:
@@ -151,13 +208,28 @@ class TrustWeightedRater:
             # Normalize to a 0-1 scale internally so mixing scales works.
             normalized = float(raw_rating) / float(max_rating)
 
+            # Per-observer weight
             t = self._topical_trust(observer, reviewer, topic, self.config.max_depth_t)
-            if t <= 0:
-                continue  # no basis to include
-
             h = self._helpfulness(observer, reviewer, topic)
             a = self._activity(reviewer, topic)
             r, age_days = self._recency(ev.timestamp)
+
+            # Anonymous baseline weight (uses baseline observer quid)
+            if compute_baseline and reviewer != self.baseline_observer_quid:
+                t_baseline = self._topical_trust(
+                    self.baseline_observer_quid, reviewer, topic, self.config.max_depth_t
+                )
+                h_baseline = self._helpfulness(
+                    self.baseline_observer_quid, reviewer, topic
+                )
+                w_baseline = t_baseline * h_baseline * a * r
+                if w_baseline >= self.config.min_weight_threshold:
+                    baseline_weighted_sum += normalized * w_baseline
+                    baseline_total_weight += w_baseline
+
+            # Skip per-observer contribution if no trust basis.
+            if t <= 0:
+                continue
 
             w = t * h * a * r
             if w < self.config.min_weight_threshold:
@@ -167,13 +239,16 @@ class TrustWeightedRater:
                 ReviewContribution(
                     review_tx_id=payload.get("txId") or _fallback_id(ev),
                     reviewer_quid=reviewer,
-                    rating=normalized * max_rating,  # back to display scale
+                    rating=normalized * self.config.display_max_rating,
                     weight=w,
                     t_component=t,
                     h_component=h,
                     a_component=a,
                     r_component=r,
                     age_days=age_days,
+                    # SDK currently exposes only trust_level, not the path.
+                    # When the SDK adds get_trust_path(), populate here.
+                    top_intermediary_quid=None,
                 )
             )
             weighted_sum += normalized * w
@@ -182,22 +257,59 @@ class TrustWeightedRater:
         result.contributions = contributions
         result.contributing_reviews = len(contributions)
         result.total_weight = total_weight
+        result.anonymous_baseline_total_weight = baseline_total_weight
 
+        # Per-observer rating
         if total_weight > 0:
-            # Scale back to the display scale of the dominant contributor;
-            # if max_rating varies, we return normalized-to-5 by default.
             normalized_avg = weighted_sum / total_weight
-            result.rating = normalized_avg * 5.0
-            # Confidence range: wider with fewer trusted reviews. Heuristic:
-            # half the stddev across contributions, clamped.
+            result.rating = normalized_avg * self.config.display_max_rating
             result.confidence_range = self._confidence_range(contributions)
+            result.polarization = self._polarization(contributions)
         else:
             result.rating = None
 
+        # Anonymous baseline rating
+        if compute_baseline and baseline_total_weight > 0:
+            baseline_normalized = baseline_weighted_sum / baseline_total_weight
+            result.anonymous_baseline_rating = (
+                baseline_normalized * self.config.display_max_rating
+            )
+            if result.rating is not None:
+                result.personalization_delta = (
+                    result.rating - result.anonymous_baseline_rating
+                )
+
+        # Confidence percentage (graph-density signal, not the same as
+        # the numeric confidence_range).
+        result.confidence_pct = self._confidence_pct(
+            total_weight, len(contributions)
+        )
+
         return result
 
+    def anonymous_baseline_rating(
+        self,
+        product: str,
+        topic: str,
+    ) -> WeightedRatingResult:
+        """Compute the anonymous-baseline rating as a standalone call.
+
+        Useful for SEO/Schema.org rendering where the per-observer
+        rating is irrelevant (search-engine crawlers see the baseline).
+        """
+        if not self.baseline_observer_quid:
+            raise ValueError(
+                "anonymous_baseline_rating requires baseline_observer_quid "
+                "to be configured on the rater."
+            )
+        return self.effective_rating(
+            observer=self.baseline_observer_quid,
+            product=product,
+            topic=topic,
+        )
+
     # =====================================================================
-    # Factor T — topical transitive trust, with topic-inheritance fallback
+    # Factor T - topical transitive trust, with topic-inheritance fallback
     # =====================================================================
 
     def _topical_trust(self, observer: str, target: str, topic: str, max_depth: int) -> float:
@@ -232,7 +344,7 @@ class TrustWeightedRater:
             return 0.0
 
     # =====================================================================
-    # Factor H — helpfulness reputation
+    # Factor H - helpfulness reputation
     # =====================================================================
 
     def _helpfulness(self, observer: str, reviewer: str, topic: str) -> float:
@@ -273,7 +385,7 @@ class TrustWeightedRater:
         return max(self.config.helpfulness_floor, raw)
 
     # =====================================================================
-    # Factor A — activity
+    # Factor A - activity
     # =====================================================================
 
     def _activity(self, reviewer: str, topic: str) -> float:
@@ -302,7 +414,7 @@ class TrustWeightedRater:
         return min(1.0, math.log(count + 1) / math.log(saturation))
 
     # =====================================================================
-    # Factor R — recency
+    # Factor R - recency
     # =====================================================================
 
     def _recency(self, timestamp: Optional[int]) -> Tuple[float, float]:
@@ -336,11 +448,11 @@ class TrustWeightedRater:
         ]
 
     # =====================================================================
-    # Confidence
+    # Confidence and polarization (QRP-0002)
     # =====================================================================
 
     def _confidence_range(self, contributions: List[ReviewContribution]) -> float:
-        """±-style confidence based on contribution spread + sample size."""
+        """+/- style confidence based on contribution spread + sample size."""
         if not contributions:
             return 1.0  # maximum uncertainty
         total_w = sum(c.weight for c in contributions)
@@ -355,6 +467,44 @@ class TrustWeightedRater:
         effective_n = max(1.0, total_w * 2)
         interval = stddev / math.sqrt(effective_n)
         return min(2.5, interval)
+
+    def _polarization(self, contributions: List[ReviewContribution]) -> float:
+        """Weighted spread normalized to [0, 1].
+
+        0.0: all contributors agree (stddev=0)
+        1.0: maximum spread (stddev = max possible for the scale)
+
+        For a 0-5 scale, max stddev is 2.5 (half the range).
+        """
+        if not contributions:
+            return 0.0
+        total_w = sum(c.weight for c in contributions)
+        if total_w == 0:
+            return 0.0
+        mean = sum(c.rating * c.weight for c in contributions) / total_w
+        var = sum(c.weight * (c.rating - mean) ** 2 for c in contributions) / total_w
+        stddev = math.sqrt(max(0.0, var))
+        max_stddev = self.config.display_max_rating / 2.0
+        return min(1.0, stddev / max_stddev) if max_stddev > 0 else 0.0
+
+    def _confidence_pct(self, total_weight: float, contributing_reviews: int) -> float:
+        """Graph-density signal: how solid is this rating?
+
+        Reaches 100% when both total_weight >= confidence_full_weight
+        AND contributing_reviews >= confidence_full_contributors.
+        Scales sub-linearly below that.
+
+        Returns a value in [0, 100].
+        """
+        if total_weight <= 0 or contributing_reviews <= 0:
+            return 0.0
+        weight_factor = min(1.0, total_weight / self.config.confidence_full_weight)
+        count_factor = min(
+            1.0, contributing_reviews / self.config.confidence_full_contributors
+        )
+        # Geometric mean keeps both factors honest. Either being low
+        # pulls the percentage down.
+        return math.sqrt(weight_factor * count_factor) * 100.0
 
 
 # --- Helpers ---------------------------------------------------------------

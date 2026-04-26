@@ -208,6 +208,108 @@ can tune them:
 Sites should publish their tuning so reviewers understand what
 they're optimizing for.
 
+## QRP-0002 algorithm extensions
+
+QRP-0002 extends the algorithm output without changing the
+core four-factor weighting. New fields populated on every
+`effective_rating()` call:
+
+| Field                              | Type           | Meaning                                                                      |
+|------------------------------------|----------------|------------------------------------------------------------------------------|
+| `anonymous_baseline_rating`        | float or None  | The rating an observer with operator-only trust would see. Same product, no observer trust graph. |
+| `anonymous_baseline_total_weight`  | float          | Total weight contributing to the baseline.                                   |
+| `personalization_delta`            | float or None  | `rating - anonymous_baseline_rating`. The "for you" adjustment.              |
+| `confidence_pct`                   | float [0,100]  | Graph-density signal: how solid is this rating? Reaches 100% at high weight + many contributors. |
+| `polarization`                     | float [0,1]    | Weighted spread of contributors. 0=tight agreement, 1=maximum spread.        |
+| `top_intermediary_quid` (per contribution) | str or None | Best-known intermediary on the trust path. Populated when SDK exposes path. |
+
+### Computing the anonymous baseline
+
+To compute the baseline, the rater is configured with a
+`baseline_observer_quid`: by convention, the recognized
+validation-operator root for the network (initially Quidnug
+LLC's `validation-operator-quid`, per QRP-0002 §5.3). The
+baseline computation runs with this quid as the observer in
+parallel with the per-observer computation.
+
+For each review `r`, the baseline weight uses the same `H`,
+`A`, and `R` factors but recomputes `T` from the operator
+root:
+
+```
+T_baseline(r) = topical_trust(operator_root, r.reviewer, topic)
+H_baseline(r) = helpfulness(operator_root, r.reviewer, topic)
+A and R are observer-independent
+w_baseline(r) = T_baseline × H_baseline × A × R
+```
+
+The baseline rating is then:
+
+```
+baseline_rating = Σ r.rating × w_baseline(r) / Σ w_baseline(r)
+```
+
+### Computing confidence percentage
+
+```
+confidence_pct = sqrt(
+    min(1, total_weight / config.confidence_full_weight) ×
+    min(1, contributing_reviews / config.confidence_full_contributors)
+) × 100
+```
+
+Defaults: `confidence_full_weight=5.0`,
+`confidence_full_contributors=10`. A rating from one tightly-
+trusted reviewer (`total_weight=0.9, contributing_reviews=1`)
+returns ~13%; from ten reviewers averaging weight 0.5 each
+(`total_weight=5.0, contributing_reviews=10`) returns 100%.
+
+The geometric mean ensures both factors matter: 100 reviewers
+of trust 0.001 each don't get a confidence boost, and one
+reviewer of trust 1.0 doesn't either.
+
+### Computing polarization
+
+```
+polarization = stddev(contributions) / (display_max_rating / 2)
+```
+
+Where `stddev` is the weighted standard deviation of
+contributor ratings. A polarization of 0.0 means all trusted
+contributors agree (e.g., all rated 4.5); 1.0 means maximum
+spread (e.g., half rated 0, half rated 5). UIs can render
+this as "trusted sources agree" vs "trusted sources split."
+
+### Top intermediary (path explanation)
+
+The `top_intermediary_quid` field on each `ReviewContribution`
+is populated when the SDK exposes path information. Today
+the field is reserved (always None) until the SDK adds
+`get_trust_path()`. UIs that render "via Bob" can prepare for
+this by treating the field as optional and falling back to
+the contribution weight alone.
+
+### Standalone anonymous baseline
+
+For SEO and Schema.org rendering, where the per-observer
+rating is irrelevant (search engines index the baseline), use
+`rater.anonymous_baseline_rating(product, topic)` directly:
+
+```python
+result = rater.anonymous_baseline_rating(
+    product="laptop-xps15-asin-b0c1234",
+    topic="reviews.public.technology.laptops",
+)
+schema_org_json = {
+    "@type": "AggregateRating",
+    "ratingValue": result.rating,
+    "ratingCount": result.contributing_reviews,
+}
+```
+
+The anonymous baseline is consistent across observers and is
+the correct value for static, SEO-targeted rendering.
+
 ## License
 
 Apache-2.0.
