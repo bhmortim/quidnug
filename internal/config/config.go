@@ -74,7 +74,7 @@ type Config struct {
 // fileConfig is used for parsing config files with string durations
 type fileConfig struct {
 	Port                    string   `json:"port" yaml:"port"`
-	SeedNodes               []string `json:"seedNodes" yaml:"seed_nodes"`
+	SeedNodes               *[]string `json:"seedNodes" yaml:"seed_nodes"` // ENG-16: pointer distinguishes "omitted" from "explicitly empty"
 	LogLevel                string   `json:"logLevel" yaml:"log_level"`
 	BlockInterval           string   `json:"blockInterval" yaml:"block_interval"`
 	RateLimitPerMinute      int      `json:"rateLimitPerMinute" yaml:"rate_limit_per_minute"`
@@ -155,7 +155,6 @@ func LoadConfigFromFile(path string) (*Config, error) {
 func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 	cfg := &Config{
 		Port:               fc.Port,
-		SeedNodes:          fc.SeedNodes,
 		LogLevel:           fc.LogLevel,
 		RateLimitPerMinute: fc.RateLimitPerMinute,
 		MaxBodySizeBytes:   fc.MaxBodySizeBytes,
@@ -163,6 +162,11 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		NodeAuthSecret:     fc.NodeAuthSecret,
 		RequireNodeAuth:    fc.RequireNodeAuth,
 		SupportedDomains:   fc.SupportedDomains,
+	}
+
+	// ENG-16: propagate explicit empty seed_nodes from file config.
+	if fc.SeedNodes != nil {
+		cfg.SeedNodes = *fc.SeedNodes
 	}
 
 	if fc.AllowDomainRegistration != nil {
@@ -284,7 +288,7 @@ func LoadConfig() *Config {
 			if fileCfg.Port != "" {
 				cfg.Port = fileCfg.Port
 			}
-			if len(fileCfg.SeedNodes) > 0 {
+			if fileCfg.SeedNodes != nil { // ENG-16: nil means omitted; empty means explicit override
 				cfg.SeedNodes = fileCfg.SeedNodes
 			}
 			if fileCfg.LogLevel != "" {
@@ -354,7 +358,7 @@ func LoadConfig() *Config {
 
 	if seedNodesEnv := os.Getenv("SEED_NODES"); seedNodesEnv != "" {
 		var seedNodes []string
-		if err := json.Unmarshal([]byte(seedNodesEnv), &seedNodes); err == nil && len(seedNodes) > 0 {
+		if err := json.Unmarshal([]byte(seedNodesEnv), &seedNodes); err == nil { // ENG-16: accept explicit empty list
 			cfg.SeedNodes = seedNodes
 		}
 	}
