@@ -80,7 +80,7 @@ mirror, the main breaking changes are:
 - Namespace: `from quidnug import QuidnugClient, Quid` (not
   `from quidnug.client import ...`).
 - Method names: `client.grant_trust(signer, trustee=, level=, ...)`.
-- Async: sync-only in 2.0.0; async client planned for 2.1.0.
+- Async: sync-only in 2.0.0; async client (`quidnug.async_client`) shipped in 2.1.0.
 
 ## Go
 
