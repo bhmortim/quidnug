@@ -68,8 +68,8 @@ Quidnug supports three core transaction types:
 To interact with Quidnug, your application needs to create or import quids:
 
 ```javascript
-// Example in JavaScript
-const quidnugClient = new QuidnugClient();
+// Example in JavaScript (v2 SDK)
+const quidnugClient = new QuidnugClient({ defaultNode: 'http://localhost:8080' });
 
 // Generate a new quid
 const userQuid = await quidnugClient.generateQuid();
@@ -79,8 +79,8 @@ localStorage.setItem('userQuidPublicKey', userQuid.publicKey);
 localStorage.setItem('userQuidPrivateKey', userQuid.privateKey);
 console.log("Your Quid ID:", userQuid.id);
 
-// Import an existing quid (requires both privateKey and publicKey)
-const importedQuid = await quidnugClient.importQuid({ privateKey, publicKey });
+// Import an existing quid
+const importedQuid = await quidnugClient.importQuid(privateKey);
 ```
 
 ### 2. Connecting to Quidnug Nodes
@@ -88,8 +88,7 @@ const importedQuid = await quidnugClient.importQuid({ privateKey, publicKey });
 Your application needs to connect to one or more Quidnug nodes:
 
 ```javascript
-// Add nodes to the pool (synchronous — no await)
-quidnugClient.addNode('https://quidnug-node.example.com');
+// The defaultNode is set in the constructor; use addNode() for additional peers.
 quidnugClient.addNode('https://quidnug-node2.example.com');
 quidnugClient.addNode('https://quidnug-node3.example.com');
 
@@ -102,15 +101,15 @@ const propertyNodes = await quidnugClient.findNodesForDomain('real-estate.travis
 Creating and submitting transactions:
 
 ```javascript
-// Create a trust transaction (userQuid is the truster/signer)
+// Create and sign a trust transaction; userQuid becomes the truster.
 const trustTx = await quidnugClient.createTrustTransaction({
   trustee: 'quid_id_to_trust',   // Target quid to trust
   domain: 'example.com',         // Trust domain
   trustLevel: 0.9,               // Trust level (0.0 to 1.0)
-  validUntil: 1672531200         // Optional expiration (Unix seconds)
+  validUntil: 1672531200000      // Optional expiration (milliseconds since epoch)
 }, userQuid);
 
-// Submit the transaction
+// Submit the signed transaction
 const txResult = await quidnugClient.submitTransaction(trustTx);
 console.log("Transaction ID:", txResult.txId);
 
@@ -124,7 +123,7 @@ const identityTx = await quidnugClient.createIdentityTransaction({
     location: 'Austin, TX',
     website: 'https://example.com'
   }
-}, userQuid);
+});
 
 // Create a title transaction
 const titleTx = await quidnugClient.createTitleTransaction({
@@ -134,7 +133,7 @@ const titleTx = await quidnugClient.createTitleTransaction({
     { ownerId: 'owner1_quid_id', percentage: 75.0 },
     { ownerId: 'owner2_quid_id', percentage: 25.0 }
   ]
-}, userQuid);
+});
 ```
 
 ### 4. Querying the Quidnug Network
@@ -453,10 +452,10 @@ async function transferAssetOwnership(assetQuidId, newOwners, domain, userQuid) 
     domain: domain,
     ownershipMap: newOwners,
     prevTitleTxID: currentTitle.txId
-  }, userQuid);
+  });
   
   // Sign and submit
-  return await quidnugClient.submitTransaction(titleTx);
+  return await quidnugClient.submitTransaction(titleTx, userQuid);
 }
 ```
 
@@ -495,12 +494,10 @@ const multiSigTitle = await quidnugClient.createTitleTransaction({
   ownershipMap: [{ ownerId: 'owner_quid', percentage: 100.0 }],
   requireSignatures: ['trustee1', 'trustee2', 'trustee3'],
   requiredSignatureCount: 2  // At least 2 of 3 must sign
-}, userQuid);
+});
 ```
 
 ### Trust Domain Governance
-
-> **Note:** `createGovernanceProposal` and `voteOnProposal` are not part of the current SDK surface. Domain-feature activation uses the fork-block flow (QDP-0009) via `submitForkBlock` / `getForkBlockStatus` on the v2 client. The example below is retained for historical reference.
 
 For managing domain rules:
 
@@ -632,12 +629,13 @@ When you establish trust in a new validator, tentative blocks from that validato
 
 ```javascript
 // 1. Establish trust in a validator
-const tx = await quidnugClient.createTrustTransaction({
+await quidnugClient.submitTransaction({
+  type: 'TRUST',
+  truster: myQuidId,
   trustee: newValidatorQuid,
-  domain: 'example.com',
   trustLevel: 0.85,
-}, myQuid);
-await quidnugClient.submitTransaction(tx);
+  domain: 'example.com'
+});
 
 // 2. Node will automatically re-evaluate tentative blocks
 // Or explicitly trigger re-evaluation via node admin API
