@@ -79,8 +79,8 @@ localStorage.setItem('userQuidPublicKey', userQuid.publicKey);
 localStorage.setItem('userQuidPrivateKey', userQuid.privateKey);
 console.log("Your Quid ID:", userQuid.id);
 
-// Import an existing quid
-const importedQuid = await quidnugClient.importQuid(privateKey);
+// Import an existing quid (both private and public keys required)
+const importedQuid = await quidnugClient.importQuid({ privateKey, publicKey });
 ```
 
 ### 2. Connecting to Quidnug Nodes
@@ -106,12 +106,12 @@ const trustTx = await quidnugClient.createTrustTransaction({
   trustee: 'quid_id_to_trust',   // Target quid to trust
   domain: 'example.com',         // Trust domain
   trustLevel: 0.9,               // Trust level (0.0 to 1.0)
-  validUntil: 1672531200000      // Optional expiration (milliseconds since epoch)
+  validUntil: 1672531200         // Optional expiration (Unix timestamp in seconds)
 }, userQuid);
 
 // Submit the signed transaction
 const txResult = await quidnugClient.submitTransaction(trustTx);
-console.log("Transaction ID:", txResult.txId);
+console.log("Transaction ID:", txResult.data?.transaction_id);
 
 // Create an identity transaction
 const identityTx = await quidnugClient.createIdentityTransaction({
@@ -123,7 +123,7 @@ const identityTx = await quidnugClient.createIdentityTransaction({
     location: 'Austin, TX',
     website: 'https://example.com'
   }
-});
+}, userQuid);
 
 // Create a title transaction
 const titleTx = await quidnugClient.createTitleTransaction({
@@ -133,7 +133,7 @@ const titleTx = await quidnugClient.createTitleTransaction({
     { ownerId: 'owner1_quid_id', percentage: 75.0 },
     { ownerId: 'owner2_quid_id', percentage: 25.0 }
   ]
-});
+}, userQuid);
 ```
 
 ### 4. Querying the Quidnug Network
@@ -238,7 +238,7 @@ For payloads exceeding 64KB, use IPFS to store content externally:
 const largeDocument = JSON.stringify(detailedAuditReport);
 const pinResult = await fetch('http://localhost:8080/api/ipfs/pin', {
   method: 'POST',
-  headers: { 'Content-Type': 'text/plain' },
+  headers: { 'Content-Type': 'application/json' },
   body: largeDocument
 }).then(r => r.json());
 const cid = pinResult.cid;
@@ -474,10 +474,10 @@ async function transferAssetOwnership(assetQuidId, newOwners, domain, userQuid) 
     domain: domain,
     ownershipMap: newOwners,
     prevTitleTxID: currentTitle.txId
-  });
+  }, userQuid);
   
   // Sign and submit
-  return await quidnugClient.submitTransaction(titleTx, userQuid);
+  return await quidnugClient.submitTransaction(titleTx);
 }
 ```
 
@@ -516,7 +516,7 @@ const multiSigTitle = await quidnugClient.createTitleTransaction({
   ownershipMap: [{ ownerId: 'owner_quid', percentage: 100.0 }],
   requireSignatures: ['trustee1', 'trustee2', 'trustee3'],
   requiredSignatureCount: 2  // At least 2 of 3 must sign
-});
+}, userQuid);
 ```
 
 ### Trust Domain Governance

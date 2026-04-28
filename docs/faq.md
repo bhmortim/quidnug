@@ -63,8 +63,8 @@ nonce the node has already seen for this signer.
 - For TRUST / IDENTITY transactions: the nonce is monotonic per
   signer-domain pair. Read the current nonce from the registry
   before submitting, then use `last + 1`.
-- For ANCHOR transactions: nonces are global per domain, not
-  per-signer.
+- For ANCHOR transactions: nonces are global per domain, not per-signer.
+  _(The `ANCHOR` transaction type does not appear in the current spec or SDK. This entry may reference a removed or renamed feature — human review needed before relying on this.)_
 
 The SDKs default to nonce `1` for convenience, which works for a
 fresh signer but will fail if the same signer has already
