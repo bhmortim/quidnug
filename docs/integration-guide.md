@@ -506,6 +506,11 @@ async function transferAssetOwnership(assetQuidId, newOwners, domain, userQuid) 
 
 ### Multi-signature Capabilities
 
+> **Not yet in SDK.** `requireSignatures` and `requiredSignatureCount` are not fields
+> in `CreateTitleTransactionParams` — the SDK ignores them silently. Multi-signature
+> title enforcement is not in the current OpenAPI spec or `@quidnug/client` (v1 or v2).
+> Human review needed before this example is relied on.
+
 For high-security applications:
 
 ```javascript
@@ -520,6 +525,11 @@ const multiSigTitle = await quidnugClient.createTitleTransaction({
 ```
 
 ### Trust Domain Governance
+
+> **Not yet in SDK.** `createGovernanceProposal` and `voteOnProposal` are not methods
+> on `QuidnugClient` (v1 or v2). Domain governance HTTP endpoints are pending
+> (QDP-0012 Phase 2). The example below describes the intended interface — not
+> current functionality.
 
 For managing domain rules:
 
