@@ -519,7 +519,7 @@ func TestGetNodesHandler(t *testing.T) {
 	node := newTestNode()
 	router := setupTestRouter(node)
 
-	req := httptest.NewRequest("GET", "/api/nodes", nil)
+	req := httptest.NewRequest("GET", "/api/v1/nodes", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -1128,7 +1128,7 @@ func TestGetNodesHandlerPagination(t *testing.T) {
 	node := newTestNode()
 	router := setupTestRouter(node)
 
-	req := httptest.NewRequest("GET", "/api/nodes?limit=5", nil)
+	req := httptest.NewRequest("GET", "/api/v1/nodes?limit=5", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
