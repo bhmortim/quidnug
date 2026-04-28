@@ -146,14 +146,47 @@ func TestLoadConfigInvalidSeedNodesJSON(t *testing.T) {
 }
 
 func TestLoadConfigEmptySeedNodesArray(t *testing.T) {
+	ClearConfigEnvVarsForTesting()
+
 	os.Setenv("SEED_NODES", "[]")
-	defer os.Unsetenv("SEED_NODES")
+	defer ClearConfigEnvVarsForTesting()
 
 	cfg := LoadConfig()
 
-	// Should fall back to defaults when array is empty
-	if len(cfg.SeedNodes) != 2 {
-		t.Errorf("Expected 2 default seed nodes on empty array, got %d", len(cfg.SeedNodes))
+	// ENG-16: explicit empty list overrides defaults
+	if len(cfg.SeedNodes) != 0 {
+		t.Errorf("Expected 0 seed nodes for explicit empty SEED_NODES env, got %d", len(cfg.SeedNodes))
+	}
+	if cfg.SeedNodes == nil {
+		t.Error("Expected non-nil empty slice for explicit empty SEED_NODES env, got nil")
+	}
+}
+
+func TestLoadConfigEmptySeedNodesFromYAMLFile(t *testing.T) {
+	ClearConfigEnvVarsForTesting()
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	yamlContent := `
+port: "8080"
+seed_nodes: []
+`
+	if err := os.WriteFile(configPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	os.Setenv("CONFIG_FILE", configPath)
+	defer ClearConfigEnvVarsForTesting()
+
+	cfg := LoadConfig()
+
+	// ENG-16: explicit empty seed_nodes in YAML overrides defaults
+	if len(cfg.SeedNodes) != 0 {
+		t.Errorf("Expected 0 seed nodes for explicit empty seed_nodes in YAML, got %d: %v", len(cfg.SeedNodes), cfg.SeedNodes)
+	}
+	if cfg.SeedNodes == nil {
+		t.Error("Expected non-nil empty slice for explicit empty seed_nodes in YAML, got nil")
 	}
 }
 
