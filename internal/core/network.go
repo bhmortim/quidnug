@@ -46,7 +46,8 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		}
 
 		// Create request with context for cancellation
-		reqURL := fmt.Sprintf("http://%s/api/nodes", seedAddress)
+		// ENG-56: discovery must use the v1 API path served by the current router.
+		reqURL := fmt.Sprintf("http://%s/api/v1/nodes", seedAddress)
 		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 		if err != nil {
 			logger.Warn("Failed to create request for seed node", "seedAddress", seedAddress, "error", err)

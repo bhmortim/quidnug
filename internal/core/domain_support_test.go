@@ -947,7 +947,7 @@ func TestDiscoverFromSeeds_PopulatesDomains(t *testing.T) {
 	// Create a test server simulating a seed node
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/nodes":
+		case "/api/v1/nodes":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"nodes": []map[string]interface{}{
@@ -1015,7 +1015,7 @@ func TestDiscoverFromSeeds_UpdatesDomainRegistry(t *testing.T) {
 
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/nodes":
+		case "/api/v1/nodes":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"nodes": []map[string]interface{}{
