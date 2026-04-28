@@ -167,35 +167,42 @@ console.log("Owners:", ownership.ownershipMap);
 
 Event streams provide an immutable, append-only history for any quid or title. Each event is sequenced and cannot be modified once recorded, making them ideal for audit logs, activity feeds, and state change tracking.
 
+> **Note:** The `@quidnug/client` JavaScript SDK does not currently wrap event stream endpoints. The examples in this section call the REST API directly via `fetch()`. For a typed interface, use the Go client (`pkg/client`): `c.EmitEvent`, `c.GetEventStream`, `c.GetStreamEvents`.
+
 #### Creating Event Transactions
 
-Record events against a subject (quid or title) using `createEventTransaction`:
+Record events against a subject (quid or title) via the REST API:
 
 ```javascript
 // Record an event for a quid
-const eventTx = await quidnugClient.createEventTransaction({
-  subjectId: 'target_quid_id',
-  subjectType: 'QUID',
-  eventType: 'profile.updated',
-  domain: 'example.com',
-  payload: {
-    field: 'name',
-    oldValue: 'Alice',
-    newValue: 'Alice Chen'
-  }
-}, userQuid);
-
-// Submit the transaction
-const result = await quidnugClient.submitTransaction(eventTx);
+const result = await fetch('http://localhost:8080/api/events', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    subjectId: 'target_quid_id',
+    subjectType: 'QUID',
+    eventType: 'profile.updated',
+    trustDomain: 'example.com',
+    payload: {
+      field: 'name',
+      oldValue: 'Alice',
+      newValue: 'Alice Chen'
+    },
+    signature: '<ECDSA-P256 signature over canonical bytes — see docs/openapi.yaml>',
+    publicKey: userQuid.publicKey
+  })
+}).then(r => r.json());
 console.log('Event sequence:', result.sequence);
 ```
 
-Key parameters:
+Key request body fields:
 - **subjectId**: The quid or asset ID this event is recorded against
 - **subjectType**: Either `'QUID'` or `'TITLE'`
 - **eventType**: A string describing the event (max 64 characters)
-- **domain**: The trust domain for this event
+- **trustDomain**: The trust domain for this event
 - **payload**: Event data (max 64KB for inline payloads)
+- **signature**: ECDSA-P256 signature over canonical bytes (excludes `signature` and `publicKey` fields)
+- **publicKey**: Hex-encoded public key of the signing quid
 
 The system auto-assigns a monotonically increasing sequence number if not provided.
 
@@ -205,18 +212,18 @@ Retrieve stream metadata and paginated events:
 
 ```javascript
 // Get stream metadata
-const stream = await quidnugClient.getEventStream(quidId, 'example.com');
+const stream = await fetch(
+  `http://localhost:8080/api/streams/${quidId}?domain=example.com`
+).then(r => r.json());
 console.log('Total events:', stream.eventCount);
 console.log('Latest sequence:', stream.latestSequence);
 console.log('Stream created:', new Date(stream.createdAt * 1000));
 console.log('Last updated:', new Date(stream.updatedAt * 1000));
 
 // Get paginated events (ordered by sequence ascending)
-const events = await quidnugClient.getStreamEvents(quidId, {
-  domain: 'example.com',
-  limit: 20,
-  offset: 0
-});
+const events = await fetch(
+  `http://localhost:8080/api/streams/${quidId}/events?domain=example.com&limit=20&offset=0`
+).then(r => r.json());
 
 for (const event of events.data) {
   console.log(`[${event.sequence}] ${event.eventType}:`, event.payload);
@@ -230,22 +237,31 @@ For payloads exceeding 64KB, use IPFS to store content externally:
 ```javascript
 // Pin large content to IPFS
 const largeDocument = JSON.stringify(detailedAuditReport);
-const cid = await quidnugClient.pinToIPFS(largeDocument);
+const pinResult = await fetch('http://localhost:8080/api/ipfs/pin', {
+  method: 'POST',
+  headers: { 'Content-Type': 'text/plain' },
+  body: largeDocument
+}).then(r => r.json());
+const cid = pinResult.cid;
 console.log('Content pinned with CID:', cid);
 
 // Create event with IPFS reference instead of inline payload
-const eventTx = await quidnugClient.createEventTransaction({
-  subjectId: assetQuidId,
-  subjectType: 'TITLE',
-  eventType: 'document.attached',
-  domain: 'property.example.com',
-  payloadCid: cid  // Reference to IPFS content
-}, userQuid);
-
-await quidnugClient.submitTransaction(eventTx);
+await fetch('http://localhost:8080/api/events', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    subjectId: assetQuidId,
+    subjectType: 'TITLE',
+    eventType: 'document.attached',
+    trustDomain: 'property.example.com',
+    payloadCid: cid,  // Reference to IPFS content
+    signature: '<ECDSA-P256 signature over canonical bytes — see docs/openapi.yaml>',
+    publicKey: userQuid.publicKey
+  })
+}).then(r => r.json());
 
 // Later, retrieve the content by CID
-const content = await quidnugClient.getFromIPFS(cid);
+const content = await fetch(`http://localhost:8080/api/ipfs/${cid}`).then(r => r.text());
 const report = JSON.parse(content);
 ```
 
@@ -257,52 +273,58 @@ const report = JSON.parse(content);
 
 ```javascript
 // Record identity attribute changes
-await quidnugClient.submitTransaction(
-  await quidnugClient.createEventTransaction({
+await fetch('http://localhost:8080/api/events', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
     subjectId: userQuid.id,
     subjectType: 'QUID',
     eventType: 'identity.attribute.changed',
-    domain: 'compliance.example.com',
+    trustDomain: 'compliance.example.com',
     payload: {
       attribute: 'email',
       previousValue: 'alice@old.com',
       newValue: 'alice@new.com',
       changedBy: adminQuid.id,
       reason: 'User request'
-    }
-  }, adminQuid)
-);
+    },
+    signature: '<ECDSA-P256 signature over canonical bytes — see docs/openapi.yaml>',
+    publicKey: adminQuid.publicKey
+  })
+}).then(r => r.json());
 ```
 
 **Asset History**: Track ownership transfers and modifications:
 
 ```javascript
 // Record ownership transfer event
-await quidnugClient.submitTransaction(
-  await quidnugClient.createEventTransaction({
+await fetch('http://localhost:8080/api/events', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
     subjectId: propertyAssetId,
     subjectType: 'TITLE',
     eventType: 'ownership.transferred',
-    domain: 'property.example.com',
+    trustDomain: 'property.example.com',
     payload: {
       fromOwner: sellerQuid.id,
       toOwner: buyerQuid.id,
       percentage: 100.0,
       titleTxId: transferTx.txId
-    }
-  }, notaryQuid)
-);
+    },
+    signature: '<ECDSA-P256 signature over canonical bytes — see docs/openapi.yaml>',
+    publicKey: notaryQuid.publicKey
+  })
+}).then(r => r.json());
 ```
 
 **Activity Feed**: Build a timeline of actions for a quid:
 
 ```javascript
 // Fetch recent activity for display
-const activity = await quidnugClient.getStreamEvents(userQuid.id, {
-  domain: 'social.example.com',
-  limit: 50,
-  offset: 0
-});
+const activity = await fetch(
+  `http://localhost:8080/api/streams/${userQuid.id}/events?domain=social.example.com&limit=50&offset=0`
+).then(r => r.json());
 
 // Render timeline
 for (const event of activity.data) {
@@ -615,9 +637,9 @@ Tentative blocks are cryptographically valid blocks from validators your node do
 const response = await fetch(
   'http://localhost:8080/api/blocks/tentative/example.com'
 );
-const { blocks, count } = await response.json();
+const { blocks } = await response.json();
 
-console.log(`${count} tentative blocks for example.com`);
+console.log(`${blocks.length} tentative blocks for example.com`);
 
 for (const block of blocks) {
   console.log(`Block ${block.index} from validator ${block.trustProof.validatorId}`);
