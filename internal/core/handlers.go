@@ -19,6 +19,13 @@ import (
 	"github.com/quidnug/quidnug/internal/ratelimit"
 )
 
+// QuidnugVersion is the protocol/node version string reported on /,
+// /api/v1/health, and /api/v1/info. Kept as a var (not const) so
+// release builds can override via:
+//
+//	go build -ldflags "-X github.com/quidnug/quidnug/internal/core.QuidnugVersion=v1.2.3"
+var QuidnugVersion = "1.0.0"
+
 // registerAPIRoutes registers all API routes on the given router
 func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	// Metrics endpoint
@@ -116,6 +123,12 @@ const (
 func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute int, maxBodySizeBytes int64) error {
 	router := mux.NewRouter()
 
+	// Human-readable landing page and crawler hints at the root.
+	// Registered first; the /api/* subrouters below claim everything
+	// else by path prefix.
+	router.HandleFunc("/", node.RootHandler).Methods("GET")
+	router.HandleFunc("/robots.txt", node.RobotsHandler).Methods("GET")
+
 	// Register versioned routes under /api/v1
 	v1Router := router.PathPrefix("/api/v1").Subrouter()
 	node.registerAPIRoutes(v1Router)
@@ -174,7 +187,7 @@ func (node *QuidnugNode) HealthCheckHandler(w http.ResponseWriter, r *http.Reque
 		"status":  "ok",
 		"node_id": node.NodeID,
 		"uptime":  time.Now().Unix() - node.Blockchain[0].Timestamp,
-		"version": "1.0.0",
+		"version": QuidnugVersion,
 	})
 }
 
@@ -597,7 +610,7 @@ func (node *QuidnugNode) GetInfoHandler(w http.ResponseWriter, r *http.Request) 
 		"nodeQuid":       node.NodeID,
 		"managedDomains": managedDomains,
 		"blockHeight":    blockHeight,
-		"version":        "1.0.0",
+		"version":        QuidnugVersion,
 	})
 }
 
