@@ -294,6 +294,11 @@ impl Client {
         }
     }
 
+    /// Returns the outbound trust edges (subject → object) anchored
+    /// at `quid_id`. The node may envelope the result either at the
+    /// canonical `edges` field or inside the generic `data` field
+    /// of the response envelope; both shapes are tolerated for
+    /// forward compatibility with intermediate node releases.
     pub async fn get_trust_edges(&self, quid_id: &str) -> Result<Vec<TrustEdge>> {
         #[derive(serde::Deserialize)]
         struct Wrap {

@@ -122,6 +122,14 @@ type NonceLedger struct {
 	// opportunistically.
 	seenGossipMessages map[string]int64
 
+	// gossipLockMu guards gossipLocks (the per-messageID mutex
+	// table). The per-id mutexes themselves serialize concurrent
+	// receive-path executions of the same gossip message so the
+	// validate-then-apply chain runs exactly once. See
+	// lockGossipMessage in domain_fingerprint.go.
+	gossipLockMu sync.Mutex
+	gossipLocks  map[string]*sync.Mutex
+
 	// guardianResignations[subject] is the append-only list of
 	// resignations submitted against the subject's guardian set.
 	// QDP-0006 (H6). Consulted by EffectiveGuardianSet at read

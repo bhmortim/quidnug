@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -193,4 +194,55 @@ func (l *NonceLedger) markSeenGossip(messageID string, at time.Time) {
 		}
 	}
 	l.seenGossipMessages[messageID] = at.Unix()
+}
+
+// lockGossipMessage returns a per-messageID mutex that callers can
+// hold for the duration of validate+apply. It serializes
+// concurrent receive-path executions for the same messageID so
+// that exactly one goroutine runs the validate-then-apply chain;
+// subsequent goroutines find the messageID already in the
+// seen-table on their re-check inside the critical section.
+//
+// Returns the unlock function; deferring it is the caller's
+// responsibility. The returned lock is taken; the caller must NOT
+// take it again.
+//
+// This is what fixes the broken-exclude-sender race: two
+// concurrent forwards of the same gossip message no longer both
+// pass dedup, validate, and apply (each then forwarding with a
+// different ForwardedBy and one inevitably hitting the originator).
+func (l *NonceLedger) lockGossipMessage(messageID string) func() {
+	l.gossipLockMu.Lock()
+	if l.gossipLocks == nil {
+		l.gossipLocks = make(map[string]*sync.Mutex)
+	}
+	mu, ok := l.gossipLocks[messageID]
+	if !ok {
+		mu = &sync.Mutex{}
+		l.gossipLocks[messageID] = mu
+	}
+	l.gossipLockMu.Unlock()
+
+	mu.Lock()
+
+	return func() {
+		mu.Unlock()
+		// Opportunistic cleanup: drop the per-id mutex once
+		// no one is holding it. This relies on the seen-table
+		// already containing the messageID (set by
+		// markSeenGossip during apply) so future receivers
+		// dedup before reaching here. If we lose that race,
+		// the worst case is an extra mutex allocation, not
+		// incorrect behavior.
+		l.gossipLockMu.Lock()
+		if cur, ok := l.gossipLocks[messageID]; ok && cur == mu {
+			// Try-lock: if no other goroutine is waiting on
+			// the mutex, we can safely delete it.
+			if mu.TryLock() {
+				delete(l.gossipLocks, messageID)
+				mu.Unlock()
+			}
+		}
+		l.gossipLockMu.Unlock()
+	}
 }

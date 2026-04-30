@@ -21,6 +21,10 @@ struct VectorFile {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // comments is documentation-only metadata
+                    // surfaced for human reviewers via `Debug`
+                    // when a vector fails; it's never read in
+                    // assertions but must round-trip in deserialization.
 struct VectorCase {
     name: String,
     #[serde(default)]
@@ -41,6 +45,10 @@ struct Expected {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // seed is the deterministic-derivation input
+                    // captured for cross-SDK reproducibility; not
+                    // consumed by Rust assertions but kept for
+                    // surface parity with the Go/Python/JS readers.
 struct KeyFile {
     name: String,
     #[serde(default)]

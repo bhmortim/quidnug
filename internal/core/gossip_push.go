@@ -261,10 +261,21 @@ func (node *QuidnugNode) ReceiveAnchorPush(m AnchorPushMessage) (bool, error) {
 		m.TTL = cap
 	}
 
-	// 3. Dedup FIRST. Cheap map lookup; kills floods.
-	if node.NonceLedger != nil && node.NonceLedger.seenGossip(m.Payload.MessageID) {
-		recordGossipDrop("anchor", DropReasonDuplicate)
-		return true, nil
+	// 3. Dedup FIRST. Cheap map lookup; kills floods. We acquire
+	//    a per-messageID lock here so concurrent receives of the
+	//    same message serialize through validate+apply: the first
+	//    one runs the chain and calls markSeenGossip via Apply;
+	//    the second one finds the messageID already seen on its
+	//    re-check below. This closes the race that broke the
+	//    exclude-sender invariant when two concurrent forwards
+	//    carried different ForwardedBy values.
+	if node.NonceLedger != nil {
+		unlock := node.NonceLedger.lockGossipMessage(m.Payload.MessageID)
+		defer unlock()
+		if node.NonceLedger.seenGossip(m.Payload.MessageID) {
+			recordGossipDrop("anchor", DropReasonDuplicate)
+			return true, nil
+		}
 	}
 
 	// 4. Subscription filter. Unknown producer / subject → drop.
@@ -340,11 +351,16 @@ func (node *QuidnugNode) ReceiveFingerprintPush(m FingerprintPushMessage) (bool,
 
 	// Fingerprint dedup: key is (domain, blockHeight, blockHash,
 	// producer) — a re-signed fingerprint of the same block by
-	// the same producer is a duplicate.
+	// the same producer is a duplicate. Per-fpID lock + seen
+	// check, same pattern as ReceiveAnchorPush.
 	fpID := fingerprintDedupID(m.Payload)
-	if node.NonceLedger != nil && node.NonceLedger.seenGossip(fpID) {
-		recordGossipDrop("fingerprint", DropReasonDuplicate)
-		return true, nil
+	if node.NonceLedger != nil {
+		unlock := node.NonceLedger.lockGossipMessage(fpID)
+		defer unlock()
+		if node.NonceLedger.seenGossip(fpID) {
+			recordGossipDrop("fingerprint", DropReasonDuplicate)
+			return true, nil
+		}
 	}
 
 	// Monotonicity short-circuit: if we already have a newer

@@ -20,6 +20,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Node 18 does not expose the WebCrypto API as a `crypto` global
+// (that came in Node 19). Pull it in from "node:crypto" and
+// expose it as `crypto` for the SubtleCrypto calls below. v20+
+// already has the global; reassigning is harmless.
+import { webcrypto as crypto } from "node:crypto";
 
 import {
   Quid,
