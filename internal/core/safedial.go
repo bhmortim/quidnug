@@ -131,6 +131,19 @@ func ipNetwork(network string) string {
 	}
 }
 
+// SanitizedPeerAddress is the taint-laundered form of a peer
+// address. It is intentionally a distinct type so taint-analyzing
+// scanners see the conversion step from raw `string` to a checked
+// value. Use String() to turn it back into a host:port for URL
+// composition.
+type SanitizedPeerAddress struct {
+	hostPort string
+}
+
+// String returns the sanitized host:port. Safe to use in
+// fmt.Sprintf, http.NewRequest, etc.
+func (s SanitizedPeerAddress) String() string { return s.hostPort }
+
 // ValidatePeerAddress is a synchronous variant of safeDialContext
 // for callers that need to gate URL construction _before_ handing
 // off to http.NewRequest. The dial-layer filter is the
@@ -140,37 +153,51 @@ func ipNetwork(network string) string {
 // addr must be a "host:port" string (the canonical form used by
 // Node.Address throughout the codebase). Hostnames are resolved
 // and every returned IP is checked against the same blocklist as
-// safeDialContext. Returns nil iff every resolved IP is allowed.
-func ValidatePeerAddress(addr string) error {
-	host, _, err := net.SplitHostPort(addr)
+// safeDialContext. Returns a SanitizedPeerAddress that callers
+// substitute into URL construction in place of the raw input;
+// because the return type is distinct from `string`, the taint
+// flow visibly terminates here.
+func ValidatePeerAddress(addr string) (SanitizedPeerAddress, error) {
+	zero := SanitizedPeerAddress{}
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return fmt.Errorf("peer address: split host/port %q: %w", addr, err)
+		return zero, fmt.Errorf("peer address: split host/port %q: %w", addr, err)
 	}
 	if host == "" {
-		return fmt.Errorf("peer address: empty host in %q", addr)
+		return zero, fmt.Errorf("peer address: empty host in %q", addr)
+	}
+	// Reject any control characters / NUL / CR-LF in the host or
+	// port portions. These can't appear in a valid TCP endpoint
+	// and their presence is a clear injection attempt.
+	for _, s := range []string{host, port} {
+		for _, r := range s {
+			if r < 0x20 || r == 0x7f {
+				return zero, fmt.Errorf("peer address: control character in %q", addr)
+			}
+		}
 	}
 	// First try interpreting host as a literal IP, which avoids a
 	// DNS round-trip for the common case where peer addresses are
 	// raw IPs from gossip.
 	if ip := net.ParseIP(host); ip != nil {
 		if isBlockedIP(ip) {
-			return fmt.Errorf("peer address: %s is in a blocked range", ip)
+			return zero, fmt.Errorf("peer address: %s is in a blocked range", ip)
 		}
-		return nil
+		return SanitizedPeerAddress{hostPort: net.JoinHostPort(host, port)}, nil
 	}
 	// Hostname: resolve and check every result so a future DNS
 	// flip can't sneak through.
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return fmt.Errorf("peer address: resolve %q: %w", host, err)
+		return zero, fmt.Errorf("peer address: resolve %q: %w", host, err)
 	}
 	if len(ips) == 0 {
-		return fmt.Errorf("peer address: no addresses for %q", host)
+		return zero, fmt.Errorf("peer address: no addresses for %q", host)
 	}
 	for _, ip := range ips {
 		if isBlockedIP(ip) {
-			return fmt.Errorf("peer address: %s for %q is in a blocked range", ip, host)
+			return zero, fmt.Errorf("peer address: %s for %q is in a blocked range", ip, host)
 		}
 	}
-	return nil
+	return SanitizedPeerAddress{hostPort: net.JoinHostPort(host, port)}, nil
 }

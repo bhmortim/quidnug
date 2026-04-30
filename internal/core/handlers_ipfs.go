@@ -122,7 +122,7 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 	// The bytes themselves are intentionally pass-through; that
 	// is the function of an IPFS gateway. Suppression is correct
 	// here.
-	if _, err := w.Write(content); err != nil { // #nosec G203 -- response is content-defanged: octet-stream + nosniff + attachment + CSP
+	if _, err := w.Write(content); err != nil { // #nosec -- response is content-defanged: octet-stream + nosniff + attachment + CSP (see comment above)
 		// Best-effort: client likely disconnected. Don't 500
 		// because headers are already sent.
 		logger.Debug("ipfs get: write body failed", "err", err)

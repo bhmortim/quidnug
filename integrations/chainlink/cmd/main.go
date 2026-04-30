@@ -6,11 +6,39 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/quidnug/quidnug/integrations/chainlink"
 	"github.com/quidnug/quidnug/pkg/client"
 )
+
+// sanitizeForLog strips control characters (CR, LF, NUL, DEL,
+// other low ASCII) from operator-supplied strings before they
+// hit the log writer. Log injection works by smuggling a
+// newline followed by a forged log entry; replacing those bytes
+// with the literal string "?" makes the taint flow visibly
+// terminate and removes the attack surface.
+//
+// Returns the sanitized copy plus a length-bounded version: any
+// trailing data beyond 256 bytes is truncated so a giant
+// environment value can't fill the log buffer.
+func sanitizeForLog(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for i, r := range s {
+		if i >= 256 {
+			b.WriteString("...")
+			break
+		}
+		if r < 0x20 || r == 0x7f {
+			b.WriteByte('?')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
 
 func main() {
 	node := os.Getenv("QUIDNUG_NODE")
@@ -43,12 +71,15 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	// %q Go-quotes both values: any embedded CR/LF characters
-	// are rendered as \r/\n escapes rather than producing fake
-	// log entries. addr and node come from environment variables
-	// (LISTEN, QUIDNUG_NODE) which are operator-set but still
-	// untrusted-by-default for log-injection purposes.
-	log.Printf("quidnug-chainlink-adapter: listening on %q, node=%q", addr, node)
+	// addr and node come from environment variables (LISTEN,
+	// QUIDNUG_NODE) which are operator-set but still untrusted
+	// for log-injection purposes. Pass them through sanitizeForLog
+	// so any CR/LF/control chars are replaced with '?' before they
+	// reach log.Printf — the taint flow terminates at the
+	// sanitizer.
+	logAddr := sanitizeForLog(addr)
+	logNode := sanitizeForLog(node)
+	log.Printf("quidnug-chainlink-adapter: listening on %s, node=%s", logAddr, logNode)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

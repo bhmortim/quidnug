@@ -251,14 +251,25 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 
 // broadcastToNode sends a transaction to a single node (fire-and-forget)
 func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON []byte) {
-	path := fmt.Sprintf("/api/transactions/%s", txType)
-	endpoint := fmt.Sprintf("http://%s%s", targetNode.Address, path)
+	// SSRF gate: same pattern as queryNode. safeAddr is a distinct
+	// type so the taint flow shows the sanitization step.
+	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	if err != nil {
+		logger.Warn("Refusing broadcast to invalid peer address",
+			"targetNodeId", targetNode.ID,
+			"targetAddress", targetNode.Address,
+			"error", err)
+		return
+	}
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(txJSON))
+	path := fmt.Sprintf("/api/transactions/%s", txType)
+	endpoint := fmt.Sprintf("http://%s%s", safeAddr.String(), path)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(txJSON)) // #nosec -- endpoint built from sanitized address (see ValidatePeerAddress + safeDialContext)
 	if err != nil {
 		logger.Warn("Failed to create broadcast request",
 			"targetNodeId", targetNode.ID,
-			"targetAddress", targetNode.Address,
+			"targetAddress", safeAddr.String(),
 			"error", err)
 		return
 	}
@@ -547,10 +558,18 @@ func (node *QuidnugNode) createDomainGossip() *DomainGossip {
 
 // sendDomainGossip sends a gossip message to a single node
 func (node *QuidnugNode) sendDomainGossip(targetNode Node, gossipJSON []byte) {
-	path := "/api/v1/gossip/domains"
-	endpoint := fmt.Sprintf("http://%s%s", targetNode.Address, path)
+	// SSRF gate (same pattern as queryNode/broadcastToNode).
+	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	if err != nil {
+		logger.Debug("Refusing gossip to invalid peer address",
+			"targetNodeId", targetNode.ID, "error", err)
+		return
+	}
 
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(gossipJSON))
+	path := "/api/v1/gossip/domains"
+	endpoint := fmt.Sprintf("http://%s%s", safeAddr.String(), path)
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(gossipJSON)) // #nosec -- endpoint built from sanitized address (see ValidatePeerAddress + safeDialContext)
 	if err != nil {
 		logger.Debug("Failed to create gossip request", "targetNodeId", targetNode.ID, "error", err)
 		return
@@ -716,28 +735,33 @@ func (node *QuidnugNode) cleanupGossipSeen() {
 func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, queryParam string) (interface{}, error) {
 	// SSRF gate: validate the peer-advertised address before
 	// composing a URL with it. The httpClient's safeDialContext
-	// is the authoritative defense, but we validate here too so
+	// is the authoritative defense, but we sanitize here too so
 	// taint-analyzing scanners (gosec G107 / CodeQL ssrf) see
 	// the gate, and so a malformed address fails fast with a
 	// clear error rather than a dial failure.
-	if err := ValidatePeerAddress(targetNode.Address); err != nil {
+	//
+	// safeAddr.String() is used in URL composition below in place
+	// of targetNode.Address; the distinct return type makes the
+	// sanitization step visible to taint analysis.
+	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	if err != nil {
 		return nil, fmt.Errorf("queryNode: %w", err)
 	}
 
 	path := fmt.Sprintf("/api/domains/%s/query", url.PathEscape(domainName))
 	queryString := fmt.Sprintf("type=%s&param=%s", url.QueryEscape(queryType), url.QueryEscape(queryParam))
-	endpoint := fmt.Sprintf("http://%s%s?%s", targetNode.Address, path, queryString)
+	endpoint := fmt.Sprintf("http://%s%s?%s", safeAddr.String(), path, queryString)
 
 	logger.Debug("Querying node for domain",
 		"targetNodeId", targetNode.ID,
-		"targetAddress", targetNode.Address,
+		"targetAddress", safeAddr.String(),
 		"domain", domainName,
 		"queryType", queryType,
 		"queryParam", queryParam)
 
-	req, err := http.NewRequest("GET", endpoint, nil) // #nosec G107 -- targetNode.Address validated by ValidatePeerAddress above
+	req, err := http.NewRequest("GET", endpoint, nil) // #nosec -- endpoint built from sanitized address (see ValidatePeerAddress + safeDialContext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request for node %s: %w", targetNode.Address, err)
+		return nil, fmt.Errorf("failed to create request for node %s: %w", safeAddr.String(), err)
 	}
 
 	// Add authentication headers if secret is configured
