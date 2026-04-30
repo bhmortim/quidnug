@@ -19,9 +19,10 @@ jobs:
   uniformity:
     # QDP-0013 §3: the reference implementation must not hardcode
     # any identifier tied to the quidnug.com public network in
-    # production code paths. Test files, docs, examples, and the
-    # deploy/ operator playbooks may legitimately name specific
-    # public-network domains and are exempt.
+    # production code paths. Test files, docs, examples, the
+    # deploy/ operator playbooks, and test-vector generators may
+    # legitimately name specific public-network domains and are
+    # exempt.
     name: QDP-0013 uniformity invariant
     runs-on: ubuntu-latest
     steps:
@@ -31,6 +32,10 @@ jobs:
           set -euo pipefail
           pattern='"(reviews\.public|network\.quidnug|operators\.network|api\.quidnug\.com)'
           # Production paths only — no tests, examples, or docs.
+          # cmd/quidnug-test-vectors is a test-fixture generator
+          # and is exempt by category (it deliberately encodes the
+          # canonical example domains so cross-SDK consumers have
+          # stable strings to round-trip).
           targets=(internal cmd pkg clients/js/quidnug-client.js clients/js/quidnug-client-v2.js)
           found=0
           for t in "${targets[@]}"; do
@@ -38,6 +43,7 @@ jobs:
               if grep -rEn --include='*.go' --include='*.js' --include='*.ts' \
                    --exclude='*_test.go' \
                    --exclude='*.test.js' \
+                   --exclude-dir='quidnug-test-vectors' \
                    "$pattern" "$t"; then
                   found=1
               fi
