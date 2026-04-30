@@ -330,7 +330,11 @@ func (node *QuidnugNode) ReceiveAnchorPush(m AnchorPushMessage) (bool, error) {
 			HopCount:      m.HopCount + 1,
 			ForwardedBy:   node.NodeID,
 		}
-		node.fanOutAnchorPush(forward, m.ForwardedBy)
+		// Exclude both the immediate sender and the originator.
+		// Excluding only m.ForwardedBy is insufficient: a forwarder
+		// that received from a peer ≠ originator would still send
+		// the message back to the originator, breaking QDP-0005 §5.
+		node.fanOutAnchorPush(forward, m.ForwardedBy, m.Payload.GossipProducerQuid)
 	}
 	return false, nil
 }
@@ -412,7 +416,9 @@ func (node *QuidnugNode) ReceiveFingerprintPush(m FingerprintPushMessage) (bool,
 			HopCount:      m.HopCount + 1,
 			ForwardedBy:   node.NodeID,
 		}
-		node.fanOutFingerprintPush(forward, m.ForwardedBy)
+		// Exclude both the immediate sender and the originator
+		// (ProducerQuid). Same rationale as ReceiveAnchorPush.
+		node.fanOutFingerprintPush(forward, m.ForwardedBy, m.Payload.ProducerQuid)
 	}
 	return false, nil
 }
@@ -547,11 +553,16 @@ func (node *QuidnugNode) maybePushAnchorFromBlock(block Block, txIdx int) {
 	node.PushAnchor(signed)
 }
 
-// fanOutAnchorPush sends to every known peer except self and the
-// node we received from. Each send is a separate goroutine —
-// fire-and-forget, like BroadcastDomainInfo.
-func (node *QuidnugNode) fanOutAnchorPush(msg AnchorPushMessage, exclude string) {
-	peers := node.sortedForwardPeers(exclude)
+// fanOutAnchorPush sends to every known peer except self and any
+// node IDs in `excludes`. Each send is a separate goroutine —
+// fire-and-forget. Forwarders should pass at minimum the
+// immediate sender's ID AND the originator's ID
+// (m.Payload.GossipProducerQuid), so a message can never reach
+// the node that produced it via any forwarding path. Closing
+// that loop is what enforces the QDP-0005 §5 exclude-sender
+// invariant under concurrent receives.
+func (node *QuidnugNode) fanOutAnchorPush(msg AnchorPushMessage, excludes ...string) {
+	peers := node.sortedForwardPeers(excludes...)
 	if len(peers) == 0 {
 		return
 	}
@@ -565,10 +576,12 @@ func (node *QuidnugNode) fanOutAnchorPush(msg AnchorPushMessage, exclude string)
 	}
 }
 
-// fanOutFingerprintPush sends to every known peer except self
-// and the node we received from.
-func (node *QuidnugNode) fanOutFingerprintPush(msg FingerprintPushMessage, exclude string) {
-	peers := node.sortedForwardPeers(exclude)
+// fanOutFingerprintPush sends to every known peer except self,
+// the immediate sender, and any other excluded node IDs.
+// Same exclusion contract as fanOutAnchorPush; callers should
+// pass both m.ForwardedBy and m.Payload.ProducerQuid.
+func (node *QuidnugNode) fanOutFingerprintPush(msg FingerprintPushMessage, excludes ...string) {
+	peers := node.sortedForwardPeers(excludes...)
 	if len(peers) == 0 {
 		return
 	}
@@ -583,13 +596,25 @@ func (node *QuidnugNode) fanOutFingerprintPush(msg FingerprintPushMessage, exclu
 }
 
 // sortedForwardPeers returns the set of peers to forward to,
-// excluding self and the immediate sender. Deterministic order
-// (by ID) makes tests repeatable.
-func (node *QuidnugNode) sortedForwardPeers(exclude string) []Node {
+// excluding self and every entry in `excludes` (typically the
+// immediate sender + the originator). Deterministic order
+// (by ID) makes tests repeatable. Empty-string entries in
+// `excludes` are no-ops (they match no peer ID).
+func (node *QuidnugNode) sortedForwardPeers(excludes ...string) []Node {
+	excludeSet := make(map[string]struct{}, len(excludes)+1)
+	excludeSet[node.NodeID] = struct{}{}
+	for _, e := range excludes {
+		if e != "" {
+			excludeSet[e] = struct{}{}
+		}
+	}
 	node.KnownNodesMutex.RLock()
 	peers := make([]Node, 0, len(node.KnownNodes))
 	for _, n := range node.KnownNodes {
-		if n.ID == node.NodeID || n.ID == exclude || n.Address == "" {
+		if _, skip := excludeSet[n.ID]; skip {
+			continue
+		}
+		if n.Address == "" {
 			continue
 		}
 		peers = append(peers, n)
