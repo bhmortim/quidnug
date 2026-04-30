@@ -65,11 +65,11 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&nodesResponse); err != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			logger.Warn("Failed to decode node list", "seedAddress", seedAddress, "error", err)
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Add discovered nodes to our known nodes list and fetch their domain info
 		for _, discoveredNode := range nodesResponse.Nodes {
@@ -714,6 +714,16 @@ func (node *QuidnugNode) cleanupGossipSeen() {
 
 // queryNode performs an HTTP GET query to a specific node
 func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, queryParam string) (interface{}, error) {
+	// SSRF gate: validate the peer-advertised address before
+	// composing a URL with it. The httpClient's safeDialContext
+	// is the authoritative defense, but we validate here too so
+	// taint-analyzing scanners (gosec G107 / CodeQL ssrf) see
+	// the gate, and so a malformed address fails fast with a
+	// clear error rather than a dial failure.
+	if err := ValidatePeerAddress(targetNode.Address); err != nil {
+		return nil, fmt.Errorf("queryNode: %w", err)
+	}
+
 	path := fmt.Sprintf("/api/domains/%s/query", url.PathEscape(domainName))
 	queryString := fmt.Sprintf("type=%s&param=%s", url.QueryEscape(queryType), url.QueryEscape(queryParam))
 	endpoint := fmt.Sprintf("http://%s%s?%s", targetNode.Address, path, queryString)
@@ -725,7 +735,7 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 		"queryType", queryType,
 		"queryParam", queryParam)
 
-	req, err := http.NewRequest("GET", endpoint, nil)
+	req, err := http.NewRequest("GET", endpoint, nil) // #nosec G107 -- targetNode.Address validated by ValidatePeerAddress above
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for node %s: %w", targetNode.Address, err)
 	}
@@ -743,7 +753,7 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to node %s: %w", targetNode.Address, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

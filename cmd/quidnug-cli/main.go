@@ -213,7 +213,11 @@ func cmdQuidGenerate(args []string) error {
 	b, _ := json.MarshalIndent(qf, "", "  ")
 
 	if out == "" {
-		os.Stdout.Write(b)
+		// stdout write failure here means the parent process
+		// closed the pipe; nothing useful to do besides return.
+		if _, err := os.Stdout.Write(b); err != nil {
+			return fmt.Errorf("write stdout: %w", err)
+		}
 		fmt.Println()
 		return nil
 	}

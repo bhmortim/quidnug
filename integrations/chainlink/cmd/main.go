@@ -43,7 +43,12 @@ func main() {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("quidnug-chainlink-adapter: listening on %s, node=%s", addr, node)
+	// %q Go-quotes both values: any embedded CR/LF characters
+	// are rendered as \r/\n escapes rather than producing fake
+	// log entries. addr and node come from environment variables
+	// (LISTEN, QUIDNUG_NODE) which are operator-set but still
+	// untrusted-by-default for log-injection purposes.
+	log.Printf("quidnug-chainlink-adapter: listening on %q, node=%q", addr, node)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

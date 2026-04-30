@@ -74,11 +74,28 @@ func paginateSlice[T any](items []T, params PaginationParams) ([]T, int) {
 	return items[params.Offset:end], total
 }
 
+// encodeEnvelope encodes v to w and logs (without panicking) if
+// the write fails. Almost all encode failures here come from the
+// client disconnecting mid-response; that's not a server fault
+// and shouldn't generate noise above debug. We don't try to
+// rescue: by the time Encode fails the response has typically
+// committed bytes already, so writing a different status would
+// just produce a malformed wire response.
+func encodeEnvelope(w http.ResponseWriter, v interface{}) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		// logger may be nil in tests that exercise the
+		// helpers without initializing the package. Be safe.
+		if logger != nil {
+			logger.Debug("response: encode failed", "err", err)
+		}
+	}
+}
+
 // WriteSuccess writes a successful JSON response with envelope
 func WriteSuccess(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", "1.0")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeEnvelope(w, map[string]interface{}{
 		"success": true,
 		"data":    data,
 	})
@@ -89,7 +106,7 @@ func WriteSuccessWithStatus(w http.ResponseWriter, status int, data interface{})
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", "1.0")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeEnvelope(w, map[string]interface{}{
 		"success": true,
 		"data":    data,
 	})
@@ -100,7 +117,7 @@ func WriteError(w http.ResponseWriter, status int, code string, message string) 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", "1.0")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeEnvelope(w, map[string]interface{}{
 		"success": false,
 		"error": map[string]interface{}{
 			"code":    code,
@@ -114,7 +131,7 @@ func WriteFieldError(w http.ResponseWriter, code string, message string, fields 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", "1.0")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	encodeEnvelope(w, map[string]interface{}{
 		"success": false,
 		"error": map[string]interface{}{
 			"code":    code,

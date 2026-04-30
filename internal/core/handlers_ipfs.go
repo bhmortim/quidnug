@@ -104,12 +104,25 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 	// Callers that need the raw bytes (CLI, SDK) read them as
 	// bytes regardless of headers. Browser rendering is the
 	// only attack surface.
+	// cid was already validated by ipfsclient.IsValidCID above, so
+	// it is safe to interpolate into Content-Disposition; it is a
+	// base58/base32 multihash with no CR/LF/quote characters.
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+cid+".bin\"")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("X-IPFS-CID", cid)
-	if _, err := w.Write(content); err != nil {
+	// gosec's taint analysis flags this Write because `content`
+	// flows from a peer-controlled IPFS payload. Browser-level
+	// XSS is defeated by the four headers above:
+	//   * Content-Type: application/octet-stream
+	//   * X-Content-Type-Options: nosniff (defeats MIME sniffing)
+	//   * Content-Disposition: attachment (no inline render)
+	//   * Content-Security-Policy: default-src 'none'; sandbox
+	// The bytes themselves are intentionally pass-through; that
+	// is the function of an IPFS gateway. Suppression is correct
+	// here.
+	if _, err := w.Write(content); err != nil { // #nosec G203 -- response is content-defanged: octet-stream + nosniff + attachment + CSP
 		// Best-effort: client likely disconnected. Don't 500
 		// because headers are already sent.
 		logger.Debug("ipfs get: write body failed", "err", err)

@@ -130,3 +130,47 @@ func ipNetwork(network string) string {
 		return "ip"
 	}
 }
+
+// ValidatePeerAddress is a synchronous variant of safeDialContext
+// for callers that need to gate URL construction _before_ handing
+// off to http.NewRequest. The dial-layer filter is the
+// authoritative defense, but call-site validation is necessary so
+// taint-analyzing scanners (CodeQL/gosec G107) can see the gate.
+//
+// addr must be a "host:port" string (the canonical form used by
+// Node.Address throughout the codebase). Hostnames are resolved
+// and every returned IP is checked against the same blocklist as
+// safeDialContext. Returns nil iff every resolved IP is allowed.
+func ValidatePeerAddress(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("peer address: split host/port %q: %w", addr, err)
+	}
+	if host == "" {
+		return fmt.Errorf("peer address: empty host in %q", addr)
+	}
+	// First try interpreting host as a literal IP, which avoids a
+	// DNS round-trip for the common case where peer addresses are
+	// raw IPs from gossip.
+	if ip := net.ParseIP(host); ip != nil {
+		if isBlockedIP(ip) {
+			return fmt.Errorf("peer address: %s is in a blocked range", ip)
+		}
+		return nil
+	}
+	// Hostname: resolve and check every result so a future DNS
+	// flip can't sneak through.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("peer address: resolve %q: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("peer address: no addresses for %q", host)
+	}
+	for _, ip := range ips {
+		if isBlockedIP(ip) {
+			return fmt.Errorf("peer address: %s for %q is in a blocked range", ip, host)
+		}
+	}
+	return nil
+}
