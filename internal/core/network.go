@@ -45,16 +45,27 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		default:
 		}
 
+		// SSRF gate: seedNodes is operator-supplied config and is
+		// generally trusted, but we run the same sanitization as
+		// the gossip-discovered peers so the dial cannot be aimed
+		// at internal infrastructure even if config is wrong or
+		// poisoned.
+		safeAddr, err := ValidatePeerAddress(seedAddress)
+		if err != nil {
+			logger.Warn("Refusing seed with invalid address", "seedAddress", seedAddress, "error", err)
+			continue
+		}
+
 		// Create request with context for cancellation
 		// ENG-56: discovery must use the v1 API path served by the current router.
-		reqURL := fmt.Sprintf("http://%s/api/v1/nodes", seedAddress)
-		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+		reqURL := fmt.Sprintf("http://%s/api/v1/nodes", safeAddr.String())
+		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil) // #nosec -- reqURL built from sanitized address (see ValidatePeerAddress + safeDialContext)
 		if err != nil {
 			logger.Warn("Failed to create request for seed node", "seedAddress", seedAddress, "error", err)
 			continue
 		}
 
-		resp, err := node.httpClient.Do(req)
+		resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 		if err != nil {
 			logger.Warn("Failed to connect to seed node", "seedAddress", seedAddress, "error", err)
 			continue
@@ -104,13 +115,20 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 
 // fetchNodeDomains fetches the supported domains from a remote node
 func (node *QuidnugNode) fetchNodeDomains(ctx context.Context, nodeAddress string) ([]string, error) {
-	reqURL := fmt.Sprintf("http://%s/api/v1/node/domains", nodeAddress)
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	// SSRF gate: nodeAddress flows from peer-advertised data via
+	// discovery; sanitize before composing the URL.
+	safeAddr, err := ValidatePeerAddress(nodeAddress)
+	if err != nil {
+		return nil, fmt.Errorf("fetchNodeDomains: %w", err)
+	}
+
+	reqURL := fmt.Sprintf("http://%s/api/v1/node/domains", safeAddr.String())
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil) // #nosec -- reqURL built from sanitized address (see ValidatePeerAddress + safeDialContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := node.httpClient.Do(req)
+	resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -283,7 +301,7 @@ func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON 
 		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
 	}
 
-	resp, err := node.httpClient.Do(req)
+	resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 	if err != nil {
 		logger.Warn("Failed to broadcast transaction to node",
 			"targetNodeId", targetNode.ID,
@@ -584,7 +602,7 @@ func (node *QuidnugNode) sendDomainGossip(targetNode Node, gossipJSON []byte) {
 		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
 	}
 
-	resp, err := node.httpClient.Do(req)
+	resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 	if err != nil {
 		logger.Debug("Failed to send domain gossip", "targetNodeId", targetNode.ID, "error", err)
 		return
@@ -773,9 +791,9 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 		req.Header.Set(NodeTimestampHeader, strconv.FormatInt(timestamp, 10))
 	}
 
-	resp, err := node.httpClient.Do(req)
+	resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to node %s: %w", targetNode.Address, err)
+		return nil, fmt.Errorf("failed to connect to node %s: %w", safeAddr.String(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
