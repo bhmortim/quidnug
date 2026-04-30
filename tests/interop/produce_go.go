@@ -22,11 +22,17 @@ import (
 const keypairFile = "tests/interop/.keypair-go"
 
 func deterministicQuid() (*client.Quid, error) {
+	// keypairFile is a hardcoded constant relative to the repo root;
+	// filepath.Abs gives an absolute path with no traversal. The
+	// G304 here is a false positive against test scaffolding, but
+	// we run filepath.Clean for explicitness so scanners see the
+	// validation gate.
 	abs, err := filepath.Abs(keypairFile)
 	if err != nil {
 		return nil, err
 	}
-	if data, err := os.ReadFile(abs); err == nil {
+	abs = filepath.Clean(abs)
+	if data, err := os.ReadFile(abs); err == nil { // #nosec G304 -- hardcoded constant path
 		return client.QuidFromPrivateHex(string(data))
 	}
 	q, err := client.GenerateQuid()

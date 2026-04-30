@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quidnug/quidnug/internal/safeio"
 	"github.com/quidnug/quidnug/pkg/client"
 )
 
@@ -467,7 +468,11 @@ func cmdWellKnownGenerate(args []string) error {
 		_, err := os.Stdout.Write(final)
 		return err
 	}
-	if err := os.WriteFile(outPath, final, 0644); err != nil {
+	// 0600: signed well-known files may carry the signing identity;
+	// world-readable is wrong even if the content is shared via HTTP.
+	// Path comes from --out CLI flag and goes through safeio for
+	// path-traversal validation.
+	if err := safeio.WriteFileMode(outPath, final, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 	return nil

@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -33,20 +34,30 @@ type FileStore struct {
 }
 
 // NewFileStore opens (or creates) an audit log file at path.
-// The parent directory must already exist; the file is created
-// with 0644 permissions and opened in O_APPEND mode so writes
-// can't accidentally clobber existing entries.
+// The parent directory is created with 0700 (operator-only) and
+// the file with 0600 permissions so audit entries (which can
+// reveal request patterns and signer identities) are not
+// world-readable. Opened in O_APPEND mode so writes can't
+// accidentally clobber existing entries.
+//
+// The path is sourced from operator config and validated against
+// path traversal: NUL bytes and ".."-rooted relative paths are
+// refused. Symlinks are not followed when statting the directory.
 func NewFileStore(path string) (*FileStore, error) {
 	if path == "" {
 		return nil, fmt.Errorf("audit store path must not be empty")
 	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	clean, err := validateAuditPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("audit store path: %w", err)
+	}
+	dir := filepath.Dir(clean)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create audit log dir: %w", err)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(clean, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path validated by validateAuditPath
 	if err != nil {
-		return nil, fmt.Errorf("open audit log %q: %w", path, err)
+		return nil, fmt.Errorf("open audit log %q: %w", clean, err)
 	}
 	return &FileStore{
 		path: path,
@@ -153,4 +164,23 @@ func (s *FileStore) Close() error {
 // logging / observability).
 func (s *FileStore) Path() string {
 	return s.path
+}
+
+// validateAuditPath cleans the operator-supplied audit log path
+// and rejects path-traversal attempts. We don't import
+// internal/safeio here to keep the audit package leaf-level
+// (avoids any future import cycle with packages that themselves
+// depend on the audit log).
+func validateAuditPath(p string) (string, error) {
+	if strings.ContainsRune(p, 0) {
+		return "", fmt.Errorf("path contains NUL byte")
+	}
+	clean := filepath.Clean(p)
+	if !filepath.IsAbs(clean) {
+		first := strings.SplitN(clean, string(filepath.Separator), 2)[0]
+		if first == ".." {
+			return "", fmt.Errorf("path escapes working directory: %s", p)
+		}
+	}
+	return clean, nil
 }

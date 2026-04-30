@@ -85,8 +85,33 @@ func (node *QuidnugNode) GetFromIPFSHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	contentType := http.DetectContentType(content)
-	w.Header().Set("Content-Type", contentType)
+	// IPFS payloads are operator-untrusted: a peer can pin a CID
+	// whose content is HTML/SVG/JS designed to execute in a
+	// browser session bound to this node's origin. We defang
+	// the response to prevent reflected-XSS:
+	//
+	//   * Content-Type forced to application/octet-stream so the
+	//     browser does not parse the body as a renderable type.
+	//   * X-Content-Type-Options: nosniff prevents Chrome/Edge
+	//     from MIME-sniffing back to text/html.
+	//   * Content-Disposition: attachment forces a download
+	//     instead of inline render. The CID is the suggested
+	//     filename so operators can trace the artifact.
+	//   * Content-Security-Policy: default-src 'none' is a belt-
+	//     and-suspenders guard if a future code path serves this
+	//     inline.
+	//
+	// Callers that need the raw bytes (CLI, SDK) read them as
+	// bytes regardless of headers. Browser rendering is the
+	// only attack surface.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+cid+".bin\"")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	w.Header().Set("X-IPFS-CID", cid)
-	w.Write(content)
+	if _, err := w.Write(content); err != nil {
+		// Best-effort: client likely disconnected. Don't 500
+		// because headers are already sent.
+		logger.Debug("ipfs get: write body failed", "err", err)
+	}
 }

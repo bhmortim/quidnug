@@ -660,70 +660,108 @@ func (node *QuidnugNode) ValidateBlockTiered(block Block) BlockAcceptance {
 		return BlockInvalid
 	}
 
-	// Validate all transactions in the block
+	// Validate all transactions in the block.
+	//
+	// Each transaction in block.Transactions arrives as a generic
+	// interface{} (map[string]any) because Block.Transactions is
+	// JSON-typed for forward compatibility. To dispatch on the
+	// transaction type we re-marshal back to JSON and then unmarshal
+	// into the typed struct.
+	//
+	// Any json.Unmarshal failure is a hard signal that the block
+	// is malformed (a peer mis-encoded a transaction or an attacker
+	// is probing the parser): we return BlockInvalid rather than
+	// silently treating the zero-valued struct as a valid tx.
 	for _, txInterface := range block.Transactions {
-		txJson, _ := json.Marshal(txInterface)
+		txJson, err := json.Marshal(txInterface)
+		if err != nil {
+			return BlockInvalid
+		}
 
 		// Determine transaction type
 		var baseTx BaseTransaction
-		json.Unmarshal(txJson, &baseTx)
+		if err := json.Unmarshal(txJson, &baseTx); err != nil {
+			return BlockInvalid
+		}
 
 		var isValid bool
 
 		switch baseTx.Type {
 		case TxTypeTrust:
 			var tx TrustTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateTrustTransaction(tx)
 
 		case TxTypeIdentity:
 			var tx IdentityTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateIdentityTransaction(tx)
 
 		case TxTypeTitle:
 			var tx TitleTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateTitleTransaction(tx)
 
 		case TxTypeEvent:
 			var tx EventTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateEventTransaction(tx)
 
 		case TxTypeNodeAdvertisement:
 			var tx NodeAdvertisementTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateNodeAdvertisementTransaction(tx)
 
 		case TxTypeModerationAction:
 			var tx ModerationActionTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateModerationActionTransaction(tx)
 
 		case TxTypeDataSubjectRequest:
 			var tx DataSubjectRequestTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateDataSubjectRequestTransaction(tx)
 
 		case TxTypeConsentGrant:
 			var tx ConsentGrantTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateConsentGrantTransaction(tx)
 
 		case TxTypeConsentWithdraw:
 			var tx ConsentWithdrawTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateConsentWithdrawTransaction(tx)
 
 		case TxTypeProcessingRestriction:
 			var tx ProcessingRestrictionTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateProcessingRestrictionTransaction(tx)
 
 		case TxTypeDSRCompliance:
 			var tx DSRComplianceTransaction
-			json.Unmarshal(txJson, &tx)
+			if err := json.Unmarshal(txJson, &tx); err != nil {
+				return BlockInvalid
+			}
 			isValid = node.ValidateDSRComplianceTransaction(tx)
 
 		default:

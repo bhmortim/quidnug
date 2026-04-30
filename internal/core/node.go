@@ -490,6 +490,17 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		forks:                     newForkRegistry(),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
+			// SSRF defense: reject loopback, private, link-local,
+			// and metadata-IP destinations at dial time so peer-
+			// advertised addresses can't trick the node into
+			// querying its own infrastructure. See safedial.go.
+			Transport: &http.Transport{
+				DialContext:           safeDialContext,
+				MaxIdleConns:          100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
 		},
 	}
 

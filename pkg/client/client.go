@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -152,7 +152,17 @@ func (c *Client) sleepBackoff(attempt int, retryAfter string) {
 			return
 		}
 	}
-	jitter := time.Duration(rand.Int63n(100)) * time.Millisecond //nolint:gosec
+	// Retry jitter: 0-99ms drawn from crypto/rand. The math/rand
+	// version triggered gosec G404 even with //nolint, and the
+	// performance cost of crypto/rand for a 64-bit draw on a
+	// retry path is negligible. If cryptorand fails (e.g.
+	// /dev/urandom unreadable), fall through with zero jitter
+	// rather than panicking; the worst case is thundering herd,
+	// which the exponential backoff already mitigates.
+	var jitter time.Duration
+	if jitterN, err := cryptorand.Int(cryptorand.Reader, big.NewInt(100)); err == nil {
+		jitter = time.Duration(jitterN.Int64()) * time.Millisecond
+	}
 	delay := c.retryBase*(1<<attempt) + jitter
 	if delay > 60*time.Second {
 		delay = 60 * time.Second

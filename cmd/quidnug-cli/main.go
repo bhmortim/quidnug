@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quidnug/quidnug/internal/safeio"
 	"github.com/quidnug/quidnug/pkg/client"
 )
 
@@ -241,7 +242,10 @@ func cmdQuidShow(args []string) error {
 }
 
 func readQuidFile(path string) (*quidFile, error) {
-	raw, err := os.ReadFile(path)
+	// Path comes from operator CLI flag and is treated as untrusted:
+	// safeio.ReadFile rejects path traversal, NUL injection, symlinks,
+	// and non-regular files before issuing the read.
+	raw, err := safeio.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -787,11 +791,11 @@ func cmdMerkle(args []string) error {
 	if txPath == "" || proofPath == "" || root == "" {
 		return fmt.Errorf("--tx, --proof, --root are required")
 	}
-	txBytes, err := os.ReadFile(txPath)
+	txBytes, err := safeio.ReadFile(txPath)
 	if err != nil {
 		return fmt.Errorf("read tx: %w", err)
 	}
-	proofRaw, err := os.ReadFile(proofPath)
+	proofRaw, err := safeio.ReadFile(proofPath)
 	if err != nil {
 		return fmt.Errorf("read proof: %w", err)
 	}

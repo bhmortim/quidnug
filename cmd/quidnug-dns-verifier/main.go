@@ -653,7 +653,9 @@ func writeResult(r *VerificationResult, outputPath, submitURL string) error {
 		return err
 	}
 	if outputPath != "" {
-		if err := os.WriteFile(outputPath, buf, 0644); err != nil {
+		// 0600: verification results may contain operator-only
+		// signing identities; world-readable is wrong.
+		if err := os.WriteFile(outputPath, buf, 0o600); err != nil { // #nosec G306 -- explicit 0600
 			return err
 		}
 	} else {

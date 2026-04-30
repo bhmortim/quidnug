@@ -206,7 +206,9 @@ func cmdGenerate(args []string) error {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Join(outDir, "test-keys"), 0755); err != nil {
+	// 0750: test vector outputs are non-secret but still operator-
+	// scoped; group-readable for CI workspaces, no world access.
+	if err := os.MkdirAll(filepath.Join(outDir, "test-keys"), 0o750); err != nil {
 		return err
 	}
 
@@ -816,7 +818,10 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0644)
+	// 0600: test vectors include private keys (alice/bob); never
+	// write these world- or group-readable. Path is from CLI flag
+	// resolved at the top of cmdGenerate.
+	return os.WriteFile(path, data, 0o600) // #nosec G306 -- explicit 0600
 }
 
 func gitCommit() string {

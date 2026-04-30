@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/quidnug/quidnug/internal/safeio"
 )
 
 const pendingTxsFilename = "pending_transactions.json"
@@ -18,8 +20,10 @@ func (node *QuidnugNode) SavePendingTransactions(dataDir string) error {
 		return nil
 	}
 
-	// Ensure data directory exists
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	// Ensure data directory exists. 0750 keeps group-readable but
+	// hides from "other"; pending-tx files may carry signing
+	// material or peer state that shouldn't be world-readable.
+	if err := safeio.MkdirAllMode(dataDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
@@ -30,7 +34,9 @@ func (node *QuidnugNode) SavePendingTransactions(dataDir string) error {
 		return fmt.Errorf("failed to marshal pending transactions: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	// 0600: pending transactions can include not-yet-public signing
+	// material; deny world and group read.
+	if err := safeio.WriteFileMode(filePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write pending transactions file: %w", err)
 	}
 
@@ -41,7 +47,7 @@ func (node *QuidnugNode) SavePendingTransactions(dataDir string) error {
 func (node *QuidnugNode) LoadPendingTransactions(dataDir string) error {
 	filePath := filepath.Join(dataDir, pendingTxsFilename)
 
-	data, err := os.ReadFile(filePath)
+	data, err := safeio.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil

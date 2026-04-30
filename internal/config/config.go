@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/quidnug/quidnug/internal/safeio"
 	"gopkg.in/yaml.v3"
 )
 
@@ -120,9 +121,13 @@ var DefaultConfigSearchPaths = []string{
 	"/etc/quidnug/config.yaml",
 }
 
-// LoadConfigFromFile loads configuration from a file (YAML or JSON)
+// LoadConfigFromFile loads configuration from a file (YAML or JSON).
+// The path is sourced from operator input (CLI flag, env var, or
+// search-path discovery) and is treated as untrusted: safeio.ReadFile
+// rejects path-traversal attempts, NUL injection, symlinks, and
+// non-regular files before the read is issued.
 func LoadConfigFromFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := safeio.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

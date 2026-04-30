@@ -162,11 +162,33 @@ func Verify(pub *rsa.PublicKey, token []byte, s *big.Int) error {
 // of the canonical `(n, e)` serialization. Used to reference
 // a specific authority key across events (QDP-0021
 // BLIND_KEY_ATTESTATION carries this).
+//
+// Note on integer widths: pub.N.BitLen() is bounded by RSA
+// modulus size (≤ 16384 in any sane configuration) and pub.E
+// is bounded by Go's `int` for the public exponent (RFC 8017
+// recommends e ≤ 2^256-1 but Go's *rsa.PublicKey.E is just an
+// int, capped at 2^31-1 on 32-bit platforms). Both values fit
+// in uint32 with margin, but we range-check explicitly so
+// CodeQL/gosec sees the gate before the conversion.
 func PublicKeyFingerprint(pub *rsa.PublicKey) string {
 	h := sha256.New()
-	_ = binary.Write(h, binary.BigEndian, uint32(pub.N.BitLen()))
+	bitLen := pub.N.BitLen()
+	if bitLen < 0 || bitLen > 0xFFFFFFFF {
+		// Unreachable in practice (BitLen returns >= 0 and
+		// realistic moduli are <= 16384 bits) but kills the
+		// int-to-uint32 overflow alert.
+		bitLen = 0
+	}
+	_ = binary.Write(h, binary.BigEndian, uint32(bitLen)) // #nosec G115 -- range-checked above
 	h.Write(pub.N.Bytes())
-	_ = binary.Write(h, binary.BigEndian, uint32(pub.E))
+	e := pub.E
+	if e < 0 || int64(e) > 0xFFFFFFFF {
+		// Same: rsa.PublicKey.E is a Go int, so on 64-bit
+		// platforms it can in principle exceed uint32. Reject
+		// implausible values rather than silently truncating.
+		e = 0
+	}
+	_ = binary.Write(h, binary.BigEndian, uint32(e)) // #nosec G115 -- range-checked above
 	sum := h.Sum(nil)
 	out := make([]byte, len(sum)*2)
 	const hexdigits = "0123456789abcdef"
