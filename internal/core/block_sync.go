@@ -117,13 +117,22 @@ func (node *QuidnugNode) PullBlocksFromPeerForTest(ctx context.Context, nodeQuid
 
 // pullBlocksFromPeer fetches blocks at indexes > tipIdx from one
 // peer and feeds them through ReceiveBlock. Failure is logged
-// at debug; the peer's score takes a hit on transport failures.
+// at warn (ENG-79: previously debug, which masked the silent-
+// non-convergence bug); the peer's score takes a hit on
+// transport failures.
 func (node *QuidnugNode) pullBlocksFromPeer(ctx context.Context, nodeQuid, addr string, tipIdx int64) {
 	// SSRF gate: peer-advertised address goes through the
 	// sanitizer just like every other outbound dial.
-	safeAddr, err := ValidatePeerAddress(addr)
+	// ENG-79: use the node-method variant so per-peer
+	// allow_private (set when the operator added a static
+	// peer with the flag, or when an mDNS peer was admitted)
+	// short-circuits the global blocked-range check.
+	safeAddr, err := node.validatePeerAddress(addr)
 	if err != nil {
-		logger.Debug("block sync: refusing peer with invalid address",
+		// WARN level (ENG-79): a non-convergence regression
+		// here was previously invisible at INFO. Operators
+		// running a healthy mesh should NOT see this line.
+		logger.Warn("block sync: refusing peer with invalid address",
 			"nodeQuid", nodeQuid, "address", addr, "error", err)
 		return
 	}

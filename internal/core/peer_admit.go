@@ -104,7 +104,14 @@ func (node *QuidnugNode) AdmitPeer(ctx context.Context, c PeerCandidate, cfg Pee
 	}
 
 	// Stage 1: address validation.
-	safe, err := ValidatePeerAddress(c.Address)
+	// ENG-79: validatePeerAddress (node-method) consults the per-
+	// node PrivateAddrAllowList before falling through to the
+	// global blocked-range check, so a peer that was already
+	// admitted with allow_private will short-circuit cleanly here
+	// on a re-admit. New candidates still hit the global gate on
+	// the first call; the AllowPrivate/Source.allowsPrivate
+	// fallback below is what registers them on first sight.
+	safe, err := node.validatePeerAddress(c.Address)
 	if err != nil {
 		// If the source allows private overrides AND the
 		// candidate explicitly opted in, retry by recording
@@ -116,10 +123,11 @@ func (node *QuidnugNode) AdmitPeer(ctx context.Context, c PeerCandidate, cfg Pee
 			node.PrivateAddrAllowList.Set(append(currentAllowList(node), c.Address))
 			// Re-resolve via the dialer (which now consults
 			// the allow-list) by simply continuing past the
-			// pre-flight check. ValidatePeerAddress doesn't
-			// know about the allow-list, so we accept that
-			// the syntactic address-shape was already
-			// validated and proceed with the raw c.Address.
+			// pre-flight check. validatePeerAddress's syntactic
+			// host/port + control-character checks already
+			// passed (the failure mode here is the
+			// blocked-range check), so we proceed with the raw
+			// c.Address.
 			safe = sanitizedRaw(c.Address)
 		} else {
 			return nil, fmt.Errorf("admit %s: address: %w", c.Source, err)

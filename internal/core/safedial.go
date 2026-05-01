@@ -259,6 +259,15 @@ func (s SanitizedPeerAddress) String() string { return s.hostPort }
 // substitute into URL construction in place of the raw input;
 // because the return type is distinct from `string`, the taint
 // flow visibly terminates here.
+//
+// ENG-79: prefer (*QuidnugNode).validatePeerAddress over this
+// free function for callers that have a node reference. The
+// method consults the per-node PrivateAddrAllowList first so
+// peers explicitly admitted with allow_private (peers_file
+// entries, mDNS-discovered nodes) don't get re-rejected by the
+// global blocked-range check on every cycle. Free-function
+// ValidatePeerAddress kept for static-peer admission and any
+// other call site without node access.
 func ValidatePeerAddress(addr string) (SanitizedPeerAddress, error) {
 	zero := SanitizedPeerAddress{}
 	host, port, err := net.SplitHostPort(addr)
@@ -302,4 +311,55 @@ func ValidatePeerAddress(addr string) (SanitizedPeerAddress, error) {
 		}
 	}
 	return SanitizedPeerAddress{hostPort: net.JoinHostPort(host, port)}, nil
+}
+
+// validatePeerAddress is the node-aware variant of
+// ValidatePeerAddress (ENG-79). It checks the per-node
+// PrivateAddrAllowList first: if the address (host:port or bare
+// host) is allow-listed, the host:port is wrapped as sanitized
+// without any DNS lookup or IP check. Otherwise it falls
+// through to the free-function ValidatePeerAddress which
+// enforces the global blocked-range rule.
+//
+// The point: peers admitted via static peers_file with
+// allow_private: true (or mDNS-discovered LAN peers) populate
+// the allow-list at admission. Every subsequent dial — gossip,
+// query, broadcast, block sync — must consult that allow-list
+// or the peer will be rejected on every cycle even though it
+// was explicitly admitted.
+//
+// Validation still runs (control-char rejection, host:port
+// shape) so the allow-list can't smuggle through a malformed
+// address.
+func (node *QuidnugNode) validatePeerAddress(addr string) (SanitizedPeerAddress, error) {
+	zero := SanitizedPeerAddress{}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return zero, fmt.Errorf("peer address: split host/port %q: %w", addr, err)
+	}
+	if host == "" {
+		return zero, fmt.Errorf("peer address: empty host in %q", addr)
+	}
+	// Control-character check matches ValidatePeerAddress.
+	// Apply even on the allow-list path so a tampered
+	// peers_file entry can't smuggle CR/LF.
+	for _, s := range []string{host, port} {
+		for _, r := range s {
+			if r < 0x20 || r == 0x7f {
+				return zero, fmt.Errorf("peer address: control character in %q", addr)
+			}
+		}
+	}
+	// Allow-list short-circuit: operator explicitly admitted
+	// this address (peers_file allow_private: true, or
+	// mDNS-discovered LAN peer). Skip the IP-class check
+	// because the operator has accepted the responsibility
+	// for trusting this specific destination.
+	if node != nil && node.PrivateAddrAllowList != nil {
+		if node.PrivateAddrAllowList.Has(addr) || node.PrivateAddrAllowList.Has(host) {
+			return SanitizedPeerAddress{hostPort: net.JoinHostPort(host, port)}, nil
+		}
+	}
+	// Fall through to the standard global check.
+	return ValidatePeerAddress(addr)
 }

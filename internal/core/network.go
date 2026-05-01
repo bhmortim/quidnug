@@ -159,8 +159,10 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		// generally trusted, but we run the same sanitization as
 		// the gossip-discovered peers so the dial cannot be aimed
 		// at internal infrastructure even if config is wrong or
-		// poisoned.
-		safeAddr, err := ValidatePeerAddress(seedAddress)
+		// poisoned. ENG-79: use the node-method variant so seed
+		// addresses listed with allow_private (e.g. LAN seeds)
+		// don't get rejected by the global filter.
+		safeAddr, err := node.validatePeerAddress(seedAddress)
 		if err != nil {
 			logger.Warn("Refusing seed with invalid address", "seedAddress", seedAddress, "error", err)
 			addErr(seedAddress + ": invalid")
@@ -309,8 +311,10 @@ func classifyDialError(err error) string {
 // fetchNodeDomains fetches the supported domains from a remote node
 func (node *QuidnugNode) fetchNodeDomains(ctx context.Context, nodeAddress string) ([]string, error) {
 	// SSRF gate: nodeAddress flows from peer-advertised data via
-	// discovery; sanitize before composing the URL.
-	safeAddr, err := ValidatePeerAddress(nodeAddress)
+	// discovery; sanitize before composing the URL. ENG-79: use
+	// node-method variant so admitted-with-allow_private peers
+	// don't get rejected here.
+	safeAddr, err := node.validatePeerAddress(nodeAddress)
 	if err != nil {
 		return nil, fmt.Errorf("fetchNodeDomains: %w", err)
 	}
@@ -495,7 +499,10 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON []byte) {
 	// SSRF gate: same pattern as queryNode. safeAddr is a distinct
 	// type so the taint flow shows the sanitization step.
-	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	// ENG-79: use node-method variant so admitted-with-allow_private
+	// peers (static peer with allow_private:true, or mDNS peer
+	// admitted on a private subnet) don't get rejected at this dial.
+	safeAddr, err := node.validatePeerAddress(targetNode.Address)
 	if err != nil {
 		logger.Warn("Refusing broadcast to invalid peer address",
 			"targetNodeId", targetNode.ID,
@@ -848,7 +855,9 @@ func (node *QuidnugNode) createDomainGossip() *DomainGossip {
 // sendDomainGossip sends a gossip message to a single node
 func (node *QuidnugNode) sendDomainGossip(targetNode Node, gossipJSON []byte) {
 	// SSRF gate (same pattern as queryNode/broadcastToNode).
-	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	// ENG-79: use node-method variant so the per-peer allow_private
+	// override is honored here too.
+	safeAddr, err := node.validatePeerAddress(targetNode.Address)
 	if err != nil {
 		logger.Debug("Refusing gossip to invalid peer address",
 			"targetNodeId", targetNode.ID, "error", err)
@@ -1032,7 +1041,9 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 	// safeAddr.String() is used in URL composition below in place
 	// of targetNode.Address; the distinct return type makes the
 	// sanitization step visible to taint analysis.
-	safeAddr, err := ValidatePeerAddress(targetNode.Address)
+	// ENG-79: use node-method variant so admitted-with-allow_private
+	// peers don't get rejected at this dial when on a private subnet.
+	safeAddr, err := node.validatePeerAddress(targetNode.Address)
 	if err != nil {
 		return nil, fmt.Errorf("queryNode: %w", err)
 	}
