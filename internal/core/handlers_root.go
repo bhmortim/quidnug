@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"sort"
@@ -53,7 +54,7 @@ var rootIndexTemplate = template.Must(template.New("root").Parse(`<!DOCTYPE html
   {{if .OperatorQuidID}}<dt>Operator quid</dt><dd>{{.OperatorQuidID}}</dd>{{end}}
   <dt>Uptime</dt><dd>{{.Uptime}}</dd>
   <dt>Block height</dt><dd>{{.BlockHeight}}</dd>
-  <dt>Connected peers</dt><dd>{{.PeerCount}}</dd>
+  <dt>Connected peers</dt><dd>{{.PeerCount}}{{if .PeerSourceBreakdown}} ({{.PeerSourceBreakdown}}){{end}}</dd>
   <dt>Trust domains served</dt><dd>{{.DomainCount}}</dd>
 </dl>
 {{if .OperatorQuidID}}<p class="lede">This node is operated under quid <code>{{.OperatorQuidID}}</code>. Trust granted to that quid in any trust domain authorizes this node (and any other node the same operator runs) to participate in that domain. The Node ID above is per-process and exists for gossip dedup; the operator quid is what accumulates reputation.</p>
@@ -120,17 +121,18 @@ curl {{.SelfBaseURL}}/api/v1/streams/&lt;subject-id&gt;/events | jq .</pre>
 
 // rootIndexData carries the dynamic fields the root template renders.
 type rootIndexData struct {
-	Version        string
-	NodeID         string
-	OperatorQuidID string
-	Uptime         string
-	BlockHeight    int64
-	PeerCount      int
-	DomainCount    int
-	DomainSamples  []string
-	HasMoreDomains bool
-	StartedAt      string
-	SelfBaseURL    string
+	Version             string
+	NodeID              string
+	OperatorQuidID      string
+	Uptime              string
+	BlockHeight         int64
+	PeerCount           int
+	PeerSourceBreakdown string // "2 gossip, 1 static, 1 lan"
+	DomainCount         int
+	DomainSamples       []string
+	HasMoreDomains      bool
+	StartedAt           string
+	SelfBaseURL         string
 }
 
 // rootSampleDomainLimit caps how many domain names appear inline on the
@@ -160,7 +162,36 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	node.KnownNodesMutex.RLock()
 	peerCount := len(node.KnownNodes)
+	sourceTally := map[string]int{}
+	for _, p := range node.KnownNodes {
+		key := p.ConnectionStatus
+		if key == "" {
+			key = "unknown"
+		}
+		sourceTally[key]++
+	}
 	node.KnownNodesMutex.RUnlock()
+	sourceBreakdown := ""
+	if peerCount > 0 {
+		parts := make([]string, 0, len(sourceTally))
+		// Stable ordering for human readability.
+		for _, k := range []string{"static", "lan", "gossip", "connected", "unknown"} {
+			if n, ok := sourceTally[k]; ok && n > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", n, k))
+			}
+		}
+		// Catch any sources we didn't enumerate above.
+		for k, n := range sourceTally {
+			switch k {
+			case "static", "lan", "gossip", "connected", "unknown":
+				continue
+			}
+			if n > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", n, k))
+			}
+		}
+		sourceBreakdown = strings.Join(parts, ", ")
+	}
 
 	node.BlockchainMutex.RLock()
 	blockHeight := int64(0)
@@ -211,14 +242,15 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	if wantsJSON(r) {
 		body := map[string]interface{}{
-			"version":       QuidnugVersion,
-			"nodeId":        node.NodeID,
-			"uptimeSeconds": int64(uptime.Seconds()),
-			"startedAt":     startedAt,
-			"blockHeight":   blockHeight,
-			"peerCount":     peerCount,
-			"domainCount":   domainCount,
-			"domainSamples": domainSamples,
+			"version":           QuidnugVersion,
+			"nodeId":            node.NodeID,
+			"uptimeSeconds":     int64(uptime.Seconds()),
+			"startedAt":         startedAt,
+			"blockHeight":       blockHeight,
+			"peerCount":         peerCount,
+			"peerSourceTally":   sourceTally,
+			"domainCount":       domainCount,
+			"domainSamples":     domainSamples,
 			"endpoints": map[string]string{
 				"health":  "/api/v1/health",
 				"info":    "/api/v1/info",
@@ -239,17 +271,18 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_ = rootIndexTemplate.Execute(w, rootIndexData{
-		Version:        QuidnugVersion,
-		NodeID:         node.NodeID,
-		OperatorQuidID: node.OperatorQuidID,
-		Uptime:         uptime.String(),
-		BlockHeight:    blockHeight,
-		PeerCount:      peerCount,
-		DomainCount:    domainCount,
-		DomainSamples:  domainSamples,
-		HasMoreDomains: hasMore,
-		StartedAt:      startedAt,
-		SelfBaseURL:    selfBaseURL,
+		Version:             QuidnugVersion,
+		NodeID:              node.NodeID,
+		OperatorQuidID:      node.OperatorQuidID,
+		Uptime:              uptime.String(),
+		BlockHeight:         blockHeight,
+		PeerCount:           peerCount,
+		PeerSourceBreakdown: sourceBreakdown,
+		DomainCount:         domainCount,
+		DomainSamples:       domainSamples,
+		HasMoreDomains:      hasMore,
+		StartedAt:           startedAt,
+		SelfBaseURL:         selfBaseURL,
 	})
 }
 

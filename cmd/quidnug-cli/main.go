@@ -106,6 +106,8 @@ func run(args []string) error {
 		return cmdBlocks(rest)
 	case "node":
 		return cmdNode(rest)
+	case "peer":
+		return cmdPeer(rest)
 	case "discover":
 		return cmdDiscover(rest)
 	case "well-known":
@@ -953,6 +955,14 @@ Commands:
                  [--supported-domains glob,...] [--capabilities ...] \
                  --nonce N                  QDP-0014 self-advertisement
   node show --quid Q                        Fetch a signed advertisement
+
+  peer list                                 Known peers as the queried node sees them
+  peer add ADDR [--operator-quid Q]         Append entry to local peers_file
+                 [--allow-private]
+                 [--file PATH]
+  peer remove ADDR [--file PATH]            Remove entry from local peers_file
+  peer scan-lan [--service _quidnug._tcp]   One-shot mDNS browse of the local segment
+                 [--timeout 5s] [--json]
 
   discover domain --domain D                Consortium + endpoint hints + block tip
   discover operator --quid Q                All nodes an operator runs
