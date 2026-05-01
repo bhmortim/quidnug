@@ -193,3 +193,120 @@ func currentAllowListSet(node *QuidnugNode) map[string]struct{} {
 	}
 	return out
 }
+
+// runLANPeerLoop announces this node on mDNS and admits peers
+// found on the local segment. Both halves run on best-effort
+// goroutines: announcement failure (e.g. the OS denies multicast
+// binding) downgrades the node to "browser-only" but doesn't
+// disable the admit half. Browser failure logs and retries
+// every 30s.
+//
+// LAN-discovered peers automatically get added to the
+// PrivateAddrAllowList because their addresses are necessarily
+// private (mDNS is link-local). They still go through the same
+// admit pipeline as gossip peers — being "on the LAN" is not
+// a substitute for trust.
+func (node *QuidnugNode) runLANPeerLoop(
+	ctx context.Context,
+	enabled bool,
+	serviceName string,
+	port int,
+	cfg PeerAdmitConfig,
+) {
+	if !enabled {
+		return
+	}
+	if serviceName == "" {
+		serviceName = "_quidnug._tcp"
+	}
+
+	// Announce ourselves so other nodes can find us.
+	server, err := peering.AnnounceLANServer(peering.LANServerConfig{
+		ServiceName:  serviceName,
+		Port:         port,
+		NodeID:       node.NodeID,
+		OperatorQuid: node.OperatorQuidID,
+	})
+	if err != nil {
+		logger.Warn("LAN announce failed (browser still active)",
+			"error", err)
+	} else {
+		defer server.Stop()
+		logger.Info("LAN discovery active",
+			"service", serviceName, "port", port)
+	}
+
+	browser := peering.NewLANBrowser()
+	if err := browser.Start(ctx, peering.LANBrowserConfig{
+		ServiceName: serviceName,
+	}); err != nil {
+		logger.Warn("LAN browser failed to start",
+			"error", err)
+		return
+	}
+	defer browser.Stop()
+
+	// Track which addresses we've added to the allow-list so
+	// teardown / source-rotation can clean up.
+	mdnsAddrs := make(map[string]struct{})
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("LAN peer loop stopped")
+			return
+		case peer, ok := <-browser.Events():
+			if !ok {
+				return
+			}
+			// Skip self-discovery: zeroconf re-broadcasts
+			// our own announcement back to us.
+			if peer.NodeID != "" && peer.NodeID == node.NodeID {
+				continue
+			}
+			if node.PrivateAddrAllowList != nil {
+				if _, already := mdnsAddrs[peer.Address]; !already {
+					mdnsAddrs[peer.Address] = struct{}{}
+					tokens := currentAllowList(node)
+					tokens = append(tokens, peer.Address)
+					node.PrivateAddrAllowList.Set(tokens)
+				}
+			}
+			candidate := PeerCandidate{
+				Address:      peer.Address,
+				NodeQuid:     peer.NodeID,
+				OperatorQuid: peer.OperatorQuid,
+				Source:       PeerSourceLAN,
+				AllowPrivate: true, // LAN is private by definition
+			}
+			verdict, err := node.AdmitPeer(ctx, candidate, cfg)
+			if err != nil {
+				logger.Debug("LAN peer admission failed",
+					"address", peer.Address,
+					"hostname", peer.Hostname,
+					"error", err)
+				continue
+			}
+			node.KnownNodesMutex.Lock()
+			// Don't clobber a static-source entry.
+			if existing, ok := node.KnownNodes[verdict.NodeQuid]; ok && existing.ConnectionStatus == "static" {
+				node.KnownNodesMutex.Unlock()
+				continue
+			}
+			node.KnownNodes[verdict.NodeQuid] = Node{
+				ID:               verdict.NodeQuid,
+				Address:          peer.Address,
+				LastSeen:         time.Now().Unix(),
+				ConnectionStatus: "lan",
+			}
+			node.KnownNodesMutex.Unlock()
+			logger.Info("Admitted LAN peer",
+				"nodeQuid", verdict.NodeQuid,
+				"operatorQuid", verdict.OperatorQuid,
+				"address", peer.Address,
+				"hostname", peer.Hostname,
+				"hasAd", verdict.HasAd,
+				"trustEdge", verdict.OpTrustEdge)
+		}
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -350,6 +351,22 @@ func Run() {
 	go func() {
 		defer wg.Done()
 		quidnugNode.runStaticPeerLoop(ctx, cfg.PeersFile, quidnugNode.PeerAdmit)
+	}()
+
+	// LAN discovery via mDNS. Off by default; opt-in for home,
+	// office, and lab deployments. Idempotent no-op when
+	// cfg.LANDiscovery is false.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		port, _ := strconv.Atoi(cfg.Port)
+		quidnugNode.runLANPeerLoop(
+			ctx,
+			cfg.LANDiscovery,
+			cfg.LANServiceName,
+			port,
+			quidnugNode.PeerAdmit,
+		)
 	}()
 
 	// Start block generation for managed trust domains (with context)
