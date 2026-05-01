@@ -82,7 +82,13 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		}
 		_ = resp.Body.Close()
 
-		// Add discovered nodes to our known nodes list and fetch their domain info
+		// Add discovered nodes to our known nodes list, after
+		// each has passed the admit pipeline (handshake +
+		// optional NodeAdvertisement check + operator
+		// attestation). Peers that fail admission are dropped
+		// with a debug-level log; we don't escalate because a
+		// single bad peer in a gossip response shouldn't taint
+		// the whole batch.
 		for _, discoveredNode := range nodesResponse.Nodes {
 			select {
 			case <-ctx.Done():
@@ -90,22 +96,60 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 			default:
 			}
 
-			// Fetch domain info for this node
+			candidate := PeerCandidate{
+				Address:  discoveredNode.Address,
+				NodeQuid: discoveredNode.ID,
+				Source:   PeerSourceGossip,
+				// Gossip-source peers do NOT get allow_private
+				// overrides — that's the whole point of the
+				// per-source distinction.
+			}
+			verdict, err := node.AdmitPeer(ctx, candidate, node.PeerAdmit)
+			if err != nil {
+				logger.Debug("Refusing gossip-discovered peer",
+					"nodeId", discoveredNode.ID,
+					"address", discoveredNode.Address,
+					"error", err)
+				continue
+			}
+
+			// Fetch domain info for this node now that we've
+			// admitted it.
 			domains, err := node.fetchNodeDomains(ctx, discoveredNode.Address)
 			if err != nil {
-				logger.Debug("Failed to fetch domains from node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address, "error", err)
+				logger.Debug("Failed to fetch domains from node",
+					"nodeId", discoveredNode.ID,
+					"address", discoveredNode.Address,
+					"error", err)
 			} else {
 				discoveredNode.TrustDomains = domains
 			}
 
 			node.KnownNodesMutex.Lock()
-			node.KnownNodes[discoveredNode.ID] = discoveredNode
-			node.KnownNodesMutex.Unlock()
+			// Don't clobber a static-source entry with a
+			// gossip-source entry; the operator's explicit
+			// listing wins.
+			if existing, ok := node.KnownNodes[discoveredNode.ID]; ok && existing.ConnectionStatus == "static" {
+				node.KnownNodesMutex.Unlock()
+			} else {
+				discoveredNode.LastSeen = time.Now().Unix()
+				if discoveredNode.ConnectionStatus == "" {
+					discoveredNode.ConnectionStatus = "gossip"
+				}
+				node.KnownNodes[discoveredNode.ID] = discoveredNode
+				node.KnownNodesMutex.Unlock()
+			}
 
 			// Update domain registry for efficient subdomain lookups
 			node.updateDomainRegistry(discoveredNode.ID, discoveredNode.TrustDomains)
 
-			logger.Info("Discovered node", "nodeId", discoveredNode.ID, "address", discoveredNode.Address, "domains", discoveredNode.TrustDomains)
+			logger.Info("Discovered node",
+				"nodeId", discoveredNode.ID,
+				"address", discoveredNode.Address,
+				"operatorQuid", verdict.OperatorQuid,
+				"hasAd", verdict.HasAd,
+				"trustEdge", verdict.OpTrustEdge,
+				"domains", discoveredNode.TrustDomains)
 		}
 	}
 

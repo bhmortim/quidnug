@@ -185,3 +185,73 @@ domain_gossip_ttl: 3
 #
 #   Environment variable: OPERATOR_QUID_FILE
 # operator_quid_file: "/etc/quidnug/operator.quid.json"
+
+# --- Peering --------------------------------------------------------------
+#
+# Quidnug nodes find each other through three orthogonal sources, all
+# of which feed the same admit pipeline (handshake → advertisement
+# lookup → operator-attestation TRUST check):
+#
+#   1. seed_nodes (above) — gossip discovery from a starting set.
+#   2. peers_file — operator-managed list of explicit peers.
+#   3. lan_discovery — mDNS / DNS-SD on the local segment.
+#
+# Each enabled source produces peer candidates; the admit pipeline
+# decides which ones land in KnownNodes.
+
+# Path to a YAML/JSON file enumerating peers this node should know
+# at boot. Live-reloaded on file change (fsnotify); operators can add
+# or remove peers without restarting the node.
+#
+# File schema:
+#
+#   peers:
+#     - address: "node2.example.com:8080"
+#       operator_quid: "034bc467852ffa94"   # optional: pin operator
+#       allow_private: false                # default false
+#     - address: "192.168.1.50:8080"
+#       operator_quid: "feedfacedeadbeef"
+#       allow_private: true                 # bypass dial filter for THIS peer
+#
+# `allow_private: true` is the explicit escape hatch for LAN peers.
+# Honored ONLY for entries the operator wrote into peers_file (or
+# arrived via mDNS). NOT honored for gossip-discovered peers.
+#
+#   Environment variable: PEERS_FILE
+# peers_file: "/etc/quidnug/peers.yaml"
+
+# Enable mDNS/DNS-SD service-type "_quidnug._tcp.local." so nodes on
+# the same broadcast domain can find each other without configuration.
+# Off by default; opt in for home/office/lab deployments.
+#   Environment variable: LAN_DISCOVERY (set to "true" to enable)
+# lan_discovery: false
+
+# mDNS service type advertised + browsed. Default "_quidnug._tcp".
+# Set a custom name (e.g., "_quidnug-test._tcp") to keep dev clusters
+# from colliding with production peers on the same LAN.
+#   Environment variable: LAN_SERVICE_NAME
+# lan_service_name: "_quidnug._tcp"
+
+# Reject peers learned via gossip that lack a current
+# NodeAdvertisementTransaction (QDP-0014). Default true. Set false in
+# dev when peers haven't yet published advertisements.
+#   Environment variable: REQUIRE_ADVERTISEMENT
+# require_advertisement: true
+
+# Minimum TRUST-edge weight from OperatorQuid → NodeQuid required to
+# admit a peer. Default 0.5 (matches QDP-0014's MinOperatorTrustWeight).
+# Set 0 to disable the operator-attestation gate (not recommended).
+#   Environment variable: PEER_MIN_OPERATOR_TRUST
+# peer_min_operator_trust: 0.5
+
+# Optional second gate: candidate's OperatorQuid must have an incoming
+# TRUST edge from at least one quid this node already trusts, at the
+# named weight or higher. Default 0 (gate off). Set e.g. 0.3 to enforce
+# "I only peer with operators my friends already trust."
+#   Environment variable: PEER_MIN_OPERATOR_REPUTATION
+# peer_min_operator_reputation: 0.0
+
+# How often the admit pipeline re-checks the operator-attestation
+# TRUST edge for an already-admitted peer. Default 30m.
+#   Environment variable: PEER_REATTESTATION_INTERVAL
+# peer_reattestation_interval: "30m"

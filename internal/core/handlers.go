@@ -590,7 +590,10 @@ func (node *QuidnugNode) QueryIdentityRegistryHandler(w http.ResponseWriter, r *
 	}
 }
 
-// GetInfoHandler returns node information
+// GetInfoHandler returns node information including the
+// operator-quid binding peer admit pipelines need to verify
+// attestation. The operator block is omitted entirely when no
+// operator quid is configured (ephemeral node).
 func (node *QuidnugNode) GetInfoHandler(w http.ResponseWriter, r *http.Request) {
 	node.TrustDomainsMutex.RLock()
 	managedDomains := make([]string, 0, len(node.TrustDomains))
@@ -606,12 +609,19 @@ func (node *QuidnugNode) GetInfoHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	node.BlockchainMutex.RUnlock()
 
-	WriteSuccess(w, map[string]interface{}{
+	body := map[string]interface{}{
 		"nodeQuid":       node.NodeID,
 		"managedDomains": managedDomains,
 		"blockHeight":    blockHeight,
 		"version":        QuidnugVersion,
-	})
+	}
+	if node.OperatorQuidID != "" {
+		body["operatorQuid"] = map[string]interface{}{
+			"id":           node.OperatorQuidID,
+			"publicKeyHex": node.OperatorQuidPublicKeyHex,
+		}
+	}
+	WriteSuccess(w, body)
 }
 
 // CreateQuidHandler creates a new quid identity

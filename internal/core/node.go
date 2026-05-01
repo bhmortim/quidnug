@@ -119,6 +119,20 @@ type QuidnugNode struct {
 	OperatorQuidPrivateKey   *ecdsa.PrivateKey // nil when only public-key file was loaded
 	OperatorQuidFile         string            // source path, for landing-page diagnostics
 
+	// PrivateAddrAllowList is the per-peer override set consulted
+	// by safeDialContext. Operators populate it implicitly by
+	// listing peers in peers_file with `allow_private: true`, or
+	// by enabling LAN discovery (mDNS-found peers are added
+	// automatically). The allow-list lets a node dial specific
+	// 192.168.x.x peers without opening the dial filter for
+	// every private range globally.
+	PrivateAddrAllowList *PrivateAddrAllowList
+
+	// PeerAdmit is the snapshot of admit-pipeline thresholds
+	// captured at boot. Used by every peer source (gossip,
+	// static, mDNS) so the gating policy is uniform.
+	PeerAdmit PeerAdmitConfig
+
 	// State registries
 	TrustRegistry      map[string]map[string]float64
 	TrustNonceRegistry map[string]map[string]int64
@@ -323,11 +337,19 @@ func Run() {
 		cancel()
 	}()
 
-	// Discover other nodes (with context)
+	// Discover other nodes via seeds (with context)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		quidnugNode.DiscoverNodes(ctx, cfg.SeedNodes)
+	}()
+
+	// Static peers from operator-managed peers_file. Idempotent
+	// no-op when cfg.PeersFile is empty.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runStaticPeerLoop(ctx, cfg.PeersFile, quidnugNode.PeerAdmit)
 	}()
 
 	// Start block generation for managed trust domains (with context)
@@ -551,19 +573,29 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		ProbeTimeoutPolicy:        cfg.ProbeTimeoutPolicy,
 		quarantine:                newQuarantineState(),
 		forks:                     newForkRegistry(),
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-			// SSRF defense: reject loopback, private, link-local,
-			// and metadata-IP destinations at dial time so peer-
-			// advertised addresses can't trick the node into
-			// querying its own infrastructure. See safedial.go.
-			Transport: &http.Transport{
-				DialContext:           safeDialContext,
-				MaxIdleConns:          100,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
+		PrivateAddrAllowList: NewPrivateAddrAllowList(),
+		PeerAdmit: PeerAdmitConfig{
+			RequireAdvertisement:  cfg.RequireAdvertisement,
+			MinOperatorTrust:      cfg.PeerMinOperatorTrust,
+			MinOperatorReputation: cfg.PeerMinOperatorReputation,
+			HandshakeTimeout:      5 * time.Second,
+		},
+	}
+	// SSRF defense: reject loopback, private, link-local, and
+	// metadata-IP destinations at dial time so peer-advertised
+	// addresses can't trick the node into querying its own
+	// infrastructure. The closure captures the per-node allow-list
+	// so peers explicitly listed in peers_file (or learned via
+	// mDNS) can still be dialed even if they sit in an otherwise-
+	// blocked range. See safedial.go.
+	node.httpClient = &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext:           NewSafeDialContext(node.PrivateAddrAllowList),
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
 		},
 	}
 

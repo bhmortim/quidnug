@@ -29,6 +29,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -38,7 +39,7 @@ import (
 func testingT() bool { return testing.Testing() }
 
 // allowPrivatePeers reports whether the operator has opted into
-// allowing private/loopback peer addresses. Set
+// allowing private/loopback peer addresses globally. Set
 // QUIDNUG_ALLOW_PRIVATE_PEERS=1 to enable; default is deny.
 //
 // When running under `go test` (testing.Testing() == true on
@@ -53,6 +54,66 @@ func allowPrivatePeers() bool {
 	}
 	if testingT() {
 		return true
+	}
+	return false
+}
+
+// PrivateAddrAllowList is a per-node, thread-safe set of
+// "host:port" or "host" tokens whose corresponding outbound
+// dials are exempt from the private/loopback/link-local
+// rejection rule. Operators populate it implicitly by listing
+// peers in peers_file with `allow_private: true` (or by enabling
+// LAN discovery, which adds mDNS-found peers automatically).
+//
+// The allow-list is the targeted alternative to the global
+// QUIDNUG_ALLOW_PRIVATE_PEERS env var: production deployments
+// that need exactly two LAN peers can list those two peers
+// instead of opening the dial filter for every private range.
+type PrivateAddrAllowList struct {
+	mu    sync.RWMutex
+	addrs map[string]struct{}
+}
+
+// NewPrivateAddrAllowList constructs an empty allow-list.
+func NewPrivateAddrAllowList() *PrivateAddrAllowList {
+	return &PrivateAddrAllowList{addrs: make(map[string]struct{})}
+}
+
+// Set replaces the allow-list contents with the given tokens.
+// Tokens may be "host:port" (precise), "host" (matches any port
+// for that host), or a literal IP. Comparison is byte-exact.
+func (a *PrivateAddrAllowList) Set(tokens []string) {
+	if a == nil {
+		return
+	}
+	next := make(map[string]struct{}, len(tokens))
+	for _, t := range tokens {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		next[t] = struct{}{}
+	}
+	a.mu.Lock()
+	a.addrs = next
+	a.mu.Unlock()
+}
+
+// Has reports whether either the full host:port or the host
+// portion alone is on the allow-list.
+func (a *PrivateAddrAllowList) Has(hostPort string) bool {
+	if a == nil {
+		return false
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if _, ok := a.addrs[hostPort]; ok {
+		return true
+	}
+	if host, _, err := net.SplitHostPort(hostPort); err == nil {
+		if _, ok := a.addrs[host]; ok {
+			return true
+		}
 	}
 	return false
 }
@@ -83,15 +144,37 @@ func isBlockedIP(ip net.IP) bool {
 	return false
 }
 
-// safeDialContext is an http.Transport.DialContext that resolves the
-// requested address and refuses to connect if it points at a
-// blocked range. Returns an explicit error so SSRF probes show up
-// in logs rather than silently succeeding via redirects or DNS
-// rebinding.
+// safeDialContext is the legacy free-function variant kept for
+// callers that do not yet have access to a PrivateAddrAllowList.
+// New code should prefer NewSafeDialContext(allow) which wraps a
+// per-node allow-list for the precise-override path.
 func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return safeDialWith(ctx, network, address, nil)
+}
+
+// NewSafeDialContext returns a DialContext closure that consults
+// the supplied PrivateAddrAllowList for per-peer "this address
+// is fine even though it's in an otherwise-blocked range"
+// overrides. The allow-list may be nil (equivalent to no
+// overrides). Callers wire the returned func into
+// http.Transport.DialContext.
+func NewSafeDialContext(allow *PrivateAddrAllowList) func(ctx context.Context, network, address string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		return safeDialWith(ctx, network, address, allow)
+	}
+}
+
+func safeDialWith(ctx context.Context, network, address string, allow *PrivateAddrAllowList) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
 		return nil, fmt.Errorf("safedial: split host/port %q: %w", address, err)
+	}
+	// Per-peer allow-list short-circuit. The operator listed this
+	// host or host:port in peers_file (or it came in via mDNS),
+	// so the perimeter check steps aside for this dial only.
+	if allow != nil && allow.Has(address) {
+		d := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+		return d.DialContext(ctx, network, address)
 	}
 	// Resolve all candidate addresses; reject if any are blocked,
 	// because a future-time switch in DNS could otherwise route

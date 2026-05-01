@@ -93,6 +93,85 @@ type Config struct {
 	//
 	// Environment variable: OPERATOR_QUID_FILE
 	OperatorQuidFile string `json:"operatorQuidFile" yaml:"operator_quid_file"`
+
+	// --- Peering ---------------------------------------------------------
+	//
+	// PeersFile is a path to a YAML/JSON file enumerating peers this
+	// node should consider known at boot, in addition to anything
+	// learned from seed_nodes gossip discovery. Reload on file change
+	// (fsnotify) so operators can add/remove peers without restart.
+	//
+	// File schema (YAML):
+	//
+	//   peers:
+	//     - address: "node2.example.com:8080"
+	//       operator_quid: "034bc467852ffa94"   # optional: pin operator
+	//       allow_private: false                # default false
+	//     - address: "192.168.1.50:8080"
+	//       operator_quid: "feedfacedeadbeef"
+	//       allow_private: true                 # bypass safedial for this peer
+	//
+	// `allow_private: true` is the explicit escape hatch for LAN
+	// peers. It is honored ONLY for entries the operator wrote into
+	// peers_file (or that arrive via mDNS discovery, see LANDiscovery
+	// below). It is NOT honored for peers learned from gossip.
+	//
+	// Environment variable: PEERS_FILE
+	PeersFile string `json:"peersFile" yaml:"peers_file"`
+
+	// LANDiscovery enables mDNS / DNS-SD service-type
+	// `_quidnug._tcp.local.` so nodes on the same broadcast domain
+	// can find each other without configuration. Off by default;
+	// opt in for home/office/lab deployments. Peers found via mDNS
+	// are admitted with allow_private semantics so the dial
+	// filter doesn't refuse 192.168.x.x destinations.
+	//
+	// Environment variable: LAN_DISCOVERY
+	LANDiscovery bool `json:"lanDiscovery" yaml:"lan_discovery"`
+
+	// LANServiceName is the mDNS service type advertised + browsed.
+	// Defaults to "_quidnug._tcp" when empty.
+	//
+	// Environment variable: LAN_SERVICE_NAME
+	LANServiceName string `json:"lanServiceName" yaml:"lan_service_name"`
+
+	// RequireAdvertisement gates whether a peer learned via gossip
+	// must have a current NodeAdvertisementTransaction (QDP-0014)
+	// in this node's registry to be admitted. Default true in
+	// production deployments. Set false in dev when peers are
+	// running ephemeral identities without yet publishing an ad.
+	//
+	// Environment variable: REQUIRE_ADVERTISEMENT
+	RequireAdvertisement bool `json:"requireAdvertisement" yaml:"require_advertisement"`
+
+	// PeerMinOperatorTrust is the minimum TRUST-edge weight from
+	// OperatorQuid → NodeQuid required to admit a peer. Floors at
+	// 0; defaults to 0.5 (matches QDP-0014's MinOperatorTrustWeight).
+	// Tighten to 0.7+ for production peerings; loosen to 0 to
+	// disable the operator-attestation gate entirely (not
+	// recommended).
+	//
+	// Environment variable: PEER_MIN_OPERATOR_TRUST
+	PeerMinOperatorTrust float64 `json:"peerMinOperatorTrust" yaml:"peer_min_operator_trust"`
+
+	// PeerMinOperatorReputation is an OPTIONAL second gate: if > 0,
+	// the candidate peer's OperatorQuid must have an incoming
+	// TRUST edge from at least one quid this node already trusts,
+	// at the named weight or higher. Default 0 (gate off). Set to
+	// e.g. 0.3 to enforce "I only peer with operators my friends
+	// trust."
+	//
+	// Environment variable: PEER_MIN_OPERATOR_REPUTATION
+	PeerMinOperatorReputation float64 `json:"peerMinOperatorReputation" yaml:"peer_min_operator_reputation"`
+
+	// PeerReattestationInterval is how often the admit pipeline
+	// re-checks the operator-attestation TRUST edge for an already-
+	// admitted peer. Default 30m. The check is cheap (in-memory
+	// trust graph read), but tightening below 5m on a node with
+	// hundreds of peers will visibly burn CPU.
+	//
+	// Environment variable: PEER_REATTESTATION_INTERVAL
+	PeerReattestationInterval time.Duration `json:"peerReattestationInterval" yaml:"-"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -119,6 +198,15 @@ type fileConfig struct {
 	DomainGossipTTL         int      `json:"domainGossipTTL" yaml:"domain_gossip_ttl"`
 	AuditLogPath            string   `json:"auditLogPath" yaml:"audit_log_path"`
 	OperatorQuidFile        string   `json:"operatorQuidFile" yaml:"operator_quid_file"`
+
+	// Peering knobs (file-loaded; envs override below)
+	PeersFile                 string  `json:"peersFile" yaml:"peers_file"`
+	LANDiscovery              *bool   `json:"lanDiscovery" yaml:"lan_discovery"`
+	LANServiceName            string  `json:"lanServiceName" yaml:"lan_service_name"`
+	RequireAdvertisement      *bool   `json:"requireAdvertisement" yaml:"require_advertisement"`
+	PeerMinOperatorTrust      *float64 `json:"peerMinOperatorTrust" yaml:"peer_min_operator_trust"`
+	PeerMinOperatorReputation *float64 `json:"peerMinOperatorReputation" yaml:"peer_min_operator_reputation"`
+	PeerReattestationInterval string  `json:"peerReattestationInterval" yaml:"peer_reattestation_interval"`
 }
 
 // Default values
@@ -136,6 +224,13 @@ const (
 	DefaultTrustCacheTTL           = 60 * time.Second
 	DefaultDomainGossipInterval    = 2 * time.Minute
 	DefaultDomainGossipTTL         = 3 // Default hop count before gossip is dropped
+
+	// Peering defaults
+	DefaultLANServiceName            = "_quidnug._tcp"
+	DefaultRequireAdvertisement      = true
+	DefaultPeerMinOperatorTrust      = 0.5 // matches QDP-0014 MinOperatorTrustWeight
+	DefaultPeerMinOperatorReputation = 0.0 // off by default
+	DefaultPeerReattestationInterval = 30 * time.Minute
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -268,6 +363,33 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 		cfg.OperatorQuidFile = fc.OperatorQuidFile
 	}
 
+	// Peering knobs
+	if fc.PeersFile != "" {
+		cfg.PeersFile = fc.PeersFile
+	}
+	if fc.LANDiscovery != nil {
+		cfg.LANDiscovery = *fc.LANDiscovery
+	}
+	if fc.LANServiceName != "" {
+		cfg.LANServiceName = fc.LANServiceName
+	}
+	if fc.RequireAdvertisement != nil {
+		cfg.RequireAdvertisement = *fc.RequireAdvertisement
+	}
+	if fc.PeerMinOperatorTrust != nil {
+		cfg.PeerMinOperatorTrust = *fc.PeerMinOperatorTrust
+	}
+	if fc.PeerMinOperatorReputation != nil {
+		cfg.PeerMinOperatorReputation = *fc.PeerMinOperatorReputation
+	}
+	if fc.PeerReattestationInterval != "" {
+		d, err := time.ParseDuration(fc.PeerReattestationInterval)
+		if err != nil {
+			return nil, fmt.Errorf("invalid peer_reattestation_interval: %w", err)
+		}
+		cfg.PeerReattestationInterval = d
+	}
+
 	return cfg, nil
 }
 
@@ -306,6 +428,13 @@ func LoadConfig() *Config {
 		TrustCacheTTL:           DefaultTrustCacheTTL,
 		DomainGossipInterval:    DefaultDomainGossipInterval,
 		DomainGossipTTL:         DefaultDomainGossipTTL,
+
+		// Peering defaults
+		LANServiceName:            DefaultLANServiceName,
+		RequireAdvertisement:      DefaultRequireAdvertisement,
+		PeerMinOperatorTrust:      DefaultPeerMinOperatorTrust,
+		PeerMinOperatorReputation: DefaultPeerMinOperatorReputation,
+		PeerReattestationInterval: DefaultPeerReattestationInterval,
 	}
 
 	// Try to load from config file
@@ -382,6 +511,32 @@ func LoadConfig() *Config {
 			}
 			if fileCfg.OperatorQuidFile != "" {
 				cfg.OperatorQuidFile = fileCfg.OperatorQuidFile
+			}
+			if fileCfg.PeersFile != "" {
+				cfg.PeersFile = fileCfg.PeersFile
+			}
+			// Default false; truthy overrides.
+			if fileCfg.LANDiscovery {
+				cfg.LANDiscovery = true
+			}
+			if fileCfg.LANServiceName != "" {
+				cfg.LANServiceName = fileCfg.LANServiceName
+			}
+			// Default true; only an explicit-false in file overrides.
+			// We cannot distinguish "explicit false" from "absent"
+			// at this layer, so a config that omits this key keeps
+			// the default. Operators who want false set the env var.
+			if !fileCfg.RequireAdvertisement {
+				cfg.RequireAdvertisement = false
+			}
+			if fileCfg.PeerMinOperatorTrust > 0 {
+				cfg.PeerMinOperatorTrust = fileCfg.PeerMinOperatorTrust
+			}
+			if fileCfg.PeerMinOperatorReputation > 0 {
+				cfg.PeerMinOperatorReputation = fileCfg.PeerMinOperatorReputation
+			}
+			if fileCfg.PeerReattestationInterval > 0 {
+				cfg.PeerReattestationInterval = fileCfg.PeerReattestationInterval
 			}
 		}
 	}
@@ -499,6 +654,35 @@ func LoadConfig() *Config {
 
 	if operatorQuid := os.Getenv("OPERATOR_QUID_FILE"); operatorQuid != "" {
 		cfg.OperatorQuidFile = operatorQuid
+	}
+
+	// Peering env vars
+	if peersFile := os.Getenv("PEERS_FILE"); peersFile != "" {
+		cfg.PeersFile = peersFile
+	}
+	if lan := os.Getenv("LAN_DISCOVERY"); lan != "" {
+		cfg.LANDiscovery = lan == "true" || lan == "1" || strings.EqualFold(lan, "yes")
+	}
+	if name := os.Getenv("LAN_SERVICE_NAME"); name != "" {
+		cfg.LANServiceName = name
+	}
+	if reqAd := os.Getenv("REQUIRE_ADVERTISEMENT"); reqAd != "" {
+		cfg.RequireAdvertisement = reqAd == "true" || reqAd == "1" || strings.EqualFold(reqAd, "yes")
+	}
+	if v := os.Getenv("PEER_MIN_OPERATOR_TRUST"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			cfg.PeerMinOperatorTrust = f
+		}
+	}
+	if v := os.Getenv("PEER_MIN_OPERATOR_REPUTATION"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			cfg.PeerMinOperatorReputation = f
+		}
+	}
+	if v := os.Getenv("PEER_REATTESTATION_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.PeerReattestationInterval = d
+		}
 	}
 
 	if enablePushGossip := os.Getenv("ENABLE_PUSH_GOSSIP"); enablePushGossip != "" {
