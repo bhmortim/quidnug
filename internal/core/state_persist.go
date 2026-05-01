@@ -171,6 +171,34 @@ type trustDomainsSnapshot struct {
 // LoadBlockchain reads data_dir/blockchain.json into the node.
 // Replaces the genesis-only chain populated by NewQuidnugNode.
 // Missing file is silent (clean start).
+//
+// ENG-81: after the chain itself is restored, every block's
+// transactions are replayed through processBlockTransactions —
+// the same code path the live commit takes in ReceiveBlock. Each
+// `update*Registry` call is an upsert, so the replay is
+// idempotent by construction (an already-populated registry
+// converges to the same end state on a second pass). Without
+// this, the chain comes back on /api/v1/blocks but the in-memory
+// indices (TrustRegistry, IdentityRegistry,
+// NodeAdvertisementRegistry, EventStreamRegistry, TitleRegistry,
+// QuidDomainIndex, etc.) start empty every restart. Visible
+// symptoms: /api/v1/registry/trust returns edges:0,
+// /api/v2/discovery/operator/<op> returns nodes:[], and static
+// peer admission fails with "admit static: no current
+// NodeAdvertisement for <peer>" until live bootstrap eventually
+// rebuilds state from gossip.
+//
+// Genesis (Blockchain[0]) has an empty Transactions slice on
+// every node and is a no-op when processed. We still iterate
+// from index 0 for code symmetry with the live path: any future
+// genesis-content gets handled the same way the live commit
+// would handle it.
+//
+// processBlockTransactions runs without holding BlockchainMutex
+// — it touches the per-registry locks instead. That mirrors the
+// live commit (which calls processBlockTransactions AFTER
+// releasing BlockchainMutex), so we can't deadlock against any
+// live-traffic path that already holds a registry lock.
 func (node *QuidnugNode) LoadBlockchain(dataDir string) error {
 	if dataDir == "" {
 		return nil
@@ -193,10 +221,23 @@ func (node *QuidnugNode) LoadBlockchain(dataDir string) error {
 	node.BlockchainMutex.Lock()
 	node.Blockchain = snap.Blocks
 	node.BlockchainMutex.Unlock()
+
+	// ENG-81: replay each block's transactions to hydrate the
+	// in-memory registries. Skip genesis (no-op anyway) only by
+	// virtue of its empty Transactions slice; we don't special-
+	// case index 0 so that any future genesis-payload gets the
+	// same treatment as live blocks.
+	totalTxReplayed := 0
+	for i := range snap.Blocks {
+		totalTxReplayed += len(snap.Blocks[i].Transactions)
+		node.processBlockTransactions(snap.Blocks[i])
+	}
+
 	if logger != nil {
 		logger.Info("Loaded persisted blockchain",
 			"path", path, "blocks", len(snap.Blocks),
-			"height", snap.Blocks[len(snap.Blocks)-1].Index)
+			"height", snap.Blocks[len(snap.Blocks)-1].Index,
+			"txReplayed", totalTxReplayed)
 	}
 	return nil
 }
