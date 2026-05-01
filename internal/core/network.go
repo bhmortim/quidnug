@@ -14,14 +14,73 @@ import (
 	"time"
 )
 
-// DiscoverNodes discovers other nodes in the network with context support for cancellation
+// DiscoverNodes is the main discovery loop. ENG-74 + ENG-76:
+//
+//   - The initial cycle runs immediately at boot. If it doesn't
+//     reach any seed (typical when Docker's embedded DNS hasn't
+//     registered the other containers' service names yet), we
+//     retry with exponential backoff (1s, 2s, 4s, 8s, 16s, 30s)
+//     instead of waiting the full 5-minute steady-state interval.
+//     Once a cycle reaches at least one seed, we drop into the
+//     5-minute cadence.
+//   - Every cycle emits a single INFO summary line with seed
+//     reachability, new-peer count, total-known count, and a
+//     cap-5 list of failure tags. Per-seed WARN logs continue
+//     to fire too.
 func (node *QuidnugNode) DiscoverNodes(ctx context.Context, seedNodes []string) {
 	logger.Info("Starting node discovery", "seedNodes", len(seedNodes))
+	if len(seedNodes) == 0 {
+		logger.Info("Node discovery idle (no seeds configured)")
+		<-ctx.Done()
+		logger.Info("Node discovery stopped")
+		return
+	}
 
-	// Initial discovery
-	node.discoverFromSeeds(ctx, seedNodes)
+	// Phase 1: aggressive early-boot retry until we reach at
+	// least one seed. ENG-74.
+	earlyBackoff := []time.Duration{
+		1 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+	}
+	reachedAny := false
+	for i := 0; ; i++ {
+		select {
+		case <-ctx.Done():
+			logger.Info("Node discovery stopped")
+			return
+		default:
+		}
+		res := node.discoverFromSeeds(ctx, seedNodes)
+		logDiscoveryCycle(res, i == 0)
+		if res.SeedsReachable > 0 {
+			reachedAny = true
+			break
+		}
+		// Cap at the slowest backoff, then keep retrying
+		// at that cadence until we reach a seed or hit the
+		// steady-state ticker. Operators almost never want
+		// to wait 5 full minutes for a recovery, so we
+		// stay in the fast loop until we succeed.
+		var d time.Duration
+		if i < len(earlyBackoff) {
+			d = earlyBackoff[i]
+		} else {
+			d = earlyBackoff[len(earlyBackoff)-1]
+		}
+		select {
+		case <-ctx.Done():
+			logger.Info("Node discovery stopped")
+			return
+		case <-time.After(d):
+		}
+	}
+	_ = reachedAny
 
-	// Periodic re-discovery every 5 minutes
+	// Phase 2: steady-state re-discovery every 5 minutes.
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
@@ -31,17 +90,68 @@ func (node *QuidnugNode) DiscoverNodes(ctx context.Context, seedNodes []string) 
 			logger.Info("Node discovery stopped")
 			return
 		case <-ticker.C:
-			node.discoverFromSeeds(ctx, seedNodes)
+			res := node.discoverFromSeeds(ctx, seedNodes)
+			logDiscoveryCycle(res, false)
 		}
 	}
 }
 
+// logDiscoveryCycle emits one structured INFO line summarizing
+// a discovery cycle's outcome. ENG-76. We log on success too
+// (not just the per-seed WARN on failure) so operators can
+// confirm peering is actually working.
+func logDiscoveryCycle(res discoverCycleResult, initial bool) {
+	tag := "Discovery cycle complete"
+	if initial {
+		tag = "Initial discovery cycle complete"
+	}
+	fields := []any{
+		"seedsTried", res.SeedsTried,
+		"seedsReachable", res.SeedsReachable,
+		"newPeers", res.NewPeers,
+		"totalKnown", res.TotalKnown,
+	}
+	if len(res.Errors) > 0 {
+		fields = append(fields, "errors", strings.Join(res.Errors, "; "))
+	}
+	if res.SeedsTried > 0 && res.SeedsReachable == 0 {
+		// All seeds failed — still INFO (the per-seed WARNs
+		// already shouted), but the cycle summary is the
+		// canonical "did peering work" signal.
+		logger.Info(tag+" (no seeds reachable)", fields...)
+	} else {
+		logger.Info(tag, fields...)
+	}
+}
+
+// discoverCycleResult is the per-round outcome that DiscoverNodes
+// uses for observability + retry decisions. Returned from
+// discoverFromSeeds so the caller can log a single
+// human-readable summary line per cycle (ENG-76) and decide
+// whether to back off rapidly (ENG-74).
+type discoverCycleResult struct {
+	SeedsTried     int
+	SeedsReachable int
+	NewPeers       int
+	TotalKnown     int
+	Errors         []string // one-line summaries; capped to a few
+}
+
 // discoverFromSeeds performs a single discovery round from seed nodes
-func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []string) {
+func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []string) discoverCycleResult {
+	res := discoverCycleResult{SeedsTried: len(seedNodes)}
+	addErr := func(s string) {
+		// Cap the error list so a hundred dead seeds don't
+		// flood the log line. The full per-seed warns above
+		// still go through the logger.
+		if len(res.Errors) < 5 {
+			res.Errors = append(res.Errors, s)
+		}
+	}
 	for _, seedAddress := range seedNodes {
 		select {
 		case <-ctx.Done():
-			return
+			return res
 		default:
 		}
 
@@ -53,6 +163,7 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		safeAddr, err := ValidatePeerAddress(seedAddress)
 		if err != nil {
 			logger.Warn("Refusing seed with invalid address", "seedAddress", seedAddress, "error", err)
+			addErr(seedAddress + ": invalid")
 			continue
 		}
 
@@ -62,12 +173,14 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil) // #nosec -- reqURL built from sanitized address (see ValidatePeerAddress + safeDialContext)
 		if err != nil {
 			logger.Warn("Failed to create request for seed node", "seedAddress", seedAddress, "error", err)
+			addErr(seedAddress + ": req-build")
 			continue
 		}
 
 		resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 		if err != nil {
 			logger.Warn("Failed to connect to seed node", "seedAddress", seedAddress, "error", err)
+			addErr(seedAddress + ": " + classifyDialError(err))
 			continue
 		}
 
@@ -78,9 +191,11 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		if err := json.NewDecoder(resp.Body).Decode(&nodesResponse); err != nil {
 			_ = resp.Body.Close()
 			logger.Warn("Failed to decode node list", "seedAddress", seedAddress, "error", err)
+			addErr(seedAddress + ": decode")
 			continue
 		}
 		_ = resp.Body.Close()
+		res.SeedsReachable++
 
 		// Add discovered nodes to our known nodes list, after
 		// each has passed the admit pipeline (handshake +
@@ -92,7 +207,7 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 		for _, discoveredNode := range nodesResponse.Nodes {
 			select {
 			case <-ctx.Done():
-				return
+				return res
 			default:
 			}
 
@@ -126,6 +241,7 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 			}
 
 			node.KnownNodesMutex.Lock()
+			_, existed := node.KnownNodes[discoveredNode.ID]
 			// Don't clobber a static-source entry with a
 			// gossip-source entry; the operator's explicit
 			// listing wins.
@@ -138,6 +254,9 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 				}
 				node.KnownNodes[discoveredNode.ID] = discoveredNode
 				node.KnownNodesMutex.Unlock()
+			}
+			if !existed {
+				res.NewPeers++
 			}
 
 			// Update domain registry for efficient subdomain lookups
@@ -155,6 +274,36 @@ func (node *QuidnugNode) discoverFromSeeds(ctx context.Context, seedNodes []stri
 
 	// Refresh domain info for all known nodes
 	node.refreshKnownNodeDomains(ctx)
+	node.KnownNodesMutex.RLock()
+	res.TotalKnown = len(node.KnownNodes)
+	node.KnownNodesMutex.RUnlock()
+	return res
+}
+
+// classifyDialError returns a short tag for the most common
+// failure modes a discovery dial can hit. Used in the cycle-
+// summary log line so operators see "node-2: dns" or "node-3:
+// connection-refused" without scrolling through full stack
+// traces. Falls through to the raw error.Error() when no
+// match.
+func classifyDialError(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "no such host"):
+		return "dns"
+	case strings.Contains(s, "connection refused"):
+		return "connection-refused"
+	case strings.Contains(s, "i/o timeout"), strings.Contains(s, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(s, "safedial: refused"):
+		return "blocked-range"
+	case strings.Contains(s, "no route to host"):
+		return "no-route"
+	}
+	return "other"
 }
 
 // fetchNodeDomains fetches the supported domains from a remote node

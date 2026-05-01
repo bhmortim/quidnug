@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -427,6 +426,16 @@ func Run() {
 		quidnugNode.runPeerReattestLoop(ctx, cfg.PeerReattestationInterval)
 	}()
 
+	// ENG-75: snapshot blockchain + trust domains to data_dir
+	// every 30s so a restart doesn't wipe state. Final flush
+	// fires on ctx.Done() to capture the latest state on
+	// SIGTERM. Idempotent no-op when DataDir is unset.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runStatePersistLoop(ctx, cfg.DataDir)
+	}()
+
 	// Start block generation for managed trust domains (with context)
 	wg.Add(1)
 	go func() {
@@ -503,6 +512,25 @@ func (node *QuidnugNode) Shutdown(ctx context.Context, cfg *config.Config) {
 		node.PendingTxsMutex.RUnlock()
 		logger.Info("Pending transactions saved", "count", txCount)
 	}
+
+	// ENG-75: snapshot blockchain + trust domains so the next
+	// boot has the latest state. The runStatePersistLoop also
+	// flushes on ctx.Done(), but it might race with this
+	// Shutdown call; doing both is idempotent.
+	if err := node.SaveBlockchain(cfg.DataDir); err != nil {
+		logger.Error("Failed to save blockchain on shutdown", "error", err)
+	} else {
+		node.BlockchainMutex.RLock()
+		height := int64(0)
+		if len(node.Blockchain) > 0 {
+			height = node.Blockchain[len(node.Blockchain)-1].Index
+		}
+		node.BlockchainMutex.RUnlock()
+		logger.Info("Blockchain saved", "blocks", height+1)
+	}
+	if err := node.SaveTrustDomains(cfg.DataDir); err != nil {
+		logger.Error("Failed to save trust domains on shutdown", "error", err)
+	}
 }
 
 // NewQuidnugNode initializes a new quidnug node.
@@ -533,21 +561,20 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 	if cfg.DomainGossipTTL <= 0 {
 		cfg.DomainGossipTTL = config.DefaultDomainGossipTTL
 	}
-	// Generate a fresh ECDSA keypair for this node process. The
-	// node's identity (NodeID) is intentionally distinct from
-	// the operator's quid (loaded below if configured): each
-	// running node must have its own NodeID so peer discovery,
-	// gossip dedup, and fork detection work correctly even when
-	// one operator runs N nodes under a single quid. Two nodes
-	// sharing a NodeID would collide on those mechanisms.
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	// Load (or create-and-persist) the per-process ECDSA keypair.
+	// ENG-75: prior versions generated a fresh key on every boot,
+	// so NodeID changed across restarts and silently invalidated
+	// any TRUST grants pointing at the old NodeID. The node's
+	// identity is intentionally distinct from the operator's
+	// quid (loaded below if configured): each running node has
+	// its own NodeID so peer discovery, gossip dedup, and fork
+	// detection work correctly even when one operator runs N
+	// nodes under a single operator quid.
+	privateKey, nodeID, err := loadOrCreateNodeKey(cfg.DataDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate key pair: %v", err)
+		return nil, fmt.Errorf("load/create node key: %w", err)
 	}
-
-	// Generate a node ID based on the public key
 	publicKeyBytes := elliptic.Marshal(privateKey.PublicKey.Curve, privateKey.PublicKey.X, privateKey.PublicKey.Y)
-	nodeID := fmt.Sprintf("%x", sha256.Sum256(publicKeyBytes))[:16]
 
 	// Load the operator quid if one is configured. The operator
 	// quid is the long-lived identity this node operates under;
@@ -744,6 +771,17 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		if err := node.PeerScoreboard.LoadFrom(peerScoreboardPath(cfg)); err != nil {
 			logger.Warn("Failed to load peer scoreboard", "error", err)
 		}
+	}
+
+	// ENG-75: rehydrate blockchain + trust domains from
+	// data_dir snapshots. Missing files are silent (clean
+	// boot); corrupt files fail loudly so operators don't
+	// silently lose chain history.
+	if err := node.LoadBlockchain(cfg.DataDir); err != nil {
+		return nil, fmt.Errorf("load blockchain: %w", err)
+	}
+	if err := node.LoadTrustDomains(cfg.DataDir); err != nil {
+		return nil, fmt.Errorf("load trust domains: %w", err)
 	}
 
 	if logger != nil {

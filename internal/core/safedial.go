@@ -164,6 +164,18 @@ func NewSafeDialContext(allow *PrivateAddrAllowList) func(ctx context.Context, n
 	}
 }
 
+// peerResolver is the DNS resolver used by safedial. Forced to
+// the pure-Go path (PreferGo=true, no cgo) so we get consistent
+// behavior across Linux/macOS/Windows AND so we don't pick up
+// any cgo-resolver-side negative caching on platforms where
+// glibc's nsswitch is involved. ENG-74: container DNS races at
+// boot manifested as cached "no such host" results, and forcing
+// pure-Go is the simplest mitigation without rolling our own
+// cache.
+var peerResolver = &net.Resolver{
+	PreferGo: true,
+}
+
 func safeDialWith(ctx context.Context, network, address string, allow *PrivateAddrAllowList) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
@@ -173,13 +185,17 @@ func safeDialWith(ctx context.Context, network, address string, allow *PrivateAd
 	// host or host:port in peers_file (or it came in via mDNS),
 	// so the perimeter check steps aside for this dial only.
 	if allow != nil && allow.Has(address) {
-		d := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+		d := &net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  peerResolver,
+		}
 		return d.DialContext(ctx, network, address)
 	}
 	// Resolve all candidate addresses; reject if any are blocked,
 	// because a future-time switch in DNS could otherwise route
 	// through a blocked target.
-	ips, err := net.DefaultResolver.LookupIP(ctx, ipNetwork(network), host)
+	ips, err := peerResolver.LookupIP(ctx, ipNetwork(network), host)
 	if err != nil {
 		return nil, fmt.Errorf("safedial: resolve %q: %w", host, err)
 	}
@@ -193,10 +209,13 @@ func safeDialWith(ctx context.Context, network, address string, allow *PrivateAd
 	}
 	// All resolved addresses passed the perimeter; dial the first
 	// allowed one. Use the standard dialer for actual connection
-	// establishment (TCP keepalive, default timeouts).
+	// establishment (TCP keepalive, default timeouts). The
+	// resolver is wired in too so any internal hostname lookups
+	// the dialer might make also go through the pure-Go path.
 	d := &net.Dialer{
 		Timeout:   5 * time.Second,
 		KeepAlive: 30 * time.Second,
+		Resolver:  peerResolver,
 	}
 	return d.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
 }
