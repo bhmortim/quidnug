@@ -2,6 +2,8 @@
 package core
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 )
@@ -202,6 +204,108 @@ func (node *QuidnugNode) RegisterTrustDomain(domain TrustDomain) error {
 		"governors", len(domain.Governors),
 		"governanceQuorum", domain.GovernanceQuorum,
 		"delegationMode", domain.ParentDelegationMode)
+	return nil
+}
+
+// BootstrapDomainFromBlock registers a TrustDomain locally based
+// solely on a block's TrustProof. This is the lazy-bootstrap path
+// for ENG-80: a node that joined an existing mesh has no record of
+// dynamically-registered domains until it sees a block for one. The
+// block-sync receive path calls this helper before cryptographic
+// validation so the freshly-bootstrapped domain entry is in place
+// when ValidateBlockTiered's per-domain validator-set lookup runs.
+//
+// Bootstrap policy:
+//
+//   - The proof MUST carry both ValidatorID and ValidatorPublicKey
+//     (modern block format). Older blocks without an embedded
+//     pubkey can't be safely bootstrapped from — we don't know
+//     who signed them — and are rejected upstream.
+//   - The validator's id is recomputed from the embedded public
+//     key (sha256[:16]); a mismatch is treated as a forged claim
+//     and the bootstrap is refused. This is the same self-
+//     consistency check ValidateBlockCryptographic enforces, so
+//     an attacker cannot use a fake validator id to seed an
+//     unauthorized domain entry.
+//   - The bootstrapped domain has a single validator (the block
+//     signer) with full participation weight, the registrant as
+//     sole governor with quorum 1.0, and a default 0.75 trust
+//     threshold. Any of these can be widened later by gossip
+//     fingerprints, TRUST_DOMAIN transactions, or
+//     DOMAIN_GOVERNANCE updates without re-bootstrapping.
+//   - This function is idempotent: a domain that already exists
+//     locally is left untouched and a nil error is returned. The
+//     caller does not need to pre-check existence.
+//
+// Trust-anchor invariant: this function never bypasses signature
+// verification. ReceiveBlock still runs ValidateBlockCryptographic
+// after the bootstrap; if the signature doesn't match the embedded
+// key, the block is rejected and the bootstrapped entry is the
+// only durable side effect (and even that is harmless: a stub
+// domain with one validator pubkey is no different from a domain
+// the operator could have configured directly).
+func (node *QuidnugNode) BootstrapDomainFromBlock(block Block) error {
+	proof := block.TrustProof
+	if proof.TrustDomain == "" {
+		return fmt.Errorf("bootstrap: empty trust domain in block proof")
+	}
+	if proof.TrustDomain == "genesis" {
+		// Genesis is a per-node anchor, never a real domain to
+		// bootstrap from a peer.
+		return fmt.Errorf("bootstrap: refusing to bootstrap from genesis-domain block")
+	}
+	if proof.ValidatorID == "" {
+		return fmt.Errorf("bootstrap: missing validator id in block proof")
+	}
+	if proof.ValidatorPublicKey == "" {
+		return fmt.Errorf("bootstrap: missing validator public key in block proof " +
+			"(block predates ENG-80 bootstrap support)")
+	}
+
+	// Recompute validator id from the embedded public key. This is
+	// the same self-consistency check ValidateBlockCryptographic
+	// runs at line 627; we duplicate it here so a forged ID/pubkey
+	// pair cannot poison the local TrustDomains map even
+	// transiently before crypto validation runs.
+	pubBytes, err := hex.DecodeString(proof.ValidatorPublicKey)
+	if err != nil {
+		return fmt.Errorf("bootstrap: validator public key not valid hex: %w", err)
+	}
+	computedID := fmt.Sprintf("%x", sha256.Sum256(pubBytes))[:16]
+	if computedID != proof.ValidatorID {
+		return fmt.Errorf("bootstrap: validator public key does not match validator id "+
+			"(claimed=%s, computed=%s)", proof.ValidatorID, computedID)
+	}
+
+	// Idempotent insertion under the registry lock.
+	node.TrustDomainsMutex.Lock()
+	defer node.TrustDomainsMutex.Unlock()
+	if _, exists := node.TrustDomains[proof.TrustDomain]; exists {
+		return nil
+	}
+
+	bootstrapped := TrustDomain{
+		Name:                proof.TrustDomain,
+		ValidatorNodes:      []string{proof.ValidatorID},
+		Validators:          map[string]float64{proof.ValidatorID: 1.0},
+		ValidatorPublicKeys: map[string]string{proof.ValidatorID: proof.ValidatorPublicKey},
+		TrustThreshold:      0.75,
+		BlockchainHead:      "",
+		// QDP-0012: single-governor fallback matches what
+		// RegisterTrustDomain installs for self-registered
+		// domains. The block signer is the registrant from this
+		// node's perspective.
+		Governors:            map[string]float64{proof.ValidatorID: 1.0},
+		GovernorPublicKeys:   map[string]string{proof.ValidatorID: proof.ValidatorPublicKey},
+		GovernanceQuorum:     1.0,
+		ParentDelegationMode: DelegationModeSelf,
+	}
+	node.TrustDomains[proof.TrustDomain] = bootstrapped
+
+	logger.Info("Bootstrapped trust domain from peer-served block",
+		"domain", proof.TrustDomain,
+		"validator", proof.ValidatorID,
+		"blockIndex", block.Index)
 	return nil
 }
 

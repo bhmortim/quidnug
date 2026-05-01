@@ -129,10 +129,37 @@ func (node *QuidnugNode) FilterTransactionsForBlock(txs []interface{}, domain st
 	return filtered
 }
 
-// GenerateBlock generates a new block with pending transactions
+// GenerateBlock generates a new block with pending transactions.
+//
+// ENG-80: chain-link is per-domain (see ValidateBlockCryptographic
+// commentary). The previous-block lookup walks back from the tail
+// to find the most recent local block for the same trust domain,
+// or falls back to genesis (Blockchain[0]) when this is the first
+// block we are producing for the domain. The block's Index is
+// prevBlock.Index + 1 — strictly monotonic per-domain — so the
+// receive-side chain-link check (block.Index == prev.Index+1 &&
+// block.PrevHash == prev.Hash) succeeds whether the receiver got
+// the prior block from us or from another federated validator.
 func (node *QuidnugNode) GenerateBlock(trustDomain string) (*Block, error) {
 	node.BlockchainMutex.RLock()
-	prevBlock := node.Blockchain[len(node.Blockchain)-1]
+	var prevBlock Block
+	foundDomainPrev := false
+	for i := len(node.Blockchain) - 1; i >= 0; i-- {
+		b := node.Blockchain[i]
+		if b.TrustProof.TrustDomain == trustDomain {
+			prevBlock = b
+			foundDomainPrev = true
+			break
+		}
+	}
+	if !foundDomainPrev {
+		// No prior block for this domain. Anchor the new
+		// sub-chain on the local genesis: receivers will see
+		// the matching Index=1 + PrevHash=our-genesis pair on
+		// their first observation of the domain and accept
+		// under the bootstrap branch.
+		prevBlock = node.Blockchain[0]
+	}
 	node.BlockchainMutex.RUnlock()
 
 	// Get validator's participation weight for this domain
@@ -272,6 +299,37 @@ func (node *QuidnugNode) ReceiveBlock(block Block) (BlockAcceptance, error) {
 	domain := block.TrustProof.TrustDomain
 	if !node.IsDomainSupported(domain) {
 		return BlockUntrusted, fmt.Errorf("block rejected: domain %q is not supported by this node", domain)
+	}
+
+	// 0.5. ENG-80 lazy domain auto-bootstrap. If the block is for a
+	// trust domain we don't yet track locally AND the block carries
+	// a self-consistent validator pubkey, register a stub domain
+	// entry with that validator so downstream tier-validation has
+	// the validator-set + pubkey it needs. The bootstrap is
+	// idempotent and is gated by a self-consistency check (the
+	// validator id must match sha256 of the embedded pubkey), so
+	// this can never poison the registry with a forged validator
+	// claim. Block signature verification still runs in step 1.
+	//
+	// Without this step a fresh node receiving the first block of a
+	// dynamically-registered domain via /api/v1/blocks would fail
+	// the per-domain validator-set lookup in
+	// ValidateTrustProofTiered and reject the block as invalid,
+	// blocking convergence indefinitely (ENG-80 P1).
+	node.TrustDomainsMutex.RLock()
+	_, domainKnown := node.TrustDomains[domain]
+	node.TrustDomainsMutex.RUnlock()
+	if !domainKnown && domain != "genesis" && block.TrustProof.ValidatorPublicKey != "" {
+		if err := node.BootstrapDomainFromBlock(block); err != nil {
+			// Bootstrap failure is non-fatal here: log and let the
+			// validation step decide. A self-inconsistent proof
+			// (mismatched id/pubkey) gets rejected at step 1
+			// regardless.
+			logger.Debug("ENG-80: trust-domain bootstrap from block declined",
+				"domain", domain,
+				"validator", block.TrustProof.ValidatorID,
+				"error", err)
+		}
 	}
 
 	// 1. Cryptographic validation

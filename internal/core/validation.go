@@ -579,20 +579,73 @@ func (node *QuidnugNode) ValidateTitleTransaction(tx TitleTransaction) bool {
 
 // ValidateBlockCryptographic validates only cryptographic aspects (hash, signatures, chain).
 // This is universal - all honest nodes agree on this.
+//
+// ENG-80: chain-link is per-domain, not global. Each TrustDomain
+// has its own sub-chain anchored at the first block we accept for
+// it; subsequent blocks for the same domain must link to the
+// previous same-domain block we hold. The global Blockchain slice
+// remains a flat append-only log; "previous" for a foreign-domain
+// block is found by walking back from the tail looking for the
+// most recent block sharing the trust domain.
+//
+// Why this is necessary: each node creates its own genesis with
+// its own NodeID as validator, so no two nodes have the same
+// genesis hash. A globally strict chain-link would mean blocks
+// from peer A (chained off A's genesis) can never link onto peer
+// B's chain (chained off B's genesis) — convergence is impossible.
+// The fix is to scope the chain-link by trust domain. Trust
+// continues to come from the validator signature on each block,
+// not from a global hash chain that crosses validator boundaries.
+//
+// First-block-for-domain bootstrap: when no prior block for the
+// domain exists locally, we accept any PrevHash. The block's
+// validator signature (verified below against the embedded
+// pubkey) is the trust anchor; the local node's genesis is not
+// involved.
 func (node *QuidnugNode) ValidateBlockCryptographic(block Block) bool {
 	node.BlockchainMutex.RLock()
 	defer node.BlockchainMutex.RUnlock()
 
-	// Check if blockchain is empty
+	// Check if blockchain is empty (we always have a genesis at
+	// boot, so this is a defensive check for state corruption).
 	if len(node.Blockchain) == 0 {
 		return false
 	}
 
-	prevBlock := node.Blockchain[len(node.Blockchain)-1]
+	// Find the most recent local block for the same trust domain.
+	// This is the per-domain prev for chain-link verification.
+	// Walking from the tail is O(N) worst-case but in practice
+	// terminates fast because recent activity dominates.
+	domain := block.TrustProof.TrustDomain
+	var prevBlock Block
+	foundDomainPrev := false
+	for i := len(node.Blockchain) - 1; i >= 0; i-- {
+		b := node.Blockchain[i]
+		if b.TrustProof.TrustDomain == domain {
+			prevBlock = b
+			foundDomainPrev = true
+			break
+		}
+	}
 
-	// Check block index and previous hash
-	if block.Index != prevBlock.Index+1 || block.PrevHash != prevBlock.Hash {
-		return false
+	if foundDomainPrev {
+		// Subsequent block for a domain we already track —
+		// strict per-domain chain-link.
+		if block.Index != prevBlock.Index+1 || block.PrevHash != prevBlock.Hash {
+			return false
+		}
+	} else {
+		// First block for this domain on this node (typical for
+		// a fresh node that just bootstrapped the domain via
+		// ENG-80 lazy-bootstrap, or for a node receiving a
+		// federated domain it had not previously tracked). The
+		// block's own validator signature is the trust anchor;
+		// PrevHash points to the validator's anchor on their
+		// local chain, which we don't have. Index must be > 0
+		// (genesis is always index 0 with domain "genesis").
+		if block.Index < 1 {
+			return false
+		}
 	}
 
 	// Verify the block hash
