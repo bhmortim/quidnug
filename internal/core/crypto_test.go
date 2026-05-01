@@ -24,6 +24,7 @@ package core
 import (
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -204,6 +205,124 @@ func TestGetBlockSignableData_StableUnderJSONRoundTrip(t *testing.T) {
 	if string(signTimeBytes) != string(verifyTimeBytes) {
 		t.Fatalf("ENG-82 regression: signable bytes diverge across JSON round-trip\nsign-time:   %s\nverify-time: %s",
 			signTimeBytes, verifyTimeBytes)
+	}
+}
+
+// TestVerifySignatureDetailed_FailureCategories ensures each
+// distinct failure mode produces a unique, recognizable error so
+// the ENG-83 block-validation debug log can tell operators from a
+// single field whether they have a missing-input, decode, length,
+// or ecdsa-rejection problem.
+func TestVerifySignatureDetailed_FailureCategories(t *testing.T) {
+	node := newTestNode()
+	pub := node.GetPublicKeyHex()
+	data := []byte("hello quidnug")
+	rawSig, err := node.SignData(data)
+	if err != nil {
+		t.Fatalf("sign failed: %v", err)
+	}
+	goodSig := hex.EncodeToString(rawSig)
+
+	cases := []struct {
+		name         string
+		pub          string
+		data         []byte
+		sig          string
+		wantOK       bool
+		wantContains string
+	}{
+		{
+			name: "happy path",
+			pub:  pub, data: data, sig: goodSig,
+			wantOK: true,
+		},
+		{
+			name: "missing public key",
+			pub:  "", data: data, sig: goodSig,
+			wantContains: "missing public key",
+		},
+		{
+			name: "missing signature",
+			pub:  pub, data: data, sig: "",
+			wantContains: "missing signature",
+		},
+		{
+			name: "pubkey hex decode failure",
+			pub:  "not-hex-zz", data: data, sig: goodSig,
+			wantContains: "public key hex decode failed",
+		},
+		{
+			name: "pubkey not on curve",
+			pub:  hex.EncodeToString([]byte{0x01, 0x02, 0x03}), data: data, sig: goodSig,
+			wantContains: "public key unmarshal failed",
+		},
+		{
+			name: "signature hex decode failure",
+			pub:  pub, data: data, sig: "not-hex-zz",
+			wantContains: "signature hex decode failed",
+		},
+		{
+			name: "signature wrong length",
+			pub:  pub, data: data, sig: hex.EncodeToString(rawSig[:32]),
+			wantContains: "signature length is 32",
+		},
+		{
+			name: "ecdsa rejected (tampered data)",
+			pub:  pub, data: []byte("HELLO QUIDNUG"), sig: goodSig,
+			wantContains: "ecdsa verify rejected",
+		},
+		{
+			name: "ecdsa rejected (wrong key)",
+			pub:  newTestNode().GetPublicKeyHex(), data: data, sig: goodSig,
+			wantContains: "ecdsa verify rejected",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ok, err := VerifySignatureDetailed(tc.pub, tc.data, tc.sig)
+			if tc.wantOK {
+				if !ok {
+					t.Fatalf("expected ok=true, got false (err=%v)", err)
+				}
+				if err != nil {
+					t.Fatalf("expected nil error on happy path, got %v", err)
+				}
+				return
+			}
+			if ok {
+				t.Fatalf("expected ok=false for %s, got true", tc.name)
+			}
+			if err == nil {
+				t.Fatalf("expected non-nil error for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantContains) {
+				t.Fatalf("error %q does not contain expected substring %q",
+					err.Error(), tc.wantContains)
+			}
+		})
+	}
+}
+
+// TestVerifySignature_DelegatesToDetailed confirms the boolean
+// VerifySignature wrapper preserves backward-compatible behavior:
+// every passing case in VerifySignatureDetailed passes here, and
+// every failing case fails here.
+func TestVerifySignature_DelegatesToDetailed(t *testing.T) {
+	node := newTestNode()
+	pub := node.GetPublicKeyHex()
+	data := []byte("hello quidnug")
+	rawSig, _ := node.SignData(data)
+	goodSig := hex.EncodeToString(rawSig)
+
+	if !VerifySignature(pub, data, goodSig) {
+		t.Fatal("happy path returned false")
+	}
+	if VerifySignature("", data, goodSig) {
+		t.Fatal("empty pubkey returned true")
+	}
+	if VerifySignature(pub, []byte("tampered"), goodSig) {
+		t.Fatal("tampered data returned true")
 	}
 }
 

@@ -686,14 +686,54 @@ func (node *QuidnugNode) ValidateBlockCryptographic(block Block) bool {
 		return false
 	}
 
-	// Verify the primary validator signature against block content
+	// Verify the primary validator signature against block content.
+	// ENG-83: emit a structured debug log on failure so operators can
+	// tell from one log line whether the failure was decode, length,
+	// or actual ECDSA rejection. The signableData sha256 + length +
+	// preview let cross-node comparison spot canonical-form drift in
+	// O(1) — both sides should produce identical canonical bytes
+	// post-ENG-82, so a hash mismatch here means a second drift
+	// somewhere we haven't yet pinned down.
 	signableData := GetBlockSignableData(block)
-	if !VerifySignature(validatorPubKey, signableData, block.TrustProof.ValidatorSigs[0]) {
-		logger.Debug("Invalid validator signature", "blockIndex", block.Index, "validatorId", block.TrustProof.ValidatorID)
+	if ok, verifyErr := VerifySignatureDetailed(validatorPubKey, signableData, block.TrustProof.ValidatorSigs[0]); !ok {
+		logger.Debug("Invalid validator signature",
+			"layer", "cryptographic",
+			"blockIndex", block.Index,
+			"blockHash", block.Hash,
+			"domain", block.TrustProof.TrustDomain,
+			"validatorId", block.TrustProof.ValidatorID,
+			"reason", verifyErr.Error(),
+			"signableDataLen", len(signableData),
+			"signableDataSha256", hex.EncodeToString(signableDataDigest(signableData)),
+			"signableDataPreview", signableDataPreview(signableData),
+			"signatureHex", block.TrustProof.ValidatorSigs[0],
+			"pubkeyHex", validatorPubKey,
+		)
 		return false
 	}
 
 	return true
+}
+
+// signableDataDigest returns the sha256 of the canonical signable
+// bytes. Exposed as a helper so the cryptographic and trust-proof
+// validation log lines emit identically-shaped fingerprints,
+// enabling grep/jq comparison across nodes.
+func signableDataDigest(data []byte) []byte {
+	d := sha256.Sum256(data)
+	return d[:]
+}
+
+// signableDataPreview clips the canonical signable bytes to the
+// first signableDataPreviewBytes characters for log inclusion.
+// The bytes are valid UTF-8 JSON, so a string preview is more
+// useful than a hex dump for spotting field-order drift.
+func signableDataPreview(data []byte) string {
+	const signableDataPreviewBytes = 256
+	if len(data) <= signableDataPreviewBytes {
+		return string(data)
+	}
+	return string(data[:signableDataPreviewBytes]) + "...(truncated)"
 }
 
 // ValidateBlockTiered validates a block and returns tiered acceptance.
@@ -879,12 +919,31 @@ func (node *QuidnugNode) ValidateTrustProofTiered(block Block) BlockAcceptance {
 		return BlockInvalid
 	}
 
-	// Cryptographically verify signature against registered public key
+	// Cryptographically verify signature against the registered public
+	// key (which may differ from block.TrustProof.ValidatorPublicKey if
+	// the embedded value is stale, spoofed, or pre-rotation). ENG-83:
+	// emit the same structured debug log as the cryptographic-layer
+	// check so operators can tell from one line whether THIS layer
+	// found a registered-vs-embedded pubkey mismatch (the only thing
+	// that could cause a different outcome at this point) or whether
+	// canonical-form drift still slips through somewhere.
 	signableData := GetBlockSignableData(block)
-	if !VerifySignature(registeredPubKey, signableData, proof.ValidatorSigs[0]) {
+	if ok, verifyErr := VerifySignatureDetailed(registeredPubKey, signableData, proof.ValidatorSigs[0]); !ok {
 		logger.Debug("Validator signature verification failed against registered public key",
-			"validator", proof.ValidatorID,
-			"domain", proof.TrustDomain)
+			"layer", "trust-proof",
+			"blockIndex", block.Index,
+			"blockHash", block.Hash,
+			"domain", proof.TrustDomain,
+			"validatorId", proof.ValidatorID,
+			"reason", verifyErr.Error(),
+			"signableDataLen", len(signableData),
+			"signableDataSha256", hex.EncodeToString(signableDataDigest(signableData)),
+			"signableDataPreview", signableDataPreview(signableData),
+			"signatureHex", proof.ValidatorSigs[0],
+			"registeredPubkeyHex", registeredPubKey,
+			"embeddedPubkeyHex", proof.ValidatorPublicKey,
+			"pubkeysMatchEmbedded", registeredPubKey == proof.ValidatorPublicKey,
+		)
 		return BlockInvalid
 	}
 

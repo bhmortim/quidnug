@@ -8,6 +8,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"hash"
 	"math/big"
 )
@@ -336,31 +338,53 @@ func (node *QuidnugNode) GetPublicKeyHex() string {
 	return hex.EncodeToString(publicKeyBytes)
 }
 
-// VerifySignature verifies an ECDSA P-256 signature
-// publicKeyHex: hex-encoded public key in uncompressed format (65 bytes: 0x04 || X || Y)
-// data: the data that was signed
-// signatureHex: hex-encoded signature (64 bytes: r || s, each padded to 32 bytes)
+// VerifySignature verifies an ECDSA P-256 signature.
+// publicKeyHex: hex-encoded public key in uncompressed format (65 bytes: 0x04 || X || Y).
+// data: the data that was signed.
+// signatureHex: hex-encoded signature (64 bytes: r || s, each padded to 32 bytes).
+//
+// This is the boolean entry point used throughout the codebase. For
+// callers that need to distinguish "wrong key", "wrong signature",
+// "malformed input", and "verify-rejected" (e.g. block validation
+// debug paths under ENG-83), use VerifySignatureDetailed.
 func VerifySignature(publicKeyHex string, data []byte, signatureHex string) bool {
-	if publicKeyHex == "" || signatureHex == "" {
-		return false
+	ok, _ := VerifySignatureDetailed(publicKeyHex, data, signatureHex)
+	return ok
+}
+
+// VerifySignatureDetailed verifies an ECDSA P-256 signature and
+// returns a non-nil error describing why verification failed when it
+// does. The error categories (in order of check) are:
+//
+//   - missing inputs      empty pubkey or signature hex
+//   - pubkey decode       hex decode of the pubkey failed
+//   - pubkey unmarshal    bytes are not a valid P-256 uncompressed point
+//   - signature decode    hex decode of the signature failed
+//   - signature length    decoded signature is not exactly 64 bytes
+//   - ecdsa rejected      signature does not validate against sha256(data)
+//
+// ENG-83: distinguishing "signature really does not match this data"
+// from "data we hashed differently" requires knowing whether ECDSA
+// verify or an earlier decode step was the failure point. Callers
+// (block-validation debug logs) thread the returned error into their
+// structured log so the operator can tell, from a single log line,
+// whether they have a canonical-form drift or a key-vs-key mismatch.
+func VerifySignatureDetailed(publicKeyHex string, data []byte, signatureHex string) (bool, error) {
+	if publicKeyHex == "" {
+		return false, errors.New("missing public key")
+	}
+	if signatureHex == "" {
+		return false, errors.New("missing signature")
 	}
 
-	// Decode public key from hex
 	publicKeyBytes, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
-		if logger != nil {
-			logger.Debug("Failed to decode public key hex", "error", err)
-		}
-		return false
+		return false, fmt.Errorf("public key hex decode failed: %w", err)
 	}
 
-	// Unmarshal the public key
 	x, y := elliptic.Unmarshal(elliptic.P256(), publicKeyBytes)
 	if x == nil {
-		if logger != nil {
-			logger.Debug("Failed to unmarshal public key")
-		}
-		return false
+		return false, errors.New("public key unmarshal failed: bytes are not a valid P-256 uncompressed point")
 	}
 
 	publicKey := &ecdsa.PublicKey{
@@ -369,29 +393,21 @@ func VerifySignature(publicKeyHex string, data []byte, signatureHex string) bool
 		Y:     y,
 	}
 
-	// Decode signature from hex
 	signatureBytes, err := hex.DecodeString(signatureHex)
 	if err != nil {
-		if logger != nil {
-			logger.Debug("Failed to decode signature hex", "error", err)
-		}
-		return false
+		return false, fmt.Errorf("signature hex decode failed: %w", err)
 	}
 
-	// For P-256, signature should be 64 bytes (32 for r, 32 for s)
 	if len(signatureBytes) != 64 {
-		if logger != nil {
-			logger.Debug("Invalid signature length", "expected", 64, "got", len(signatureBytes))
-		}
-		return false
+		return false, fmt.Errorf("signature length is %d, expected 64 (IEEE-1363 r||s, each 32 bytes)", len(signatureBytes))
 	}
 
 	r := new(big.Int).SetBytes(signatureBytes[:32])
 	s := new(big.Int).SetBytes(signatureBytes[32:])
 
-	// Hash the data
-	hash := sha256.Sum256(data)
-
-	// Verify the signature
-	return ecdsa.Verify(publicKey, hash[:], r, s)
+	digest := sha256.Sum256(data)
+	if !ecdsa.Verify(publicKey, digest[:], r, s) {
+		return false, errors.New("ecdsa verify rejected: signature does not validate against sha256(data)")
+	}
+	return true, nil
 }
