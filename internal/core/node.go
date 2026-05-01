@@ -134,6 +134,14 @@ type QuidnugNode struct {
 	// static, mDNS) so the gating policy is uniform.
 	PeerAdmit PeerAdmitConfig
 
+	// PeerScoreboard is the per-peer quality-scoring system
+	// (Phase 4). Every interaction with a peer (handshake,
+	// gossip post, query, broadcast, validation outcome)
+	// nudges the score; quarantine + eviction policies and
+	// routing preference consult it. Persists across restarts
+	// via the snapshot loop in Run().
+	PeerScoreboard *PeerScoreboard
+
 	// State registries
 	TrustRegistry      map[string]map[string]float64
 	TrustNonceRegistry map[string]map[string]int64
@@ -369,6 +377,16 @@ func Run() {
 		)
 	}()
 
+	// Peer-scoreboard persistence: snapshot every
+	// cfg.PeerScorePersistInterval (default 5m) so reputation
+	// survives restart. No-op when peerScoreboardPath returns
+	// empty (DataDir unset, typical in tests).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runPeerScorePersistLoop(ctx, peerScoreboardPath(cfg), cfg.PeerScorePersistInterval)
+	}()
+
 	// Start block generation for managed trust domains (with context)
 	wg.Add(1)
 	go func() {
@@ -597,6 +615,11 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 			MinOperatorReputation: cfg.PeerMinOperatorReputation,
 			HandshakeTimeout:      5 * time.Second,
 		},
+		PeerScoreboard: NewPeerScoreboard(
+			DefaultPeerScoreWeights(),
+			peerScoreboardPath(cfg),
+			cfg.PeerScorePersistInterval,
+		),
 	}
 	// SSRF defense: reject loopback, private, link-local, and
 	// metadata-IP destinations at dial time so peer-advertised
@@ -673,6 +696,14 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		"node_id": nodeID,
 	}, "node initialized")
 
+	// Rehydrate peer scores from disk if a previous run wrote
+	// peer_scores.json. Missing file is fine.
+	if node.PeerScoreboard != nil {
+		if err := node.PeerScoreboard.LoadFrom(peerScoreboardPath(cfg)); err != nil {
+			logger.Warn("Failed to load peer scoreboard", "error", err)
+		}
+	}
+
 	if logger != nil {
 		fields := []any{"nodeId", nodeID}
 		if operatorQuidID != "" {
@@ -686,6 +717,16 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		logger.Info("Initialized quidnug node", fields...)
 	}
 	return node, nil
+}
+
+// peerScoreboardPath resolves the on-disk location for the peer
+// scoreboard JSON snapshot. Empty when DataDir is empty (in-
+// memory-only operation, fine for tests).
+func peerScoreboardPath(cfg *config.Config) string {
+	if cfg == nil || cfg.DataDir == "" {
+		return ""
+	}
+	return filepath.Join(cfg.DataDir, "peer_scores.json")
 }
 
 // operatorQuidFile is the on-disk format produced by

@@ -172,6 +172,58 @@ type Config struct {
 	//
 	// Environment variable: PEER_REATTESTATION_INTERVAL
 	PeerReattestationInterval time.Duration `json:"peerReattestationInterval" yaml:"-"`
+
+	// --- Peer scoring (Phase 4) ----------------------------------------
+
+	// PeerScorePersistInterval is how often the scoreboard is
+	// snapshot to data_dir/peer_scores.json. Default 5m.
+	// Reputation accumulated since the last snapshot is lost
+	// on hard kill; honoring SIGTERM triggers a final flush.
+	//
+	// Environment variable: PEER_SCORE_PERSIST_INTERVAL
+	PeerScorePersistInterval time.Duration `json:"peerScorePersistInterval" yaml:"-"`
+
+	// PeerQuarantineThreshold: peers whose composite score
+	// drops below this are quarantined — kept in KnownNodes
+	// but excluded from active routing. Default 0.4. Hysteresis
+	// requires the score to rise above threshold+0.1 before
+	// the peer is un-quarantined. Phase 4b.
+	//
+	// Environment variable: PEER_QUARANTINE_THRESHOLD
+	PeerQuarantineThreshold float64 `json:"peerQuarantineThreshold" yaml:"peer_quarantine_threshold"`
+
+	// PeerEvictionThreshold: peers whose composite score stays
+	// below this for PeerEvictionGrace are evicted from
+	// KnownNodes entirely. Default 0.2. Static-source peers
+	// are NOT subject to automatic eviction (operator intent
+	// wins) but still get a stern warning logged. Phase 4b.
+	//
+	// Environment variable: PEER_EVICTION_THRESHOLD
+	PeerEvictionThreshold float64 `json:"peerEvictionThreshold" yaml:"peer_eviction_threshold"`
+
+	// PeerEvictionGrace: how long a peer's composite must stay
+	// below PeerEvictionThreshold before eviction fires.
+	// Default 5m. Prevents transient outages from auto-evicting
+	// a peer that recovers within the window.
+	//
+	// Environment variable: PEER_EVICTION_GRACE
+	PeerEvictionGrace time.Duration `json:"peerEvictionGrace" yaml:"-"`
+
+	// PeerForkAction: what the fork-detection feedback does
+	// when a peer is implicated in 2+ fork claims within
+	// PeerForkWindow. One of: "log", "quarantine", "evict".
+	// Default "quarantine". Phase 4c.
+	//
+	// Environment variable: PEER_FORK_ACTION
+	PeerForkAction string `json:"peerForkAction" yaml:"peer_fork_action"`
+
+	// PeerForkWindow: rolling window for the 2-fork-claims
+	// trigger. Default 1h. Older claims still count toward
+	// the cumulative ForkClaims counter; this window only
+	// gates the quarantine/eviction action.
+	//
+	// Environment variable: PEER_FORK_WINDOW
+	PeerForkWindow time.Duration `json:"peerForkWindow" yaml:"-"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -231,6 +283,14 @@ const (
 	DefaultPeerMinOperatorTrust      = 0.5 // matches QDP-0014 MinOperatorTrustWeight
 	DefaultPeerMinOperatorReputation = 0.0 // off by default
 	DefaultPeerReattestationInterval = 30 * time.Minute
+
+	// Peer-scoring defaults (Phase 4)
+	DefaultPeerScorePersistInterval = 5 * time.Minute
+	DefaultPeerQuarantineThreshold  = 0.4
+	DefaultPeerEvictionThreshold    = 0.2
+	DefaultPeerEvictionGrace        = 5 * time.Minute
+	DefaultPeerForkAction           = "quarantine"
+	DefaultPeerForkWindow           = 1 * time.Hour
 )
 
 // DefaultConfigSearchPaths defines the default locations to search for config files
@@ -435,6 +495,14 @@ func LoadConfig() *Config {
 		PeerMinOperatorTrust:      DefaultPeerMinOperatorTrust,
 		PeerMinOperatorReputation: DefaultPeerMinOperatorReputation,
 		PeerReattestationInterval: DefaultPeerReattestationInterval,
+
+		// Peer-scoring defaults (Phase 4)
+		PeerScorePersistInterval: DefaultPeerScorePersistInterval,
+		PeerQuarantineThreshold:  DefaultPeerQuarantineThreshold,
+		PeerEvictionThreshold:    DefaultPeerEvictionThreshold,
+		PeerEvictionGrace:        DefaultPeerEvictionGrace,
+		PeerForkAction:           DefaultPeerForkAction,
+		PeerForkWindow:           DefaultPeerForkWindow,
 	}
 
 	// Try to load from config file
@@ -682,6 +750,37 @@ func LoadConfig() *Config {
 	if v := os.Getenv("PEER_REATTESTATION_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			cfg.PeerReattestationInterval = d
+		}
+	}
+	if v := os.Getenv("PEER_SCORE_PERSIST_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.PeerScorePersistInterval = d
+		}
+	}
+	if v := os.Getenv("PEER_QUARANTINE_THRESHOLD"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			cfg.PeerQuarantineThreshold = f
+		}
+	}
+	if v := os.Getenv("PEER_EVICTION_THRESHOLD"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 && f <= 1 {
+			cfg.PeerEvictionThreshold = f
+		}
+	}
+	if v := os.Getenv("PEER_EVICTION_GRACE"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.PeerEvictionGrace = d
+		}
+	}
+	if v := os.Getenv("PEER_FORK_ACTION"); v != "" {
+		switch strings.ToLower(v) {
+		case "log", "quarantine", "evict":
+			cfg.PeerForkAction = strings.ToLower(v)
+		}
+	}
+	if v := os.Getenv("PEER_FORK_WINDOW"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.PeerForkWindow = d
 		}
 	}
 

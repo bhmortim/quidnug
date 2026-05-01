@@ -351,6 +351,7 @@ func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON 
 			"targetNodeId", targetNode.ID,
 			"targetAddress", targetNode.Address,
 			"error", err)
+		node.recordPeerScore(targetNode.ID, EventClassBroadcast, false, "dial: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -360,6 +361,7 @@ func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON 
 			"targetNodeId", targetNode.ID,
 			"targetAddress", targetNode.Address,
 			"status", resp.StatusCode)
+		node.recordPeerScore(targetNode.ID, EventClassBroadcast, true, "")
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		logger.Warn("Node rejected broadcast transaction",
@@ -367,6 +369,8 @@ func (node *QuidnugNode) broadcastToNode(targetNode Node, txType string, txJSON 
 			"targetAddress", targetNode.Address,
 			"status", resp.StatusCode,
 			"response", string(body))
+		node.recordPeerScore(targetNode.ID, EventClassBroadcast, false,
+			fmt.Sprintf("status %d", resp.StatusCode))
 	}
 }
 
@@ -837,23 +841,29 @@ func (node *QuidnugNode) queryNode(targetNode Node, domainName, queryType, query
 
 	resp, err := node.httpClient.Do(req) // #nosec -- request URL built from sanitized address; transport also enforces safeDialContext
 	if err != nil {
+		node.recordPeerScore(targetNode.ID, EventClassQuery, false, "dial: "+err.Error())
 		return nil, fmt.Errorf("failed to connect to node %s: %w", safeAddr.String(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		node.recordPeerScore(targetNode.ID, EventClassQuery, false, "read body: "+err.Error())
 		return nil, fmt.Errorf("failed to read response from node %s: %w", targetNode.Address, err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		node.recordPeerScore(targetNode.ID, EventClassQuery, false,
+			fmt.Sprintf("status %d", resp.StatusCode))
 		return nil, fmt.Errorf("node %s returned status %d: %s", targetNode.Address, resp.StatusCode, string(body))
 	}
 
 	var result interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
+		node.recordPeerScore(targetNode.ID, EventClassQuery, false, "decode: "+err.Error())
 		return nil, fmt.Errorf("failed to parse response from node %s: %w", targetNode.Address, err)
 	}
 
+	node.recordPeerScore(targetNode.ID, EventClassQuery, true, "")
 	return result, nil
 }

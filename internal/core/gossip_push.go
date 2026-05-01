@@ -652,11 +652,19 @@ func (node *QuidnugNode) postGossipPush(target Node, path string, body []byte, k
 	resp, err := node.httpClient.Do(req)
 	if err != nil {
 		logger.Debug("gossip-push: send failed", "target", target.ID, "error", err)
+		node.recordPeerScore(target.ID, EventClassGossip, false, "network: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		logger.Debug("gossip-push: non-2xx",
 			"target", target.ID, "path", path, "status", resp.StatusCode)
+		// 4xx and 5xx both count as failures; a peer that
+		// refuses gossip we believe is valid is misbehaving
+		// or buggy in a way that should drag the score down.
+		node.recordPeerScore(target.ID, EventClassGossip, false,
+			fmt.Sprintf("status %d on %s", resp.StatusCode, path))
+		return
 	}
+	node.recordPeerScore(target.ID, EventClassGossip, true, "")
 }

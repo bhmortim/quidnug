@@ -146,8 +146,18 @@ func (node *QuidnugNode) AdmitPeer(ctx context.Context, c PeerCandidate, cfg Pee
 		defer cancel()
 		info, err := node.peerInfoHandshake(hsCtx, safe.String())
 		if err != nil {
+			// Record handshake failure against whatever we
+			// know about the peer's identity. NodeQuid may
+			// be the candidate-claimed value or empty; the
+			// scoreboard tolerates both (empty quid is a
+			// no-op).
+			node.recordPeerScore(c.NodeQuid, EventClassHandshake, false, fmt.Sprintf("handshake to %s: %v", c.Address, err))
 			return nil, fmt.Errorf("admit %s: handshake %s: %w", c.Source, c.Address, err)
 		}
+		// Successful handshake — credit the verified NodeQuid
+		// (info.NodeQuid is what the peer self-asserts), not
+		// the candidate-claimed one.
+		node.recordPeerScore(info.NodeQuid, EventClassHandshake, true, "")
 		if c.NodeQuid != "" && info.NodeQuid != c.NodeQuid {
 			return nil, fmt.Errorf("admit %s: handshake %s: NodeQuid mismatch (claimed %s, served %s)",
 				c.Source, c.Address, c.NodeQuid, info.NodeQuid)
