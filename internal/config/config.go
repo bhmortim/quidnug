@@ -70,6 +70,29 @@ type Config struct {
 	// log is in-memory only (fine for dev + tests, not recommended
 	// for production). Relative paths resolve against DataDir.
 	AuditLogPath string `json:"auditLogPath" yaml:"audit_log_path"`
+
+	// OperatorQuidFile is the path to a `.quid.json` file (the
+	// format `quidnug-cli quid generate` emits) whose private key
+	// the node uses as its signing identity. When set, the node
+	// loads this file on startup instead of generating a fresh
+	// ephemeral keypair, which makes the node's quid stable
+	// across restarts AND lets one operator run multiple nodes
+	// under a single shared identity. Trust granted to an
+	// operator's quid then accumulates against the operator
+	// regardless of which physical node a counterparty interacts
+	// with — that's the QDP-0001 "transferable trust" property.
+	//
+	// Empty means generate ephemeral (existing behavior; fine
+	// for tests and short-lived demos, not recommended for any
+	// node intended to accumulate reputation).
+	//
+	// The file MUST contain a privateKeyHex; loading a public-
+	// only quid file is rejected because the node needs the key
+	// to sign. Permissions on the file should be 0600; the node
+	// warns if it's world-readable.
+	//
+	// Environment variable: OPERATOR_QUID_FILE
+	OperatorQuidFile string `json:"operatorQuidFile" yaml:"operator_quid_file"`
 }
 
 // fileConfig is used for parsing config files with string durations
@@ -95,6 +118,7 @@ type fileConfig struct {
 	DomainGossipInterval    string   `json:"domainGossipInterval" yaml:"domain_gossip_interval"`
 	DomainGossipTTL         int      `json:"domainGossipTTL" yaml:"domain_gossip_ttl"`
 	AuditLogPath            string   `json:"auditLogPath" yaml:"audit_log_path"`
+	OperatorQuidFile        string   `json:"operatorQuidFile" yaml:"operator_quid_file"`
 }
 
 // Default values
@@ -240,6 +264,9 @@ func fileConfigToConfig(fc *fileConfig) (*Config, error) {
 	if fc.AuditLogPath != "" {
 		cfg.AuditLogPath = fc.AuditLogPath
 	}
+	if fc.OperatorQuidFile != "" {
+		cfg.OperatorQuidFile = fc.OperatorQuidFile
+	}
 
 	return cfg, nil
 }
@@ -353,6 +380,9 @@ func LoadConfig() *Config {
 			if fileCfg.AuditLogPath != "" {
 				cfg.AuditLogPath = fileCfg.AuditLogPath
 			}
+			if fileCfg.OperatorQuidFile != "" {
+				cfg.OperatorQuidFile = fileCfg.OperatorQuidFile
+			}
 		}
 	}
 
@@ -465,6 +495,10 @@ func LoadConfig() *Config {
 
 	if auditLogPath := os.Getenv("AUDIT_LOG_PATH"); auditLogPath != "" {
 		cfg.AuditLogPath = auditLogPath
+	}
+
+	if operatorQuid := os.Getenv("OPERATOR_QUID_FILE"); operatorQuid != "" {
+		cfg.OperatorQuidFile = operatorQuid
 	}
 
 	if enablePushGossip := os.Getenv("ENABLE_PUSH_GOSSIP"); enablePushGossip != "" {

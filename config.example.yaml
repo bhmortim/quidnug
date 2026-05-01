@@ -157,3 +157,31 @@ domain_gossip_ttl: 3
 # sensitivity. Must be between 1 and 3600.
 #   Environment variable: NODE_AUTH_TIMESTAMP_TOLERANCE_SECONDS
 # node_auth_timestamp_tolerance_seconds: 60
+
+# --- Operator identity ----------------------------------------------------
+#
+# Path to a `.quid.json` file (the format `quidnug-cli quid generate`
+# produces) whose keypair this node operates under. Two facts about this:
+#
+#   1. The Node ID (used for gossip dedup and peer identity at the network
+#      layer) is per-process and always generated fresh on startup. The
+#      operator quid is SEPARATE — it's the long-lived identity that
+#      accumulates trust across all nodes you run.
+#
+#   2. The same operator quid file can be deployed on multiple nodes you
+#      run simultaneously. Trust granted to the operator quid in any
+#      trust domain authorizes every one of your nodes to participate
+#      in that domain. The Node IDs differ between machines (so gossip
+#      dedup and fork detection work); only the operator-quid identity
+#      pools across them.
+#
+# Generate one with:
+#   quidnug-cli quid generate --out /etc/quidnug/operator.quid.json
+#   chmod 600 /etc/quidnug/operator.quid.json
+#
+# Then reference it here OR set OPERATOR_QUID_FILE env var. When unset,
+# the node runs without an operator identity (fine for tests; not
+# recommended for any node intended to accumulate reputation).
+#
+#   Environment variable: OPERATOR_QUID_FILE
+# operator_quid_file: "/etc/quidnug/operator.quid.json"

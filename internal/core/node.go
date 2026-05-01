@@ -6,13 +6,16 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,6 +25,7 @@ import (
 	"github.com/quidnug/quidnug/internal/config"
 	"github.com/quidnug/quidnug/internal/ipfsclient"
 	"github.com/quidnug/quidnug/internal/ratelimit"
+	"github.com/quidnug/quidnug/internal/safeio"
 )
 
 // Lock ordering to prevent deadlocks:
@@ -86,6 +90,34 @@ type QuidnugNode struct {
 	PendingTxs   []interface{}
 	TrustDomains map[string]TrustDomain
 	KnownNodes   map[string]Node
+
+	// OperatorQuid is the long-lived identity of the human or
+	// organization that runs this node. It is intentionally
+	// separate from NodeID/PrivateKey above: NodeID identifies
+	// THIS process for gossip dedup and fork detection, while
+	// the operator quid is the identity that accumulates
+	// transferable trust. One operator quid can run on N nodes
+	// simultaneously — each of those nodes still has its own
+	// NodeID, but they all advertise the same OperatorQuid.
+	//
+	// Trust granted to OperatorQuid in some trust domain (via
+	// TRUST transactions) is what authorizes this node to
+	// process transactions in that domain. The same TRUST grant
+	// applies regardless of which of the operator's nodes a
+	// counterparty interacts with — that's the QDP-0001 +
+	// QDP-0014 transferable-trust property.
+	//
+	// Loaded from cfg.OperatorQuidFile (a .quid.json file as
+	// emitted by `quidnug-cli quid generate`). Empty when no
+	// operator file is configured (typical in tests and
+	// short-lived demos); the node still works but
+	// counterparties have no trust anchor that survives
+	// restart, and an operator running multiple nodes cannot
+	// pool trust across them.
+	OperatorQuidID           string
+	OperatorQuidPublicKeyHex string
+	OperatorQuidPrivateKey   *ecdsa.PrivateKey // nil when only public-key file was loaded
+	OperatorQuidFile         string            // source path, for landing-page diagnostics
 
 	// State registries
 	TrustRegistry      map[string]map[string]float64
@@ -404,7 +436,13 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 	if cfg.DomainGossipTTL <= 0 {
 		cfg.DomainGossipTTL = config.DefaultDomainGossipTTL
 	}
-	// Generate a new ECDSA key pair
+	// Generate a fresh ECDSA keypair for this node process. The
+	// node's identity (NodeID) is intentionally distinct from
+	// the operator's quid (loaded below if configured): each
+	// running node must have its own NodeID so peer discovery,
+	// gossip dedup, and fork detection work correctly even when
+	// one operator runs N nodes under a single quid. Two nodes
+	// sharing a NodeID would collide on those mechanisms.
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate key pair: %v", err)
@@ -413,6 +451,27 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 	// Generate a node ID based on the public key
 	publicKeyBytes := elliptic.Marshal(privateKey.PublicKey.Curve, privateKey.PublicKey.X, privateKey.PublicKey.Y)
 	nodeID := fmt.Sprintf("%x", sha256.Sum256(publicKeyBytes))[:16]
+
+	// Load the operator quid if one is configured. The operator
+	// quid is the long-lived identity this node operates under;
+	// see the OperatorQuid* fields on QuidnugNode for the
+	// rationale. A load failure here is fatal: misconfigured
+	// operator identity is something operators want to know
+	// about at boot, not silently treated as ephemeral.
+	var (
+		operatorQuidID           string
+		operatorQuidPublicHex    string
+		operatorQuidPrivateKey   *ecdsa.PrivateKey
+	)
+	if cfg.OperatorQuidFile != "" {
+		op, err := loadOperatorQuid(cfg.OperatorQuidFile)
+		if err != nil {
+			return nil, fmt.Errorf("load operator quid from %q: %w", cfg.OperatorQuidFile, err)
+		}
+		operatorQuidID = op.ID
+		operatorQuidPublicHex = op.PublicKeyHex
+		operatorQuidPrivateKey = op.PrivateKey
+	}
 
 	// Compute public key hex for genesis block
 	publicKeyHex := hex.EncodeToString(publicKeyBytes)
@@ -444,6 +503,10 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 
 	node := &QuidnugNode{
 		NodeID:                    nodeID,
+		OperatorQuidID:            operatorQuidID,
+		OperatorQuidPublicKeyHex:  operatorQuidPublicHex,
+		OperatorQuidPrivateKey:    operatorQuidPrivateKey,
+		OperatorQuidFile:          cfg.OperatorQuidFile,
 		PrivateKey:                privateKey,
 		PublicKey:                 &privateKey.PublicKey,
 		Blockchain:                []Block{genesisBlock},
@@ -562,9 +625,138 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 	}, "node initialized")
 
 	if logger != nil {
-		logger.Info("Initialized quidnug node", "nodeId", nodeID)
+		fields := []any{"nodeId", nodeID}
+		if operatorQuidID != "" {
+			fields = append(fields,
+				"operatorQuid", operatorQuidID,
+				"operatorQuidHasPrivateKey", operatorQuidPrivateKey != nil,
+				"operatorQuidFile", cfg.OperatorQuidFile)
+		} else {
+			fields = append(fields, "operatorQuid", "(none — ephemeral node)")
+		}
+		logger.Info("Initialized quidnug node", fields...)
 	}
 	return node, nil
+}
+
+// operatorQuidFile is the on-disk format produced by
+// `quidnug-cli quid generate`. Mirrored here so the node can
+// load the same file without depending on the CLI package.
+type operatorQuidFile struct {
+	ID            string `json:"id"`
+	PublicKeyHex  string `json:"publicKeyHex"`
+	PrivateKeyHex string `json:"privateKeyHex,omitempty"`
+}
+
+// loadedOperatorQuid is the in-memory result of loading an
+// operator quid file. PrivateKey is nil when the file contained
+// only a public key (a node operating under a quid the operator
+// keeps offline; the node can display the identity but cannot
+// sign on the operator's behalf).
+type loadedOperatorQuid struct {
+	ID           string
+	PublicKeyHex string
+	PrivateKey   *ecdsa.PrivateKey
+}
+
+// loadOperatorQuid reads and validates a .quid.json file at the
+// given path. The path is treated as untrusted-input and goes
+// through safeio.ReadFile (rejects path traversal, NUL bytes,
+// symlinks, non-regular files). The decoded ID is cross-checked
+// against the public key so a tampered ID can't impersonate
+// another quid.
+func loadOperatorQuid(path string) (*loadedOperatorQuid, error) {
+	raw, err := safeio.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var qf operatorQuidFile
+	if err := json.Unmarshal(raw, &qf); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	if qf.PublicKeyHex == "" {
+		return nil, fmt.Errorf("missing publicKeyHex")
+	}
+	pubKey, err := decodeOperatorPublicKey(qf.PublicKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("publicKeyHex: %w", err)
+	}
+	// Cross-check ID = sha256(publicKey)[:16] using the same
+	// derivation NodeID uses (so the on-wire identifier shape
+	// is consistent).
+	pubBytes, err := hex.DecodeString(qf.PublicKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("publicKeyHex not hex: %w", err)
+	}
+	wantID := fmt.Sprintf("%x", sha256.Sum256(pubBytes))[:16]
+	if qf.ID != "" && qf.ID != wantID {
+		return nil, fmt.Errorf("id %q does not match sha256(publicKey)[:16] = %q", qf.ID, wantID)
+	}
+	out := &loadedOperatorQuid{
+		ID:           wantID,
+		PublicKeyHex: qf.PublicKeyHex,
+	}
+	if qf.PrivateKeyHex != "" {
+		priv, err := decodeOperatorPrivateKey(qf.PrivateKeyHex, pubKey)
+		if err != nil {
+			return nil, fmt.Errorf("privateKeyHex: %w", err)
+		}
+		out.PrivateKey = priv
+	}
+	// Permissions sanity check on POSIX. Skip on Windows where
+	// the perm bits don't reflect actual ACL state.
+	if runtime.GOOS != "windows" {
+		if st, err := os.Stat(path); err == nil {
+			if mode := st.Mode().Perm(); mode&0o077 != 0 {
+				logger.Warn("Operator quid file is group/world-readable; recommend chmod 600",
+					"path", path, "mode", fmt.Sprintf("%o", mode))
+			}
+		}
+	}
+	return out, nil
+}
+
+// decodeOperatorPublicKey decodes a hex-encoded SEC1 uncompressed
+// P-256 public key into an *ecdsa.PublicKey. Format matches what
+// `pkg/client.Quid.PublicKeyHex` produces.
+func decodeOperatorPublicKey(hexStr string) (*ecdsa.PublicKey, error) {
+	raw, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("not hex: %w", err)
+	}
+	curve := elliptic.P256()
+	x, y := elliptic.Unmarshal(curve, raw)
+	if x == nil || y == nil {
+		return nil, fmt.Errorf("invalid SEC1 uncompressed P-256 point")
+	}
+	return &ecdsa.PublicKey{Curve: curve, X: x, Y: y}, nil
+}
+
+// decodeOperatorPrivateKey decodes a hex-encoded PKCS8 DER
+// (the format pkg/client.Quid emits) into an *ecdsa.PrivateKey
+// and verifies it produces the supplied public key. Refusing to
+// load a key whose public half doesn't match closes a common
+// config-mistake hole (operator paired the wrong files together).
+func decodeOperatorPrivateKey(hexStr string, expectedPub *ecdsa.PublicKey) (*ecdsa.PrivateKey, error) {
+	derBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("not hex: %w", err)
+	}
+	keyAny, err := x509.ParsePKCS8PrivateKey(derBytes)
+	if err != nil {
+		return nil, fmt.Errorf("PKCS8 parse: %w", err)
+	}
+	priv, ok := keyAny.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("not an ECDSA private key (got %T)", keyAny)
+	}
+	if priv.Curve != elliptic.P256() {
+		return nil, fmt.Errorf("not P-256")
+	}
+	if priv.PublicKey.X.Cmp(expectedPub.X) != 0 || priv.PublicKey.Y.Cmp(expectedPub.Y) != 0 {
+		return nil, fmt.Errorf("private scalar does not match publicKeyHex")
+	}
+	return priv, nil
 }
 
 // SetHTTPClientTimeout configures the HTTP client timeout

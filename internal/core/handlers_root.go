@@ -50,11 +50,14 @@ var rootIndexTemplate = template.Must(template.New("root").Parse(`<!DOCTYPE html
 <dl class="facts">
   <dt>Version</dt><dd>{{.Version}}</dd>
   <dt>Node ID</dt><dd>{{.NodeID}}</dd>
+  {{if .OperatorQuidID}}<dt>Operator quid</dt><dd>{{.OperatorQuidID}}</dd>{{end}}
   <dt>Uptime</dt><dd>{{.Uptime}}</dd>
   <dt>Block height</dt><dd>{{.BlockHeight}}</dd>
   <dt>Connected peers</dt><dd>{{.PeerCount}}</dd>
   <dt>Trust domains served</dt><dd>{{.DomainCount}}</dd>
 </dl>
+{{if .OperatorQuidID}}<p class="lede">This node is operated under quid <code>{{.OperatorQuidID}}</code>. Trust granted to that quid in any trust domain authorizes this node (and any other node the same operator runs) to participate in that domain. The Node ID above is per-process and exists for gossip dedup; the operator quid is what accumulates reputation.</p>
+{{else}}<p class="lede"><strong>Ephemeral identity:</strong> this node is running without a configured operator quid. Its Node ID changes on every restart and it cannot accumulate reputation across processes. See <a href="https://github.com/bhmortim/quidnug/blob/main/deploy/public-network/home-operator-plan.md">the home-operator plan</a> for how to configure an operator quid.</p>{{end}}
 
 {{if .DomainSamples}}
 <h2>Sample trust domains</h2>
@@ -119,6 +122,7 @@ curl {{.SelfBaseURL}}/api/v1/streams/&lt;subject-id&gt;/events | jq .</pre>
 type rootIndexData struct {
 	Version        string
 	NodeID         string
+	OperatorQuidID string
 	Uptime         string
 	BlockHeight    int64
 	PeerCount      int
@@ -192,8 +196,21 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	selfBaseURL := scheme + "://" + host
 
+	// Operator quid block, included only when configured. Public
+	// key is exposed so consumers can verify operator signatures
+	// without a round-trip; hasPrivateKey is a useful
+	// observability signal but does not leak the key itself.
+	var operatorBlock map[string]interface{}
+	if node.OperatorQuidID != "" {
+		operatorBlock = map[string]interface{}{
+			"id":            node.OperatorQuidID,
+			"publicKeyHex":  node.OperatorQuidPublicKeyHex,
+			"hasPrivateKey": node.OperatorQuidPrivateKey != nil,
+		}
+	}
+
 	if wantsJSON(r) {
-		WriteSuccess(w, map[string]interface{}{
+		body := map[string]interface{}{
 			"version":       QuidnugVersion,
 			"nodeId":        node.NodeID,
 			"uptimeSeconds": int64(uptime.Seconds()),
@@ -211,7 +228,11 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 				"metrics": "/metrics",
 			},
 			"selfBaseUrl": selfBaseURL,
-		})
+		}
+		if operatorBlock != nil {
+			body["operatorQuid"] = operatorBlock
+		}
+		WriteSuccess(w, body)
 		return
 	}
 
@@ -220,6 +241,7 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 	_ = rootIndexTemplate.Execute(w, rootIndexData{
 		Version:        QuidnugVersion,
 		NodeID:         node.NodeID,
+		OperatorQuidID: node.OperatorQuidID,
 		Uptime:         uptime.String(),
 		BlockHeight:    blockHeight,
 		PeerCount:      peerCount,
