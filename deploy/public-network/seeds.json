@@ -1,44 +1,47 @@
 {
-  "version": 1,
+  "version": 2,
   "network": "public.quidnug.com",
   "description": "Authoritative seed-node identity list for the public Quidnug network. Mirrored at https://quidnug.com/network/seeds.json.",
   "reservedDomainRoot": "network.quidnug.com",
-  "updated": "2026-04-20T00:00:00Z",
+  "updated": "2026-05-01T00:00:00Z",
+  "operator": {
+    "name": "quidnug.com",
+    "quidId": "053244db720d8ca8",
+    "publicKeyHex": "046b4508acdc73074e6097c6e309b96da23d68a4326a036cf8bd792e37756a1837c502f4679c7d71df266291b3989edf5ec46d18c2b7449fab3bedc9869b68c703",
+    "attestation": "QDP-0014 operator attestation: this operator quid signs TRUST -> NodeQuid for each seed below to admit them at peer-trust >= 0.5."
+  },
   "seeds": [
     {
       "name": "quidnug-node-1",
       "region": "home",
       "endpoint": "https://node1.quidnug.com",
-      "quidId": "034bc467852ffa94",
-      "publicKey": "PENDING",
+      "quidId": "04766aa96b87b970",
+      "operatorQuid": "053244db720d8ca8",
       "status": "live",
-      "attestedBy": "quidnug.com",
       "guardians": { "m": 3, "n": 5, "installed": false }
     },
     {
       "name": "quidnug-node-2",
-      "region": "tbd",
+      "region": "home",
       "endpoint": "https://node2.quidnug.com",
-      "quidId": "PENDING",
-      "publicKey": "PENDING",
-      "status": "pending-deploy",
-      "attestedBy": "quidnug.com",
+      "quidId": "d8506369080aab3f",
+      "operatorQuid": "053244db720d8ca8",
+      "status": "live",
       "guardians": { "m": 3, "n": 5, "installed": false }
     },
     {
       "name": "quidnug-node-3",
-      "region": "tbd",
+      "region": "home",
       "endpoint": "https://node3.quidnug.com",
-      "quidId": "PENDING",
-      "publicKey": "PENDING",
-      "status": "pending-deploy",
-      "attestedBy": "quidnug.com",
+      "quidId": "6001535e53890d17",
+      "operatorQuid": "053244db720d8ca8",
+      "status": "live",
       "guardians": { "m": 3, "n": 5, "installed": false }
     }
   ],
   "notes": [
-    "node-1 is currently live in a home Docker container fronted by node1.quidnug.com via Cloudflare.",
-    "publicKey gets filled in after on-chain anchor publication; quidId is the address.",
-    "After more nodes deploy, run `./emit-seeds-json.sh` to fill in their quidIds + publicKeys from /api/info."
+    "All three nodes are operated by the same operator (053244db720d8ca8) for now; production diversification will spread across distinct operators per QDP-0013 federation guidance.",
+    "Per-peer composite scores, quarantine state, and recent events are exposed at GET /api/v1/peers and surfaced on /network/.",
+    "Operator-attestation TRUST edges (operator -> nodeQuid) at >= 0.5 are required for runtime admission per QDP-0014."
   ]
 }
