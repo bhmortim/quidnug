@@ -417,6 +417,15 @@ func (node *QuidnugNode) GetTrustDomainNodes(domainName string) []Node {
 }
 
 // BroadcastTransaction broadcasts a transaction to other nodes in the trust domain
+//
+// ENG-77: this switch must include every concrete transaction type
+// the rest of the codebase emits, otherwise transactions of unlisted
+// types fall through to the default branch and are silently dropped
+// from the broadcast pipeline (every load-gen heartbeat fires the
+// warning when EVENTs are dropped). The companion switches in
+// GenerateBlock (block_operations.go) and ValidateBlockTiered
+// (validation.go) were updated previously to know about EventTransaction;
+// this is the third site that was missed at the time.
 func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 	var domainName string
 	var txType string
@@ -431,11 +440,33 @@ func (node *QuidnugNode) BroadcastTransaction(tx interface{}) {
 	case TitleTransaction:
 		domainName = t.TrustDomain
 		txType = "title"
+	case EventTransaction:
+		domainName = t.TrustDomain
+		txType = "event"
 	case NodeAdvertisementTransaction:
 		domainName = t.TrustDomain
 		txType = "node-advertisement"
+	case ModerationActionTransaction:
+		domainName = t.TrustDomain
+		txType = "moderation"
+	case DataSubjectRequestTransaction:
+		domainName = t.TrustDomain
+		txType = "dsr"
+	case ConsentGrantTransaction:
+		domainName = t.TrustDomain
+		txType = "consent-grant"
+	case ConsentWithdrawTransaction:
+		domainName = t.TrustDomain
+		txType = "consent-withdraw"
+	case ProcessingRestrictionTransaction:
+		domainName = t.TrustDomain
+		txType = "processing-restriction"
+	case DSRComplianceTransaction:
+		domainName = t.TrustDomain
+		txType = "dsr-compliance"
 	default:
-		logger.Warn("Cannot broadcast unknown transaction type")
+		logger.Warn("Cannot broadcast unknown transaction type",
+			"type", fmt.Sprintf("%T", tx))
 		return
 	}
 

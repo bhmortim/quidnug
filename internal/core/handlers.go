@@ -50,6 +50,7 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	// Trust domain endpoints
 	router.HandleFunc("/domains", node.GetDomainsHandler).Methods("GET")
 	router.HandleFunc("/domains", node.RegisterDomainHandler).Methods("POST")
+	router.HandleFunc("/domains/top", node.GetTopDomainsHandler).Methods("GET")
 	router.HandleFunc("/domains/{name}/query", node.QueryDomainHandler).Methods("GET")
 
 	// Registry query endpoints
@@ -347,6 +348,17 @@ func (node *QuidnugNode) GetDomainsHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// GetTopDomainsHandler returns the top-10 trust domains by three
+// metrics: chain length (blocks sealed in the domain), queries
+// served (since process start), and tx volume (transactions
+// across the chain whose trustDomain matches). Walks the
+// blockchain on cache miss; result is cached for 30s so the
+// landing page and operator dashboards don't pay the O(N) walk
+// on every request.
+func (node *QuidnugNode) GetTopDomainsHandler(w http.ResponseWriter, r *http.Request) {
+	WriteSuccess(w, node.TopDomainsTopN(10))
+}
+
 // RegisterDomainHandler handles trust domain registration
 func (node *QuidnugNode) RegisterDomainHandler(w http.ResponseWriter, r *http.Request) {
 	var domain TrustDomain
@@ -438,6 +450,8 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
+		// Local query succeeded — count it for top-domain stats.
+		node.IncrementDomainQueryCount(domainName)
 		WriteSuccess(w, result)
 	} else {
 		// Forward query to other domains
@@ -446,6 +460,10 @@ func (node *QuidnugNode) QueryDomainHandler(w http.ResponseWriter, r *http.Reque
 			WriteError(w, http.StatusNotFound, "NOT_FOUND", err.Error())
 			return
 		}
+		// Successful proxy — also counts; we served the
+		// caller's request even though the data came from a
+		// peer.
+		node.IncrementDomainQueryCount(domainName)
 		WriteSuccess(w, result)
 	}
 }

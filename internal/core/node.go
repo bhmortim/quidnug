@@ -153,6 +153,24 @@ type QuidnugNode struct {
 	// Phase 4f.
 	opReputationCache *operatorReputationCache
 
+	// DomainQueryCounts tracks how many /api/v1/domains/{name}/query
+	// calls have been served per domain since the process booted.
+	// Lock-free atomic increment via sync.Map -> *atomic.Int64.
+	// Read by the top-domains computation (domain_stats.go).
+	DomainQueryCounts       *sync.Map
+	domainQueryCountsInitMu sync.Mutex
+
+	// topDomainCache memoizes the top-domains computation
+	// (chain-length / queries / tx-volume rankings) so the
+	// landing page and /api/v1/domains/top don't pay the
+	// O(blocks * txs) walk on every request. 30s TTL.
+	topDomainCache topDomainCache
+
+	// processStartedAt is the wall-clock time NewQuidnugNode
+	// returned. Used to render "queries served in the last X
+	// seconds" on the landing page.
+	processStartedAt time.Time
+
 	// State registries
 	TrustRegistry      map[string]map[string]float64
 	TrustNonceRegistry map[string]map[string]int64
@@ -436,6 +454,17 @@ func Run() {
 		quidnugNode.runStatePersistLoop(ctx, cfg.DataDir)
 	}()
 
+	// ENG-78: pull-based block sync between admitted peers.
+	// Every 30s, walk KnownNodes and ask each peer for blocks
+	// beyond our tip via GET /api/v1/blocks. Returned blocks
+	// flow through ReceiveBlock, the same validation pipeline
+	// as locally-mined blocks. Quarantined peers are skipped.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runBlockSyncLoop(ctx)
+	}()
+
 	// Start block generation for managed trust domains (with context)
 	wg.Add(1)
 	go func() {
@@ -689,6 +718,8 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 		),
 		PeerQuarantineThreshold: cfg.PeerQuarantineThreshold,
 		PeerEvictionThreshold:   cfg.PeerEvictionThreshold,
+		DomainQueryCounts:       &sync.Map{},
+		processStartedAt:        time.Now(),
 	}
 	// SSRF defense: reject loopback, private, link-local, and
 	// metadata-IP destinations at dial time so peer-advertised

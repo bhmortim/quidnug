@@ -80,6 +80,24 @@ Full scoreboard: <a href="/api/v1/peers"><code>/api/v1/peers</code></a>.</p>
 {{else}}<p>Full list at <a href="/api/v1/domains"><code>/api/v1/domains</code></a>.</p>{{end}}
 {{end}}
 
+{{if or .TopByChainLength .TopByQueries .TopByTxVolume}}
+<h2>Top trust domains</h2>
+<p>Aggregated from this node's view. Full machine-readable rankings at <a href="/api/v1/domains/top"><code>/api/v1/domains/top</code></a>; cache TTL 30s.</p>
+{{if .TopByChainLength}}<h3>By chain length</h3>
+<ol>
+  {{range .TopByChainLength}}<li><code>{{.Domain}}</code> — {{.ChainLength}} block{{if ne .ChainLength 1}}s{{end}} sealed</li>{{end}}
+</ol>{{end}}
+{{if .TopByQueries}}<h3>By queries served</h3>
+<ol>
+  {{range .TopByQueries}}<li><code>{{.Domain}}</code> — {{.QueriesServed}} quer{{if eq .QueriesServed 1}}y{{else}}ies{{end}}</li>{{end}}
+</ol>
+{{if .TopQueriesWindow}}<p class="lede">Queries counted since this process started ({{.TopQueriesWindow}} ago).</p>{{end}}{{end}}
+{{if .TopByTxVolume}}<h3>By transaction volume</h3>
+<ol>
+  {{range .TopByTxVolume}}<li><code>{{.Domain}}</code> — {{.TxVolume}} transaction{{if ne .TxVolume 1}}s{{end}}</li>{{end}}
+</ol>{{end}}
+{{end}}
+
 <h2>What you can do here</h2>
 <p>The full machine-readable API lives under <code>/api/v1</code>. The most useful endpoints to start with:</p>
 <ul class="linklist">
@@ -152,6 +170,16 @@ type rootIndexData struct {
 	WorstPeers          []PeerScoreSnapshot
 	QuarantineThreshold float64
 	EvictionThreshold   float64
+
+	// Top-domain rankings (top-10 each). Empty slices hide
+	// the corresponding subsection on the landing page.
+	TopByChainLength []DomainStats
+	TopByQueries     []DomainStats
+	TopByTxVolume    []DomainStats
+	// TopQueriesWindow is a human-readable string like "3h12m"
+	// representing how long the QueriesServed counter has been
+	// accumulating (since process start).
+	TopQueriesWindow string
 }
 
 // rootSampleDomainLimit caps how many domain names appear inline on the
@@ -283,6 +311,10 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 		if operatorBlock != nil {
 			body["operatorQuid"] = operatorBlock
 		}
+		// Top-domain rankings; cached 30s.
+		if t := node.TopDomainsTopN(10); t != nil {
+			body["topDomains"] = t
+		}
 		WriteSuccess(w, body)
 		return
 	}
@@ -307,6 +339,14 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Top-domain rankings. The TopDomainsTopN call is cheap
+	// (cached 30s); we cap at 10 here for inline display.
+	top := node.TopDomainsTopN(10)
+	var topQueriesWindow string
+	if top != nil && top.WindowSeconds > 0 {
+		topQueriesWindow = (time.Duration(top.WindowSeconds) * time.Second).Round(time.Minute).String()
+	}
+
 	_ = rootIndexTemplate.Execute(w, rootIndexData{
 		Version:             QuidnugVersion,
 		NodeID:              node.NodeID,
@@ -323,7 +363,37 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 		WorstPeers:          worstPeers,
 		QuarantineThreshold: node.PeerQuarantineThreshold,
 		EvictionThreshold:   node.PeerEvictionThreshold,
+		TopByChainLength:    nilIfEmpty(top, "chain"),
+		TopByQueries:        nilIfEmpty(top, "queries"),
+		TopByTxVolume:       nilIfEmpty(top, "tx"),
+		TopQueriesWindow:    topQueriesWindow,
 	})
+}
+
+// nilIfEmpty returns the requested top-N list or nil so the
+// template's `{{if}}` correctly hides empty subsections.
+func nilIfEmpty(t *TopDomains, kind string) []DomainStats {
+	if t == nil {
+		return nil
+	}
+	switch kind {
+	case "chain":
+		if len(t.ByChainLength) == 0 {
+			return nil
+		}
+		return t.ByChainLength
+	case "queries":
+		if len(t.ByQueriesServed) == 0 {
+			return nil
+		}
+		return t.ByQueriesServed
+	case "tx":
+		if len(t.ByTxVolume) == 0 {
+			return nil
+		}
+		return t.ByTxVolume
+	}
+	return nil
 }
 
 // RobotsHandler serves a permissive robots.txt. Quidnug node landing
