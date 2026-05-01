@@ -197,11 +197,17 @@ func (node *QuidnugNode) AdmitPeer(ctx context.Context, c PeerCandidate, cfg Pee
 		}
 	}
 
-	// Stage 5: optional operator reputation.
+	// Stage 5: optional operator reputation. Phase 4f
+	// upgrades this from a binary "any locally-trusted quid
+	// grants ≥ threshold" check to a weighted aggregate:
+	// "what's the average TRUST grant to operator, weighted
+	// by my trust in each truster?" Compares the aggregate
+	// to MinOperatorReputation as a continuous score.
 	if cfg.MinOperatorReputation > 0 && verdict.OperatorQuid != "" {
-		if !node.hasIncomingTrustToOperator(verdict.OperatorQuid, cfg.MinOperatorReputation) {
-			return nil, fmt.Errorf("admit %s: operator %s lacks incoming trust ≥ %.3f from local trust graph",
-				c.Source, verdict.OperatorQuid, cfg.MinOperatorReputation)
+		rep := node.operatorReputation(verdict.OperatorQuid)
+		if rep < cfg.MinOperatorReputation {
+			return nil, fmt.Errorf("admit %s: operator %s reputation %.3f < %.3f (weighted aggregate of incoming TRUST)",
+				c.Source, verdict.OperatorQuid, rep, cfg.MinOperatorReputation)
 		}
 	}
 
@@ -289,20 +295,16 @@ func (node *QuidnugNode) lookupTrustWeight(truster, trustee string) float64 {
 	return 0
 }
 
-// hasIncomingTrustToOperator returns true iff at least one quid
-// in the local TrustRegistry has granted TRUST to `operator` at
-// weight ≥ minWeight. Implements the optional Stage 5
-// reputation gate ("I only peer with operators my friends
-// already trust").
+// hasIncomingTrustToOperator was the original binary version
+// of the operator-reputation gate. Replaced by
+// operatorReputation() in operator_reputation.go (Phase 4f),
+// kept here for now as deprecated to give downstream callers
+// a migration window. Internal-only; the admit pipeline no
+// longer uses it.
+//
+// Deprecated: use operatorReputation instead.
 func (node *QuidnugNode) hasIncomingTrustToOperator(operator string, minWeight float64) bool {
-	node.TrustRegistryMutex.RLock()
-	defer node.TrustRegistryMutex.RUnlock()
-	for _, edges := range node.TrustRegistry {
-		if w, ok := edges[operator]; ok && w >= minWeight {
-			return true
-		}
-	}
-	return false
+	return node.operatorReputation(operator) >= minWeight
 }
 
 // currentAllowList snapshots the current PrivateAddrAllowList

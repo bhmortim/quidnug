@@ -241,6 +241,39 @@ func (c *Client) Nodes(ctx context.Context, limit, offset int) (map[string]any, 
 	return out, c.do(ctx, http.MethodGet, "nodes", paginationQuery(limit, offset), nil, &out)
 }
 
+// RawGet performs a GET to the supplied path (without /api
+// prefix; client adds it) and returns the raw response body.
+// Useful for ad-hoc CLI commands that don't yet have a typed
+// wrapper. The returned bytes are the full JSON envelope —
+// callers parse it themselves.
+func (c *Client) RawGet(ctx context.Context, path string) ([]byte, error) {
+	url := c.apiBase + "/" + strings.TrimLeft(path, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return body, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return body, nil
+}
+
 // --- Identity ------------------------------------------------------------
 
 // RegisterIdentity submits a signed IDENTITY transaction.

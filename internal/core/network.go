@@ -394,6 +394,13 @@ func (node *QuidnugNode) QueryOtherDomain(domainName, queryType, queryParam stri
 		return nil, fmt.Errorf("no known nodes manage trust domain: %s (or any related domain)", domainName)
 	}
 
+	// Phase 4d routing preference: filter out quarantined
+	// peers and sort the rest by composite score descending.
+	// Highest-quality peers get tried first; quarantined peers
+	// don't get tried at all unless every non-quarantined one
+	// has already failed (then we fall back).
+	domainManagers = node.preferByScore(domainManagers)
+
 	var lastErr error
 	for _, targetNode := range domainManagers {
 		result, err := node.queryNode(targetNode, domainName, queryType, queryParam)
@@ -408,6 +415,42 @@ func (node *QuidnugNode) QueryOtherDomain(domainName, queryType, queryParam stri
 	}
 
 	return nil, fmt.Errorf("all nodes failed for domain %s: %v", domainName, lastErr)
+}
+
+// preferByScore returns the same nodes filtered + sorted by
+// peer-quality score: quarantined peers excluded, remaining
+// sorted by composite descending (ties by ID). When the
+// scoreboard is nil (typical in tests) returns the input
+// unchanged. Phase 4d.
+func (node *QuidnugNode) preferByScore(nodes []Node) []Node {
+	if node.PeerScoreboard == nil {
+		return nodes
+	}
+	type rankedPeer struct {
+		node  Node
+		score float64
+	}
+	ranked := make([]rankedPeer, 0, len(nodes))
+	for _, n := range nodes {
+		if node.PeerScoreboard.IsQuarantined(n.ID) {
+			continue
+		}
+		ranked = append(ranked, rankedPeer{
+			node:  n,
+			score: node.PeerScoreboard.Composite(n.ID),
+		})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].node.ID < ranked[j].node.ID
+	})
+	out := make([]Node, len(ranked))
+	for i, r := range ranked {
+		out[i] = r.node
+	}
+	return out
 }
 
 // findNodesForDomainWithHierarchy finds nodes managing a domain, walking up the hierarchy if needed

@@ -31,11 +31,13 @@ import (
 
 func cmdPeer(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("peer: subcommand required (list | add | remove | scan-lan)")
+		return fmt.Errorf("peer: subcommand required (list | show | add | remove | scan-lan)")
 	}
 	switch args[0] {
 	case "list":
 		return cmdPeerList(args[1:])
+	case "show":
+		return cmdPeerShow(args[1:])
 	case "add":
 		return cmdPeerAdd(args[1:])
 	case "remove", "rm":
@@ -94,8 +96,42 @@ func cmdPeerList(args []string) error {
 	_ = json.Unmarshal(body, &peers)
 	sort.Slice(peers, func(i, j int) bool { return peers[i].ID < peers[j].ID })
 
+	// Best-effort: pull the per-peer scores so we can show a
+	// SCORE column. Failure is non-fatal — the score endpoint
+	// is new, and an older node won't expose it.
+	scores := map[string]float64{}
+	if scoreEnv, err := c.RawGet(ctx, "/peers"); err == nil {
+		var env struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Peers []struct {
+					NodeQuid  string  `json:"nodeQuid"`
+					Composite float64 `json:"composite"`
+				} `json:"peers"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(scoreEnv, &env) == nil {
+			for _, p := range env.Data.Peers {
+				scores[p.NodeQuid] = p.Composite
+			}
+		}
+	}
+
 	if cf.JSON {
-		body, _ := json.MarshalIndent(peers, "", "  ")
+		// Annotate each peer with its score for JSON output.
+		type augmented struct {
+			peerListEntry
+			Composite *float64 `json:"composite,omitempty"`
+		}
+		out := make([]augmented, 0, len(peers))
+		for _, p := range peers {
+			a := augmented{peerListEntry: p}
+			if s, ok := scores[p.ID]; ok {
+				a.Composite = &s
+			}
+			out = append(out, a)
+		}
+		body, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(body))
 		return nil
 	}
@@ -103,7 +139,7 @@ func cmdPeerList(args []string) error {
 		fmt.Println("(no known peers)")
 		return nil
 	}
-	fmt.Printf("%-18s %-32s %-10s %s\n", "NODE ID", "ADDRESS", "SOURCE", "DOMAINS")
+	fmt.Printf("%-18s %-32s %-10s %-7s %s\n", "NODE ID", "ADDRESS", "SOURCE", "SCORE", "DOMAINS")
 	for _, p := range peers {
 		src := p.ConnectionStatus
 		if src == "" {
@@ -113,7 +149,132 @@ func cmdPeerList(args []string) error {
 		if domains == "" {
 			domains = "-"
 		}
-		fmt.Printf("%-18s %-32s %-10s %s\n", trunc(p.ID, 16), p.Address, src, domains)
+		scoreStr := "-"
+		if s, ok := scores[p.ID]; ok {
+			scoreStr = fmt.Sprintf("%.2f", s)
+		}
+		fmt.Printf("%-18s %-32s %-10s %-7s %s\n", trunc(p.ID, 16), p.Address, src, scoreStr, domains)
+	}
+	return nil
+}
+
+// cmdPeerShow renders the full PeerScore for a single peer:
+// composite, per-class rates, severe-event totals, quarantine
+// state, and the recent-events ring buffer.
+func cmdPeerShow(args []string) error {
+	fs := flag.NewFlagSet("peer show", flag.ContinueOnError)
+	var cf commonFlags
+	cf.register(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("peer show: NODE_QUID required")
+	}
+	quid := rest[0]
+	c, err := cf.client()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	raw, err := c.RawGet(ctx, "/peers/"+quid)
+	if err != nil {
+		return fmt.Errorf("GET /peers/%s: %w", quid, err)
+	}
+	if cf.JSON {
+		fmt.Println(string(raw))
+		return nil
+	}
+	// Decode + render the human view.
+	var env struct {
+		Success bool `json:"success"`
+		Data    struct {
+			NodeQuid    string  `json:"nodeQuid"`
+			Composite   float64 `json:"composite"`
+			AdmittedAt  string  `json:"admittedAt"`
+			LastUpdated string  `json:"lastUpdated"`
+			Handshake   struct {
+				Successes float64 `json:"successes"`
+				Failures  float64 `json:"failures"`
+			} `json:"handshake"`
+			Gossip struct {
+				Successes float64 `json:"successes"`
+				Failures  float64 `json:"failures"`
+			} `json:"gossip"`
+			Query struct {
+				Successes float64 `json:"successes"`
+				Failures  float64 `json:"failures"`
+			} `json:"query"`
+			Broadcast struct {
+				Successes float64 `json:"successes"`
+				Failures  float64 `json:"failures"`
+			} `json:"broadcast"`
+			Validation struct {
+				Successes float64 `json:"successes"`
+				Failures  float64 `json:"failures"`
+			} `json:"validation"`
+			ForkClaims       int    `json:"forkClaims"`
+			SignatureFails   int    `json:"signatureFails"`
+			AdRevocations    int    `json:"adRevocations"`
+			Quarantined      bool   `json:"quarantined"`
+			QuarantineReason string `json:"quarantineReason,omitempty"`
+			RecentEvents     []struct {
+				Timestamp string `json:"timestamp"`
+				Class     string `json:"class,omitempty"`
+				OK        bool   `json:"ok,omitempty"`
+				Severe    string `json:"severe,omitempty"`
+				Note      string `json:"note,omitempty"`
+			} `json:"recentEvents,omitempty"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+	d := env.Data
+	fmt.Printf("Peer:             %s\n", d.NodeQuid)
+	fmt.Printf("Composite:        %.3f\n", d.Composite)
+	if d.Quarantined {
+		fmt.Printf("Quarantined:      yes — %s\n", d.QuarantineReason)
+	}
+	fmt.Printf("Admitted at:      %s\n", d.AdmittedAt)
+	fmt.Printf("Last updated:     %s\n", d.LastUpdated)
+	fmt.Printf("\nPer-class success/failure (decay-adjusted):\n")
+	fmt.Printf("  handshake:      %.1f / %.1f\n", d.Handshake.Successes, d.Handshake.Failures)
+	fmt.Printf("  gossip:         %.1f / %.1f\n", d.Gossip.Successes, d.Gossip.Failures)
+	fmt.Printf("  query:          %.1f / %.1f\n", d.Query.Successes, d.Query.Failures)
+	fmt.Printf("  broadcast:      %.1f / %.1f\n", d.Broadcast.Successes, d.Broadcast.Failures)
+	fmt.Printf("  validation:     %.1f / %.1f\n", d.Validation.Successes, d.Validation.Failures)
+	if d.ForkClaims+d.SignatureFails+d.AdRevocations > 0 {
+		fmt.Printf("\nSevere events:\n")
+		if d.ForkClaims > 0 {
+			fmt.Printf("  fork claims:    %d\n", d.ForkClaims)
+		}
+		if d.SignatureFails > 0 {
+			fmt.Printf("  signature fails: %d\n", d.SignatureFails)
+		}
+		if d.AdRevocations > 0 {
+			fmt.Printf("  ad revocations: %d\n", d.AdRevocations)
+		}
+	}
+	if len(d.RecentEvents) > 0 {
+		fmt.Printf("\nRecent events (newest last):\n")
+		for _, ev := range d.RecentEvents {
+			tag := ev.Class
+			if ev.Severe != "" {
+				tag = "SEVERE/" + ev.Severe
+			}
+			result := "  ok"
+			if !ev.OK && ev.Severe == "" {
+				result = "FAIL"
+			}
+			note := ev.Note
+			if note == "" {
+				note = "-"
+			}
+			fmt.Printf("  %s  %-12s  %s  %s\n", ev.Timestamp, tag, result, note)
+		}
 	}
 	return nil
 }

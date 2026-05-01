@@ -956,7 +956,8 @@ Commands:
                  --nonce N                  QDP-0014 self-advertisement
   node show --quid Q                        Fetch a signed advertisement
 
-  peer list                                 Known peers as the queried node sees them
+  peer list                                 Known peers + composite scores
+  peer show NODE_QUID                       Full per-peer score breakdown + recent events
   peer add ADDR [--operator-quid Q]         Append entry to local peers_file
                  [--allow-private]
                  [--file PATH]

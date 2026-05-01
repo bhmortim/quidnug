@@ -34,6 +34,9 @@ func (node *QuidnugNode) registerAPIRoutes(router *mux.Router) {
 	// API endpoints
 	router.HandleFunc("/health", node.HealthCheckHandler).Methods("GET")
 	router.HandleFunc("/nodes", node.GetNodesHandler).Methods("GET")
+	// Phase 4e — peer-quality scoring surface.
+	router.HandleFunc("/peers", node.GetPeersHandler).Methods("GET")
+	router.HandleFunc("/peers/{nodeQuid}", node.GetPeerByQuidHandler).Methods("GET")
 
 	// Transaction endpoints
 	router.HandleFunc("/transactions", node.GetTransactionsHandler).Methods("GET")

@@ -142,6 +142,18 @@ type QuidnugNode struct {
 	// via the snapshot loop in Run().
 	PeerScoreboard *PeerScoreboard
 
+	// Quarantine + eviction thresholds, mirrored from cfg so
+	// the landing-page handler and CLI can render them
+	// without reaching back into config.
+	PeerQuarantineThreshold float64
+	PeerEvictionThreshold   float64
+
+	// opReputationCache memoizes operatorReputation()
+	// aggregates with a 5-minute TTL so the admit hot path
+	// doesn't walk the trust graph on every peer interaction.
+	// Phase 4f.
+	opReputationCache *operatorReputationCache
+
 	// State registries
 	TrustRegistry      map[string]map[string]float64
 	TrustNonceRegistry map[string]map[string]int64
@@ -387,6 +399,34 @@ func Run() {
 		quidnugNode.runPeerScorePersistLoop(ctx, peerScoreboardPath(cfg), cfg.PeerScorePersistInterval)
 	}()
 
+	// Peer eviction + quarantine loop. Walks KnownNodes every
+	// 30s and applies the quarantine/eviction policy based on
+	// each peer's composite score. Static-source peers are
+	// eviction-immune by default (operator wrote them in
+	// peers_file; eviction would silently override the
+	// operator's intent). Phase 4b.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runPeerEvictionLoop(
+			ctx,
+			cfg.PeerQuarantineThreshold,
+			cfg.PeerEvictionThreshold,
+			cfg.PeerEvictionGrace,
+			true, // static-source immunity ON by default
+		)
+	}()
+
+	// Periodic peer re-attestation. Re-checks each KnownNodes
+	// peer's NodeAdvertisement + operator-attestation TRUST
+	// edge; emits SevereAdRevocation events for drift so the
+	// eviction loop can act. Phase 4c.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		quidnugNode.runPeerReattestLoop(ctx, cfg.PeerReattestationInterval)
+	}()
+
 	// Start block generation for managed trust domains (with context)
 	wg.Add(1)
 	go func() {
@@ -620,6 +660,8 @@ func NewQuidnugNode(cfg *config.Config) (*QuidnugNode, error) {
 			peerScoreboardPath(cfg),
 			cfg.PeerScorePersistInterval,
 		),
+		PeerQuarantineThreshold: cfg.PeerQuarantineThreshold,
+		PeerEvictionThreshold:   cfg.PeerEvictionThreshold,
 	}
 	// SSRF defense: reject loopback, private, link-local, and
 	// metadata-IP destinations at dial time so peer-advertised

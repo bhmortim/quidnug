@@ -60,6 +60,17 @@ var rootIndexTemplate = template.Must(template.New("root").Parse(`<!DOCTYPE html
 {{if .OperatorQuidID}}<p class="lede">This node is operated under quid <code>{{.OperatorQuidID}}</code>. Trust granted to that quid in any trust domain authorizes this node (and any other node the same operator runs) to participate in that domain. The Node ID above is per-process and exists for gossip dedup; the operator quid is what accumulates reputation.</p>
 {{else}}<p class="lede"><strong>Ephemeral identity:</strong> this node is running without a configured operator quid. Its Node ID changes on every restart and it cannot accumulate reputation across processes. See <a href="https://github.com/bhmortim/quidnug/blob/main/deploy/public-network/home-operator-plan.md">the home-operator plan</a> for how to configure an operator quid.</p>{{end}}
 
+{{if .WorstPeers}}
+<h2>Peer health</h2>
+<p>Lowest-scoring peers (worst first). Composite is 0.0-1.0;
+peers below {{.QuarantineThreshold}} are quarantined; below
+{{.EvictionThreshold}} for the grace window are evicted.
+Full scoreboard: <a href="/api/v1/peers"><code>/api/v1/peers</code></a>.</p>
+<dl class="facts">
+{{range .WorstPeers}}<dt>{{.NodeQuid}}{{if .Quarantined}} (quarantined){{end}}</dt><dd>composite {{printf "%.2f" .Composite}}{{if gt .ForkClaims 0}} · fork-claims {{.ForkClaims}}{{end}}{{if gt .SignatureFails 0}} · sig-fails {{.SignatureFails}}{{end}}{{if gt .AdRevocations 0}} · ad-revokes {{.AdRevocations}}{{end}}</dd>
+{{end}}</dl>
+{{end}}
+
 {{if .DomainSamples}}
 <h2>Sample trust domains</h2>
 <ul>
@@ -133,6 +144,14 @@ type rootIndexData struct {
 	HasMoreDomains      bool
 	StartedAt           string
 	SelfBaseURL         string
+
+	// Phase 4e: worst-scoring peers shown inline. WorstPeers
+	// is at most 5 entries; if all peers are above the
+	// quarantine threshold it's empty (and the section is
+	// hidden).
+	WorstPeers          []PeerScoreSnapshot
+	QuarantineThreshold float64
+	EvictionThreshold   float64
 }
 
 // rootSampleDomainLimit caps how many domain names appear inline on the
@@ -270,6 +289,24 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	// Worst-peers section: surface up to 5 lowest-scoring
+	// peers so operators see at-a-glance whether scoring is
+	// flagging anyone. Peers above the quarantine threshold
+	// are filtered out — only the actually-concerning ones
+	// show. Phase 4e.
+	var worstPeers []PeerScoreSnapshot
+	if node.PeerScoreboard != nil && node.PeerQuarantineThreshold > 0 {
+		all := node.PeerScoreboard.Snapshot()
+		for _, s := range all {
+			if s.Composite < node.PeerQuarantineThreshold {
+				worstPeers = append(worstPeers, s)
+				if len(worstPeers) >= 5 {
+					break
+				}
+			}
+		}
+	}
+
 	_ = rootIndexTemplate.Execute(w, rootIndexData{
 		Version:             QuidnugVersion,
 		NodeID:              node.NodeID,
@@ -283,6 +320,9 @@ func (node *QuidnugNode) RootHandler(w http.ResponseWriter, r *http.Request) {
 		HasMoreDomains:      hasMore,
 		StartedAt:           startedAt,
 		SelfBaseURL:         selfBaseURL,
+		WorstPeers:          worstPeers,
+		QuarantineThreshold: node.PeerQuarantineThreshold,
+		EvictionThreshold:   node.PeerEvictionThreshold,
 	})
 }
 

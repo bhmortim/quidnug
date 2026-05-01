@@ -292,14 +292,26 @@ func (node *QuidnugNode) ReceiveAnchorPush(m AnchorPushMessage) (bool, error) {
 			reason = DropReasonUnknownProd
 		case errors.Is(err, ErrGossipBadGossipSig):
 			reason = DropReasonSignature
+			// Severe: peer forwarded us a payload whose
+			// signature is invalid. Attribute to the
+			// gossip producer (the alleged signer); the
+			// forwarder also takes a validation hit but
+			// the SIGNER is who claims the bad signature.
+			node.recordPeerSevere(m.Payload.GossipProducerQuid, SevereSignatureFail,
+				"anchor gossip signature failed verification")
 		case errors.Is(err, ErrGossipDuplicate):
 			// Race: dedup saw it between our check and validate.
 			recordGossipDrop("anchor", DropReasonDuplicate)
 			return true, nil
 		}
 		recordGossipDrop("anchor", reason)
+		// Validation failure attribution: forwarder served us
+		// invalid data. Note may include the rule that fired.
+		node.recordPeerScore(m.ForwardedBy, EventClassValidation, false, "anchor: "+reason)
 		return false, err
 	}
+	// Successful validation — credit the forwarder.
+	node.recordPeerScore(m.ForwardedBy, EventClassValidation, true, "anchor")
 
 	// 6. Rate limit BEFORE apply. If we're over the cap we still
 	//    apply (the payload is genuinely new and valid), but we
@@ -391,10 +403,14 @@ func (node *QuidnugNode) ReceiveFingerprintPush(m FingerprintPushMessage) (bool,
 			reason = DropReasonUnknownProd
 		case errors.Is(err, ErrFingerprintBadSignature):
 			reason = DropReasonSignature
+			node.recordPeerSevere(m.Payload.ProducerQuid, SevereSignatureFail,
+				"fingerprint signature failed verification")
 		}
 		recordGossipDrop("fingerprint", reason)
+		node.recordPeerScore(m.ForwardedBy, EventClassValidation, false, "fingerprint: "+reason)
 		return false, err
 	}
+	node.recordPeerScore(m.ForwardedBy, EventClassValidation, true, "fingerprint")
 
 	producer := m.Payload.ProducerQuid
 	forward := node.gossipRateAllow(producer)
@@ -596,10 +612,17 @@ func (node *QuidnugNode) fanOutFingerprintPush(msg FingerprintPushMessage, exclu
 }
 
 // sortedForwardPeers returns the set of peers to forward to,
-// excluding self and every entry in `excludes` (typically the
-// immediate sender + the originator). Deterministic order
-// (by ID) makes tests repeatable. Empty-string entries in
-// `excludes` are no-ops (they match no peer ID).
+// excluding self, every entry in `excludes` (typically the
+// immediate sender + the originator), and any quarantined
+// peers. Order is by composite score (Phase 4d) descending —
+// highest-quality peers receive traffic first. Ties break by
+// NodeID for determinism. Empty-string entries in `excludes`
+// are no-ops (they match no peer ID).
+//
+// Quarantined peers are filtered out entirely. They remain in
+// KnownNodes (so the score history persists across the
+// quarantine window) but get zero traffic until the quarantine
+// is lifted.
 func (node *QuidnugNode) sortedForwardPeers(excludes ...string) []Node {
 	excludeSet := make(map[string]struct{}, len(excludes)+1)
 	excludeSet[node.NodeID] = struct{}{}
@@ -617,10 +640,39 @@ func (node *QuidnugNode) sortedForwardPeers(excludes ...string) []Node {
 		if n.Address == "" {
 			continue
 		}
+		// Quarantine filter: don't forward to peers the
+		// scoring system has flagged. Phase 4d.
+		if node.PeerScoreboard != nil && node.PeerScoreboard.IsQuarantined(n.ID) {
+			continue
+		}
 		peers = append(peers, n)
 	}
 	node.KnownNodesMutex.RUnlock()
-	sort.Slice(peers, func(i, j int) bool { return peers[i].ID < peers[j].ID })
+	// Sort by composite score descending; tie-break by ID for
+	// deterministic ordering (tests + reproducibility). When
+	// the scoreboard is unavailable (tests with no scoring
+	// wired up), fall back to ID-only sort.
+	if node.PeerScoreboard != nil {
+		type ranked struct {
+			n     Node
+			score float64
+		}
+		ranks := make([]ranked, len(peers))
+		for i, p := range peers {
+			ranks[i] = ranked{p, node.PeerScoreboard.Composite(p.ID)}
+		}
+		sort.SliceStable(ranks, func(i, j int) bool {
+			if ranks[i].score != ranks[j].score {
+				return ranks[i].score > ranks[j].score
+			}
+			return ranks[i].n.ID < ranks[j].n.ID
+		})
+		for i, r := range ranks {
+			peers[i] = r.n
+		}
+	} else {
+		sort.Slice(peers, func(i, j int) bool { return peers[i].ID < peers[j].ID })
+	}
 	return peers
 }
 
