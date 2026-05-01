@@ -152,12 +152,19 @@ func (node *QuidnugNode) StartServerWithConfig(port string, rateLimitPerMinute i
 	node.RegisterDNSAttestationRoutes(v2Router)
 
 	// Apply middleware chain (outermost to innermost processing order):
-	//   RateLimit -> BodySizeLimit -> NodeAuth -> Metrics -> SecurityHeaders -> RequestID -> Router
+	//   RateLimit -> BodySizeLimit -> CORS -> NodeAuth -> Metrics -> SecurityHeaders -> RequestID -> Router
+	//
+	// CORS sits outer than NodeAuth so OPTIONS preflights are
+	// answered before the signature check fires (preflights
+	// have no body, so they would always fail NodeAuth). It
+	// sits inner than RateLimit + BodySize so a flood of
+	// preflights still gets bounded.
 	rateLimiter := ratelimit.New(rateLimitPerMinute)
 	handler := RequestIDMiddleware(router)
 	handler = SecurityHeadersMiddleware(handler)
 	handler = MetricsMiddleware(handler)
 	handler = NodeAuthMiddleware(handler)
+	handler = CORSMiddleware(handler)
 	handler = BodySizeLimitMiddleware(maxBodySizeBytes)(handler)
 	handler = RateLimitMiddleware(rateLimiter)(handler)
 

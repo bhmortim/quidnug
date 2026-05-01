@@ -195,6 +195,96 @@ func DecodeJSONBody(w http.ResponseWriter, r *http.Request, dst interface{}) err
 	return nil
 }
 
+// CORSMiddleware applies cross-origin headers based on the
+// EXPLORER_CORS_ORIGINS env var: a comma-separated list of
+// allowed Origin values, or "*" to allow any origin. Default
+// is empty (deny). Preflight OPTIONS requests are answered
+// with 204 + the appropriate headers and short-circuit the
+// rest of the chain.
+//
+// QDP-0025 §10.2: the Quidnug Explorer SPA hosted on a
+// different origin than the node (e.g., explorer.quidnug.com
+// connecting to node1.quidnug.com) needs the operator to
+// enable this explicitly. The embedded /explorer mode does
+// not need CORS because origins match. Wildcard "*" should
+// be used only in dev; in production, list explicit explorer
+// origins.
+//
+// Example: EXPLORER_CORS_ORIGINS="http://localhost:5173,http://localhost:5174,https://explorer.quidnug.com"
+//
+// Wired into the middleware chain outer than NodeAuth so
+// preflights for POST endpoints (which would otherwise fail
+// the signature check on a body-less OPTIONS request) are
+// answered cleanly.
+func CORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		allowed := loadCORSOrigins()
+		origin := r.Header.Get("Origin")
+		// Always advertise that we may serve different bodies
+		// based on Origin so caches don't merge entries across
+		// origins.
+		w.Header().Add("Vary", "Origin")
+		if origin != "" && len(allowed) > 0 && originAllowed(origin, allowed) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			// Headers the explorer's API client emits:
+			// Authorization (for the workspace API token),
+			// Content-Type (for POST bodies), X-Request-ID
+			// (request tracing).
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+			// Cache preflight result for 5 minutes so a busy
+			// explorer session doesn't preflight every request.
+			w.Header().Set("Access-Control-Max-Age", "300")
+		}
+		if r.Method == http.MethodOptions {
+			// Preflight; short-circuit the rest of the chain.
+			// Even when the origin is not allowed we return 204
+			// without CORS headers, which makes the browser
+			// reject the request cleanly rather than letting
+			// it through.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+var (
+	corsOriginsOnce sync.Once
+	corsOrigins     []string
+)
+
+func loadCORSOrigins() []string {
+	corsOriginsOnce.Do(func() {
+		raw := os.Getenv("EXPLORER_CORS_ORIGINS")
+		if raw == "" {
+			return
+		}
+		for _, p := range strings.Split(raw, ",") {
+			if v := strings.TrimSpace(p); v != "" {
+				corsOrigins = append(corsOrigins, v)
+			}
+		}
+	})
+	return corsOrigins
+}
+
+// ResetCORSConfigForTesting allows tests to re-read the env
+// var. Tests only.
+func ResetCORSConfigForTesting() {
+	corsOriginsOnce = sync.Once{}
+	corsOrigins = nil
+}
+
+func originAllowed(origin string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == "*" || strings.EqualFold(a, origin) {
+			return true
+		}
+	}
+	return false
+}
+
 // SecurityHeadersMiddleware adds a conservative set of HTTP security headers
 // to every response. HSTS is only emitted when the connection is TLS so it
 // cannot be set accidentally over plaintext HTTP.
