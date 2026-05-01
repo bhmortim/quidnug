@@ -332,15 +332,19 @@ The five commands from zero to running your own public-style
 network:
 
 ```bash
-# 1. Generate your root-operator key offline, save it to paper.
-quidnug-cli keygen --out ~/.quidnug/my-operator.key.json
+# 1. Generate your operator quid offline, save it to paper.
+#    The same file goes on every node you run.
+quidnug-cli quid generate --out ~/.quidnug/my-operator.quid.json
+chmod 600 ~/.quidnug/my-operator.quid.json
 
-# 2. Generate your seed-node keys (one per node).
-quidnug-cli keygen --out ~/.quidnug/seed-1.key.json
-quidnug-cli keygen --out ~/.quidnug/seed-2.key.json
+# 2. Per-node identities (NodeID = sha256(publicKey)[:16]) are
+#    auto-generated AND persisted on each node's first boot to
+#    data_dir/node_key.json. You don't need to pre-generate them
+#    the way older versions of this doc implied.
 
 # 3. Start nodes (use the home-operator-plan.md for details).
-# Configure each node's YAML to include your chosen supported_domains.
+# Configure each node's YAML to include your chosen supported_domains
+# AND point operator_quid_file: at the file from step 1.
 
 # 4. Register your root domain from seed-1.
 SEED_QUIDS="$(./seed-1-quid),$(./seed-2-quid)"

@@ -398,9 +398,35 @@ When processing an event with `payloadCid`:
 
 **Note**: If IPFS is unavailable and only `payloadCid` is provided, the event data cannot be fully retrieved until IPFS becomes available.
 
-## State Persistence (`persistence.go`)
+## State Persistence
 
-Pending transactions are saved to `DATA_DIR/pending_transactions.json` on shutdown and restored on startup.
+The node persists everything that should survive a restart to `DATA_DIR`.
+File-by-file:
+
+| File | Owner | Lifecycle |
+|------|-------|-----------|
+| `node_key.json` | `state_persist.go:loadOrCreateNodeKey` | Generated on first boot; loaded on every subsequent boot. NodeID = `sha256(publicKey)[:16]` is stable across restarts. ID is cross-checked against the public key — a tampered file refuses boot. |
+| `blockchain.json` | `state_persist.go:SaveBlockchain` | Snapshot of the full block history. Saved every 30 s by `runStatePersistLoop` + on shutdown. Loaded after `NewQuidnugNode` builds the genesis-only chain, replacing it with the persisted history. |
+| `trust_domains.json` | `state_persist.go:SaveTrustDomains` | Snapshot of `TrustDomains` + `DomainRegistry`. Same lifecycle as `blockchain.json`. Dynamic `POST /api/v1/domains` registrations land here. |
+| `pending_transactions.json` | `persistence.go:SavePendingTransactions` | Pending tx queue. Saved on shutdown, restored on boot. |
+| `peer_scores.json` | `peer_score.go:persistOnce` | Per-peer composite scores, severe-event totals, quarantine state, and the recent-event ring. Snapshot every 5 min + on shutdown. |
+| `audit-log.jsonl` (optional) | `internal/audit` | Append-only operator audit log. Path is configurable via `audit_log_path`. |
+
+All writes are atomic (tmp file + rename) through `internal/safeio` so
+a crash mid-flush can't leave a corrupt file. Files are versioned
+(`schemaVersion: 1`); future bumps fail loudly rather than silently
+regenerating.
+
+**Operator-quid file** (`OPERATOR_QUID_FILE`) is intentionally *outside*
+`DATA_DIR`. It carries the long-lived operator identity that may be
+shared across multiple nodes the same operator runs, and is typically
+read-only-mounted at `/etc/quidnug/operator.quid.json`. The
+operator quid is *separate* from `node_key.json`: the per-process
+NodeID identifies this specific instance for gossip dedup and fork
+detection, while the operator quid is the identity that accumulates
+trust grants. See [`README.md`](../README.md#config) for the
+operator-vs-node split and the home-operator playbook for the
+provisioning flow.
 
 ## HTTP Middleware (`middleware.go`)
 

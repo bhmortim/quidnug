@@ -25,6 +25,104 @@ Nothing here is novel at the protocol layer — the mechanism is ordinary
 domain-scoped `TRUST` transactions. The spec exists so operators agree
 on naming and workflow.
 
+## 0. Runtime admit pipeline + peer scoring
+
+The **protocol-level peering convention** below (sections 1-5) governs
+which operators are *willing* to peer with each other. The **runtime
+admit pipeline** governs which peers a node *actually accepts* into its
+`KnownNodes` set at any moment, plus how those peers' real-world
+behavior feeds back into routing decisions.
+
+Three peer sources feed the same admit pipeline:
+
+| Source | Configured via | When |
+|--------|----------------|------|
+| Static | `peers_file:` (YAML, fsnotify-watched) | Operator-curated explicit list. Edit-and-go; live reload. |
+| Gossip | `seed_nodes:` | Bootstrap. Each peer that appears in a seed's `/api/v1/nodes` response is admitted only if its `NodeAdvertisement` is on file and the operator-attestation TRUST edge meets the floor. |
+| LAN | `lan_discovery: true` | mDNS / DNS-SD on `_quidnug._tcp.local.`. Opt-in. Same admit pipeline applies. |
+
+Admit pipeline (`internal/core/peer_admit.go`):
+
+1. **Address validation** — `safedial` rejects loopback / RFC1918 /
+   link-local / metadata IPs by default. `peers_file` entries with
+   `allow_private: true` and mDNS-discovered peers get a per-peer
+   override; gossip-learned peers never do.
+2. **Handshake** — `GET /api/v1/info` to learn the peer's claimed
+   `NodeQuid` and `OperatorQuid`. Skipped only when no gates are
+   configured (dev / test mode).
+3. **NodeAdvertisement lookup** — when `require_advertisement: true`
+   (production default), a peer must have a current
+   `NodeAdvertisementTransaction` (QDP-0014) on file in this node's
+   registry. Without one, admission fails.
+4. **Operator attestation** — TRUST edge `OperatorQuid → NodeQuid`
+   at weight ≥ `peer_min_operator_trust` (default 0.5). This is the
+   QDP-0014 attestation that ties a node identity to an operator
+   identity, freshly re-checked at every admit.
+5. **Operator reputation (optional)** — when
+   `peer_min_operator_reputation > 0`, the candidate's `OperatorQuid`
+   must clear a continuous weighted aggregate of incoming TRUST edges
+   from quids this node already trusts:
+
+   ```
+   reputation(O) = Σ over (truster T): trust_to(O) × my_trust_in(T)
+                   / Σ over T: my_trust_in(T)
+   ```
+
+   "How much do my friends, weighted by how much I trust them, trust
+   this operator?" The aggregate is in `[0, 1]`; the threshold knob
+   is operator-tunable. 5-min cache.
+
+Periodic re-attestation (every `peer_reattestation_interval`, default
+30 min) re-runs steps 3-4 against `KnownNodes`. Drift events emit
+`SevereAdRevocation` into the per-peer scoreboard so the eviction
+loop can act.
+
+### Peer-quality scoring (Phase 4)
+
+Every interaction with a peer (handshake / gossip post / query /
+broadcast / validation outcome) feeds a per-peer composite score in
+`[0, 1]`. The scoreboard:
+
+- Persists to `data_dir/peer_scores.json` every 5 min so reputation
+  survives restart.
+- Exposes per-peer state at `GET /api/v1/peers` and
+  `GET /api/v1/peers/{nodeQuid}`.
+- Surfaces worst-scoring peers on the node's landing page.
+
+Two thresholds with hysteresis drive policy:
+
+- **Quarantine** at composite < `peer_quarantine_threshold` (default
+  0.4): peer stays in `KnownNodes` so history persists, but routing
+  (gossip fan-out, query candidate ordering) skips it. Un-quarantine
+  requires composite ≥ threshold + 0.10.
+- **Eviction** at composite < `peer_eviction_threshold` (default
+  0.2) sustained for `peer_eviction_grace` (default 5 min): peer is
+  dropped from `KnownNodes`. Static-source peers (from `peers_file`)
+  are immune by default — operator intent wins, with a stern warning
+  in the logs so the operator can fix the entry.
+
+Severe events (signature failures, fork claims, ad revocations) drag
+the composite down faster than ordinary failures. Fork claims under
+`peer_fork_action: "evict"` override static-source immunity, since a
+fork claim is a Byzantine signal rather than a misconfig.
+
+Operator CLI:
+
+```bash
+quidnug-cli peer list                  # known peers + composite scores
+quidnug-cli peer show NODE_QUID        # full per-peer breakdown + recent events
+quidnug-cli peer add ADDR [--operator-quid Q] [--allow-private]
+quidnug-cli peer remove ADDR
+quidnug-cli peer scan-lan              # one-shot mDNS browse
+```
+
+The protocol-level peering convention (below) tells you **who you
+should peer with**; the admit pipeline + scoreboard tell the node
+**which of those peers are healthy and behaving right now**. The two
+layers compose: a signed TRUST edge in the right reserved domain is
+the prerequisite for admission; runtime quality is what keeps a peer
+in routing.
+
 ## 1. Reserved domains
 
 All peering-related trust edges are scoped under the reserved root

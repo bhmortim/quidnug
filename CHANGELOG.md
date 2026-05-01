@@ -7,6 +7,86 @@ onward.
 
 ## [Unreleased]
 
+### Operator identity + peering subsystem (Phases 1-4)
+
+Adds operator-quid persistence, three-source peer discovery (static
+`peers_file` + gossip + mDNS LAN), an admit pipeline that gates each
+peer by handshake + advertisement + operator-attestation, per-peer
+quality scoring with quarantine + eviction policy, and full
+state-persistence for restart durability. The protocol-level peering
+convention (`peering.network.*` TRUST edges) is unchanged; this is
+the runtime machinery that uses it.
+
+**Operator identity (separate from per-process NodeID):**
+
+- `operator_quid_file:` / `OPERATOR_QUID_FILE` — long-lived operator
+  identity, deployable on N nodes simultaneously. Trust grants
+  accumulate against the operator regardless of which node a
+  counterparty interacts with.
+- Per-process `NodeID` is now persisted to `data_dir/node_key.json`
+  on first boot so it stays stable across restarts. Previously
+  regenerated every boot and silently orphaned trust grants.
+
+**Three peer sources:**
+
+- `peers_file:` — operator-managed YAML list, fsnotify-watched for
+  live reload. Per-entry `allow_private: true` whitelists LAN peers.
+- `lan_discovery: true` — mDNS / DNS-SD on `_quidnug._tcp.local.`,
+  opt-in. Self-discovery filtered out. Pure-Go zeroconf, no Avahi
+  dependency.
+- `seed_nodes:` (existing) — gossip discovery, now hardened with
+  exponential-backoff retry on early-boot DNS races (1s→30s) and
+  cycle-summary INFO logging on every round.
+
+**Admit pipeline** (`internal/core/peer_admit.go`):
+
+1. Address validation (`safedial`) — refuses RFC1918/loopback/
+   link-local/metadata IPs by default; per-peer `allow_private`
+   override only for static + LAN sources.
+2. Handshake — `GET /api/v1/info` to learn claimed NodeQuid +
+   OperatorQuid.
+3. NodeAdvertisement lookup — `require_advertisement: true` (default)
+   gates gossip-learned peers.
+4. Operator attestation — TRUST edge `OperatorQuid → NodeQuid` at
+   weight ≥ `peer_min_operator_trust` (default 0.5).
+5. Optional weighted-aggregate operator reputation gate.
+
+**Per-peer scoring** (`internal/core/peer_score.go`):
+
+- Five event classes (handshake, gossip, query, broadcast, validation)
+  + three severe events (fork claim, signature fail, ad revocation).
+- Composite score in `[0, 1]`, exponentially-decayed Laplace-smoothed
+  per-class rates minus severe-event penalties.
+- Quarantine at 0.4 (configurable, with hysteresis), eviction at 0.2
+  for 5 minutes (configurable). Static-source peers are
+  eviction-immune by default with a stern warning.
+- Routing preference: `sortedForwardPeers` (gossip fan-out) and
+  `preferByScore` (query candidate ordering) sort by composite
+  descending and exclude quarantined peers.
+- Persists to `data_dir/peer_scores.json` every 5 min + on shutdown.
+
+**API + CLI surface:**
+
+- `GET /api/v1/peers` — full scoreboard, worst-first.
+- `GET /api/v1/peers/{nodeQuid}` — single peer + recent-event ring.
+- Landing page at `/` shows operator quid + peer source breakdown +
+  worst-scoring peers.
+- `quidnug-cli peer list / show / add / remove / scan-lan`.
+- `quidnug-cli quid generate` (replaces deprecated `keygen`).
+
+**State persistence under `data_dir`:**
+
+- `node_key.json` — per-process ECDSA keypair (NodeID stable across
+  restarts).
+- `blockchain.json` — block history snapshot, every 30s + on shutdown.
+- `trust_domains.json` — TrustDomains + DomainRegistry (dynamic
+  domain registrations now survive restart).
+- `peer_scores.json` — peer scoreboard.
+- `pending_transactions.json` — existing pending tx queue.
+
+All writes are atomic through `internal/safeio`; files are
+schema-versioned.
+
 ### QRP-0001 trust-weighted reviews protocol + rating visualization
 
 The first domain-level protocol built on top of the Quidnug

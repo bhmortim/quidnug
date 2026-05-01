@@ -233,13 +233,20 @@ locally so you can reproduce:
 git tag -s node1-$(date +%Y%m%d) -m "node1 build"
 ```
 
-### 4.2 Generate the node's identity offline
+### 4.2 Generate the operator quid offline
+
+The **operator quid** is your long-lived identity — it accumulates
+trust across every node you run, now and in the future. It is
+distinct from each node's per-process NodeID (which is auto-
+persisted in `data_dir/node_key.json` and changes only when you
+explicitly wipe that directory).
+
+Generate the operator quid on your workstation, not the node:
 
 ```bash
-./bin/quidnug-cli keygen \
-    --out ~/.quidnug/node1.key.json \
-    --name "quidnug-home-1"
-chmod 600 ~/.quidnug/node1.key.json
+quidnug-cli quid generate \
+    --out ~/.quidnug/operator.quid.json
+chmod 600 ~/.quidnug/operator.quid.json
 ```
 
 Print the public key + quid ID and write them down on paper
@@ -247,7 +254,13 @@ alongside a hex dump of the private key. Yes, paper. Put it in
 the fireproof envelope.
 
 Copy the same file into an encrypted password manager entry
-labeled "quidnug home node validator key."
+labeled "quidnug operator quid (long-lived)." This file:
+
+- gets deployed to **every node you run** (same file, every node);
+- is referenced from each node's config via `operator_quid_file:`
+  or `OPERATOR_QUID_FILE`;
+- should **never be regenerated** unless you accept losing every
+  trust grant pointing at it. Treat it like an SSH host key.
 
 ### 4.3 Create the data directory and config
 
@@ -274,12 +287,51 @@ enable_kofk_bootstrap:   true
 ipfs_enabled:            false
 allow_domain_registration: true
 require_parent_domain_auth: false
+
+# Operator identity (long-lived; same file on every node)
+operator_quid_file:      "/home/YOURUSER/.quidnug/operator.quid.json"
+
+# Static peers (live-reloaded on edit; populated when node2 comes up)
+peers_file:              "/home/YOURUSER/.quidnug/peers.yaml"
+
+# Peer admit gates — production defaults
+require_advertisement:    true
+peer_min_operator_trust:  0.5
+
+# Peer scoring (Phase 4) — defaults are conservative; tighten if
+# you want stricter quarantine
+# peer_quarantine_threshold: 0.4
+# peer_eviction_threshold:   0.2
+# peer_eviction_grace:       "5m"
+# peer_fork_action:          "quarantine"
 YAML
+
+# Seed peers file (start empty; fill in when node2 exists)
+cat > ~/.quidnug/peers.yaml <<'YAML'
+peers: []
+YAML
+chmod 600 ~/.quidnug/peers.yaml
 
 # 32-byte shared secret (copied to node2 later)
 openssl rand -hex 32 > ~/.quidnug/auth.secret
 chmod 600 ~/.quidnug/auth.secret
 ```
+
+#### What ends up in `data_dir`
+
+After first boot, `~/.quidnug/data/` contains:
+
+```
+node_key.json           # this node's per-process keypair (auto-generated, persisted)
+blockchain.json         # block history snapshot, refreshed every 30s + on shutdown
+trust_domains.json      # TrustDomains + DomainRegistry index
+pending_transactions.json
+peer_scores.json        # per-peer scoreboard (composite + recent events)
+```
+
+Back up the whole directory with the operator-quid file. Losing
+`data_dir` is recoverable (you'll re-discover peers and re-receive
+gossip); losing the operator-quid file isn't.
 
 ### 4.4 Bring up the node under systemd-in-WSL
 
@@ -487,14 +539,14 @@ sudo chmod +x /usr/local/bin/quidnug
 Generate a separate key for node2 (do NOT copy the home key):
 
 ```bash
-# On your home machine (not the VPS):
-quidnug-cli keygen \
-    --out ~/.quidnug/node2.key.json \
-    --name "quidnug-home-2"
-
-# Upload over SSH:
-scp ~/.quidnug/node2.key.json quidnug@<vps>:/etc/quidnug/node.key.json
-ssh quidnug@<vps> "sudo chmod 600 /etc/quidnug/node.key.json"
+# Both nodes use the SAME operator quid file you generated in §4.2.
+# Each node's per-process NodeID is auto-persisted to
+# data_dir/node_key.json on first boot — you don't need to generate
+# a separate key for node2 the way the original plan implied.
+#
+# Upload the shared operator quid file over SSH:
+scp ~/.quidnug/operator.quid.json quidnug@<vps>:/etc/quidnug/operator.quid.json
+ssh quidnug@<vps> "sudo chmod 600 /etc/quidnug/operator.quid.json"
 ```
 
 Copy the shared secret (same on both nodes):

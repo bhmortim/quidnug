@@ -61,22 +61,31 @@ and basic fault isolation.
 
 ## 0. One-time bootstrap
 
-### Generate seed-node identities
+### Generate the operator quid
 
-Each seed node is a separate `Quid`. Generate three locally — **not**
-inside Fly — so you retain the private keys offline:
+The **operator quid** is your long-lived signing identity. It gets
+deployed on every seed node you run (same file, every node) — that's
+how trust grants accumulate against the operator regardless of which
+specific node a counterparty interacts with. Generate locally so you
+retain the private key offline:
 
 ```bash
 cd $QUIDNUG_REPO
-./bin/quidnug-cli keygen --out seed-1.key.json --name "quidnug-seed-1"
-./bin/quidnug-cli keygen --out seed-2.key.json --name "quidnug-seed-2"
-./bin/quidnug-cli keygen --out seed-3.key.json --name "quidnug-seed-3"
+quidnug-cli quid generate --out operator.quid.json
+chmod 600 operator.quid.json
 ```
 
-Store the private keys in a password manager **and** print paper copies
-into your physical recovery vault. The quid IDs become the public
-identity of the network; losing all three keys simultaneously is a
-network-rebirth event.
+Store this file in a password manager **and** print a paper copy into
+your physical recovery vault. The quid ID becomes the public identity
+of the operator; losing it simultaneously across all backups is an
+identity-rebirth event.
+
+Each seed node *also* has a per-process NodeID for gossip dedup and
+fork detection; that NodeID is auto-persisted to
+`data_dir/node_key.json` on the node itself and stays stable across
+restarts as long as the data volume persists. The two identities are
+intentionally separate — see [`README.md`](../../README.md#config) for
+the operator-vs-node split.
 
 ### Install guardians
 
@@ -108,7 +117,9 @@ Behind the scenes that script:
 2. Runs `fly launch --copy-config --no-deploy` to create the app.
 3. Creates a 10 GB volume in the region.
 4. Sets secrets:
-   - `NODE_KEY` — base64 of the seed node's private key JSON.
+   - `OPERATOR_QUID_FILE` — path to the deployed operator quid file
+     (the same `operator.quid.json` you generated in §0; mount as a
+     read-only secret).
    - `NODE_AUTH_SECRET` — shared 32-byte HMAC across all seed nodes.
    - `IPFS_GATEWAY_URL` if you want IPFS-backed events.
 5. Runs `fly deploy` to push the image.

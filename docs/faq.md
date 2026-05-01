@@ -232,14 +232,139 @@ The canonical-bytes format is documented in
 
 ## "How do I back up a node?"
 
+Everything that should survive a restart lives in `DATA_DIR` (default
+`./data`, configured via `DATA_DIR` env / `data_dir:` YAML). Files:
+
+- `node_key.json` — per-process ECDSA keypair. **Without this, NodeID
+  changes on the next boot and any TRUST grants pointing at the old
+  NodeID become orphaned.** This is the most important file in the
+  directory.
+- `blockchain.json` — block history snapshot.
+- `trust_domains.json` — TrustDomains + DomainRegistry index.
+- `pending_transactions.json` — pending tx queue.
+- `peer_scores.json` — per-peer scoreboard with quarantine state and
+  recent-event ring.
+
 Cold backup:
 
-1. Stop the node (`systemctl stop quidnug` / `docker stop`).
-2. `tar cf - /var/lib/quidnug | gzip > backup-$(date +%F).tar.gz`.
-3. Restart.
+```bash
+systemctl stop quidnug
+tar -C /var/lib/quidnug -czf backup-$(date +%F).tar.gz .
+systemctl start quidnug
+```
 
-Hot backup: not yet supported. Planned via snapshot LSM-style
-replication in a future release.
+Hot backup: each file is written atomically (tmp + rename) so
+copying `DATA_DIR/*.json` from a live node will give you a
+point-in-time snapshot of each file individually. Inter-file
+consistency isn't guaranteed — if you need a strictly-consistent
+hot snapshot, take a filesystem-level snapshot (LVM, ZFS, EBS) or
+stop the node briefly.
+
+The `OPERATOR_QUID_FILE` (operator's long-lived signing identity)
+is *not* in `DATA_DIR` by convention. Back it up separately to
+somewhere that survives a host loss. **Losing it loses the
+identity that accumulates trust across all your nodes.**
+
+---
+
+## "How do I configure my node's operator quid?"
+
+The operator quid is your long-lived identity that accumulates trust
+across every node you run. Generate once, deploy on every node:
+
+```bash
+# 1. Generate the operator quid (do this on a workstation,
+#    not on a node — keeps the private key offline-capable).
+quidnug-cli quid generate --out /etc/quidnug/operator.quid.json
+chmod 600 /etc/quidnug/operator.quid.json
+
+# 2. Deploy the file to every node you run. Same file, every node.
+#    Each node still gets its own NodeID (from data_dir/node_key.json);
+#    only the operator quid is shared.
+
+# 3. Reference it from the node's config:
+#    YAML:  operator_quid_file: /etc/quidnug/operator.quid.json
+#    Env:   OPERATOR_QUID_FILE=/etc/quidnug/operator.quid.json
+
+# 4. Confirm the node is running under it:
+curl http://localhost:8080/api/v1/info | jq .data.operatorQuid
+# { "id": "034bc467852ffa94", "publicKeyHex": "..." }
+```
+
+The landing page at `/` will show the operator quid in the "This node"
+facts table when one is configured. Nodes without a configured
+operator quid show "Ephemeral identity" with a link to this section.
+
+---
+
+## "How do I peer with another operator?"
+
+Three peer sources feed the same admit pipeline:
+
+1. **`seed_nodes:`** — bootstrap addresses. Every learned peer goes
+   through admission (handshake + NodeAdvertisement lookup +
+   operator-attestation TRUST check at weight ≥
+   `peer_min_operator_trust`).
+2. **`peers_file:`** — operator-managed YAML list, fsnotify-watched
+   for live reload. Use this when you want to pin an operator quid
+   or whitelist a LAN peer with `allow_private: true`. Edit:
+   ```bash
+   PEERS_FILE=/etc/quidnug/peers.yaml \
+     quidnug-cli peer add 203.0.113.42:8080 --operator-quid Q
+   ```
+3. **`lan_discovery: true`** — mDNS / DNS-SD on `_quidnug._tcp.local.`.
+   Opt-in. Useful for home/office/lab.
+
+To check what your node sees:
+
+```bash
+quidnug-cli peer list                   # composite scores included
+quidnug-cli peer show <nodeQuid>        # full per-peer breakdown
+```
+
+Or via API: `GET /api/v1/peers` (worst-first ordering — operators
+want to see the bad ones first).
+
+---
+
+## "Why is my peer being quarantined / evicted?"
+
+Phase 4 of the peering plan: every interaction with a peer
+(handshake, gossip post, query, broadcast, validation outcome)
+nudges that peer's composite score in `[0, 1]`. Defaults:
+
+- `peer_quarantine_threshold: 0.4` — peers below this stay in
+  `KnownNodes` but are excluded from routing.
+- `peer_eviction_threshold: 0.2` — peers below this for
+  `peer_eviction_grace` (5 min default) are dropped from
+  `KnownNodes`. Static-source peers (from `peers_file`) are
+  eviction-immune and just log a stern warning instead.
+- `peer_fork_action: quarantine` — what happens when fork-claim
+  detection fires. `log` records only, `quarantine` flips after 2+
+  claims, `evict` is immediate (overrides static-immunity, since a
+  fork claim is a Byzantine signal).
+
+Inspect a quarantined peer:
+
+```bash
+quidnug-cli peer show <nodeQuid>
+# Composite: 0.32
+# Quarantined: yes — composite below quarantine threshold
+# Per-class success/failure (decay-adjusted):
+#   handshake:      4.1 / 0.0
+#   validation:     5.0 / 12.3
+#   ...
+# Severe events:
+#   signature fails: 1
+# Recent events (newest last):
+#   2026-05-01T...  validation FAIL  anchor: signature
+#   ...
+```
+
+Fix paths: investigate why validation fails (peer's gossip
+producer signed something that doesn't verify against their
+on-file key — is their key file corrupt? clock skew?), or if
+the peer is genuinely Byzantine, leave it quarantined.
 
 ---
 

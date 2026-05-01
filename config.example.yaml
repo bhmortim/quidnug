@@ -255,3 +255,55 @@ domain_gossip_ttl: 3
 # TRUST edge for an already-admitted peer. Default 30m.
 #   Environment variable: PEER_REATTESTATION_INTERVAL
 # peer_reattestation_interval: "30m"
+
+# --- Peer-quality scoring (Phase 4) ---------------------------------------
+#
+# Every interaction with a peer (handshake / gossip post / query /
+# broadcast / validation outcome) feeds a per-peer composite score in
+# [0, 1]. Scores persist to data_dir/peer_scores.json across restarts.
+# Quarantine + eviction policies + routing preference (sort by score)
+# all consult these thresholds.
+#
+# How often the scoreboard is snapshot to disk. Default 5m. SIGTERM
+# triggers a final flush so reputation built up in the last interval
+# isn't lost.
+#   Environment variable: PEER_SCORE_PERSIST_INTERVAL
+# peer_score_persist_interval: "5m"
+
+# Composite < this → peer is quarantined: stays in KnownNodes (so
+# history persists) but is excluded from gossip fan-out + query
+# candidate ordering. Hysteresis of 0.10 — peer must rise above
+# (threshold + 0.10) to be un-quarantined.
+#   Environment variable: PEER_QUARANTINE_THRESHOLD
+# peer_quarantine_threshold: 0.4
+
+# Composite < this for `peer_eviction_grace` continuously → peer
+# is evicted from KnownNodes. Static-source peers (from peers_file)
+# are eviction-immune by default; the loop logs a stern warning
+# instead so operators can fix peers_file rather than have it
+# silently overridden.
+#   Environment variable: PEER_EVICTION_THRESHOLD
+# peer_eviction_threshold: 0.2
+
+# How long a peer's composite must stay below
+# peer_eviction_threshold before eviction fires. Default 5m.
+# Prevents transient outages from auto-evicting a peer that
+# recovers within the window.
+#   Environment variable: PEER_EVICTION_GRACE
+# peer_eviction_grace: "5m"
+
+# What happens when fork-detection identifies a peer that served
+# us a block contradicting one we already have at the same height.
+# One of: "log" (record severe event only), "quarantine" (auto-
+# quarantine after 2+ claims within fork window), "evict"
+# (immediate, overrides static-immunity because fork is a
+# Byzantine signal not misconfig).
+#   Environment variable: PEER_FORK_ACTION
+# peer_fork_action: "quarantine"
+
+# Rolling window for the 2-fork-claims trigger when
+# peer_fork_action is "quarantine". Older claims still count
+# toward cumulative ForkClaims; only the action gating uses this
+# window.
+#   Environment variable: PEER_FORK_WINDOW
+# peer_fork_window: "1h"

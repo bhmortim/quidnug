@@ -258,12 +258,17 @@ client with the `quidnug.com` well-known file.
 
 When you graduate from one node to two, here's the minimum:
 
-### 1. Generate the new node's key
+### 1. Bring up the new node
+
+The new node will auto-generate its per-process NodeID on first boot
+(persisted to `data_dir/node_key.json`). Configure it with the same
+`operator_quid_file:` pointing at your shared operator quid — that's
+how this node identifies itself as one of yours. After first boot,
+note the NodeID:
 
 ```bash
-./bin/quidnug-cli keygen \
-    --out ~/.quidnug/node-iad-cache-1.key.json \
-    --name "node-iad-cache-1"
+curl http://node-iad-cache-1.example/api/v1/info | jq -r .data.nodeQuid
+# e.g. 91d0f4b88f44c7a2  ← use this in step 2 below
 ```
 
 ### 2. Publish the operator-attestation TRUST edge

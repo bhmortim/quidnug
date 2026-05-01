@@ -515,23 +515,104 @@ make lint
 ### Config
 
 Environment variables (see [`config.example.yaml`](config.example.yaml)
-for YAML equivalents):
+for YAML equivalents and the full schema):
 
 ```
+# Server
 PORT=8080
-SEED_NODES=["peer1.example:8080","peer2.example:8080"]
+DATA_DIR=/var/lib/quidnug              # node identity + chain + scoreboard persist here
 LOG_LEVEL=info
 RATE_LIMIT_PER_MINUTE=100
-NODE_AUTH_SECRET=<32-byte hex>    # for inter-node HMAC auth
+
+# Node-to-node auth (HMAC)
+NODE_AUTH_SECRET=<32-byte hex>
 REQUIRE_NODE_AUTH=true
+
+# IPFS for large event payloads
 IPFS_ENABLED=true
 IPFS_GATEWAY_URL=http://localhost:5001
+
+# Supported domains (write filter)
 SUPPORTED_DOMAINS=*.finance.example,*.ai.example
-ENABLE_NONCE_LEDGER=false         # QDP-0001 enforcement
-ENABLE_PUSH_GOSSIP=false          # QDP-0005 (H1)
-ENABLE_LAZY_EPOCH_PROBE=false     # QDP-0007 (H4)
-ENABLE_KOFK_BOOTSTRAP=false       # QDP-0008 (H3)
+
+# Operator identity (long-lived; deployable on N nodes)
+OPERATOR_QUID_FILE=/etc/quidnug/operator.quid.json
+
+# Peering — three peer sources feed the same admit pipeline
+SEED_NODES=["peer1.example:8080","peer2.example:8080"]
+PEERS_FILE=/etc/quidnug/peers.yaml      # static, fsnotify-watched
+LAN_DISCOVERY=true                       # mDNS on _quidnug._tcp.local.
+REQUIRE_ADVERTISEMENT=true               # gate gossip-learned peers
+PEER_MIN_OPERATOR_TRUST=0.5              # min OperatorQuid → NodeQuid TRUST
+PEER_MIN_OPERATOR_REPUTATION=0.0         # weighted-aggregate gate (0 = off)
+
+# Peer scoring (Phase 4) — quarantine + eviction policy
+PEER_QUARANTINE_THRESHOLD=0.4
+PEER_EVICTION_THRESHOLD=0.2
+PEER_EVICTION_GRACE=5m
+PEER_FORK_ACTION=quarantine              # log | quarantine | evict
+
+# Phase H feature flags
+ENABLE_NONCE_LEDGER=false                # QDP-0001
+ENABLE_PUSH_GOSSIP=false                 # QDP-0005
+ENABLE_LAZY_EPOCH_PROBE=false            # QDP-0007
+ENABLE_KOFK_BOOTSTRAP=false              # QDP-0008
 ```
+
+#### Persistence
+
+Everything that should survive a restart lives in `DATA_DIR`:
+
+| File | What |
+|------|------|
+| `node_key.json` | Per-process ECDSA keypair (PKCS8). NodeID is `sha256(publicKey)[:16]`; persisting the file keeps it stable across restarts. |
+| `blockchain.json` | Block history snapshot. Snapshot every 30 s + on shutdown. |
+| `trust_domains.json` | TrustDomains + DomainRegistry index — dynamic `POST /api/v1/domains` registrations land here. |
+| `pending_transactions.json` | Pending tx queue. |
+| `peer_scores.json` | Per-peer composite scores + recent-event ring. Snapshot every 5 min. |
+
+`OPERATOR_QUID_FILE` is *not* in `DATA_DIR` by convention — it's the
+long-lived operator identity (often shared across multiple nodes the
+same operator runs), so it lives somewhere stable like `/etc/quidnug/`
+and gets read-only mounted into containers.
+
+#### Peering
+
+Three peer sources, all gated by the same admit pipeline (handshake →
+NodeAdvertisement lookup → operator-attestation TRUST check):
+
+- **`SEED_NODES`** / `seed_nodes:` — bootstrap list, gossip-discovered
+  peers come from these. Boot retry on 1s/2s/4s/8s/16s/30s backoff
+  until at least one seed responds (Docker DNS races etc.); then
+  steady-state every 5 min.
+- **`PEERS_FILE`** / `peers_file:` — explicit YAML peer list with
+  per-peer `allow_private: true` for LAN escape hatches. Live-reloaded
+  on file change.
+- **`LAN_DISCOVERY`** — mDNS / DNS-SD for home/office/lab. Off by
+  default; opt in.
+
+Per-peer quality scoring (Phase 4) records every interaction
+(handshake / gossip / query / broadcast / validation) into a
+decay-weighted composite score; peers below `PEER_QUARANTINE_THRESHOLD`
+are excluded from routing, peers below `PEER_EVICTION_THRESHOLD`
+sustained beyond `PEER_EVICTION_GRACE` are dropped from `KnownNodes`
+(static-source peers are eviction-immune with a stern operator
+warning). Scores persist across restarts.
+
+CLI surface for operators:
+
+```bash
+quidnug-cli quid generate --out /etc/quidnug/operator.quid.json
+quidnug-cli peer list                     # known peers + composite scores
+quidnug-cli peer show NODE_QUID           # full per-peer breakdown
+quidnug-cli peer add ADDR [--allow-private] [--operator-quid Q]
+quidnug-cli peer remove ADDR
+quidnug-cli peer scan-lan                 # one-shot mDNS browse
+```
+
+API surface: `GET /api/v1/peers` (full scoreboard, worst-first) and
+`GET /api/v1/peers/{nodeQuid}`. The landing page at `/` surfaces a
+"Peer health" summary block.
 
 ### Deployment patterns
 
