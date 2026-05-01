@@ -155,27 +155,55 @@ func SignRFC6979(priv *ecdsa.PrivateKey, digest []byte) (r, s *big.Int) {
 }
 
 // GetBlockSignableData returns canonical bytes for signing a block.
-// This excludes the Hash field (not set during signing) and ValidatorSigs
-// (signatures should not sign themselves).
+// Excludes the Hash field (not set during signing) and ValidatorSigs
+// (signatures must not sign themselves).
+//
+// Canonical form: the bytes are JSON with all object keys sorted
+// alphabetically at every level of nesting. The canonicalization is
+// achieved by round-tripping the typed structure through
+// interface{} / map[string]interface{}, which forces every sub-value
+// to alphabetical key order regardless of whether the input field
+// was a typed struct (struct-declaration order) or a generic map
+// (already alphabetical). This must match calculateBlockHash's
+// canonicalization because the two operate on the same logical
+// envelope; if they diverged, a block whose hash you trust could
+// fail signature verification, or vice versa.
+//
+// ENG-82: without the round-trip, signing and verification diverge
+// silently across the wire. A block signed locally has typed
+// transactions in []interface{} (TrustTransaction, IdentityTransaction,
+// etc.) which json.Marshal emits in struct-declaration order. When a
+// peer receives the block over JSON HTTP, those same transactions
+// arrive as map[string]interface{} and json.Marshal emits them in
+// alphabetical order. The pubkey, validator ID, and signature bytes
+// all match, but SHA-256 of the message diverges, so ECDSA verify
+// rejects the signature. Round-tripping through generic interface{}
+// here forces both paths to the same canonical bytes.
 //
 // NOTE for QDP-0001: Block.NonceCheckpoints is deliberately NOT
 // included in the signable envelope in the foundation / Phase-0
 // deployment. Including it is a hard-fork boundary and will be done
 // by a coordinated network-wide switch-over (QDP-0001 §10.2). Until
 // then, checkpoints are populated for local ledger bookkeeping only.
+//
+// Returns nil if either marshal step fails. Verification against nil
+// fails by design; we'd rather refuse to verify than produce a
+// silently-incorrect digest.
 func GetBlockSignableData(block Block) []byte {
-	// Create a copy of TrustProof without signatures for signing
+	// Create a copy of TrustProof without signatures for signing.
+	// ValidatorSigs intentionally excluded so signatures don't sign
+	// themselves.
 	trustProofForSigning := TrustProof{
 		TrustDomain:             block.TrustProof.TrustDomain,
 		ValidatorID:             block.TrustProof.ValidatorID,
 		ValidatorPublicKey:      block.TrustProof.ValidatorPublicKey,
 		ValidatorTrustInCreator: block.TrustProof.ValidatorTrustInCreator,
-		// ValidatorSigs intentionally excluded - signatures don't sign themselves
-		ConsensusData:  block.TrustProof.ConsensusData,
-		ValidationTime: block.TrustProof.ValidationTime,
+		ConsensusData:           block.TrustProof.ConsensusData,
+		ValidationTime:          block.TrustProof.ValidationTime,
 	}
 
-	blockData, _ := json.Marshal(struct {
+	// Stage 1: marshal the typed envelope.
+	typed, err := json.Marshal(struct {
 		Index        int64
 		Timestamp    int64
 		Transactions []interface{}
@@ -188,8 +216,25 @@ func GetBlockSignableData(block Block) []byte {
 		TrustProof:   trustProofForSigning,
 		PrevHash:     block.PrevHash,
 	})
+	if err != nil {
+		return nil
+	}
 
-	return blockData
+	// Stage 2: round-trip through generic interface{} / map so every
+	// sub-value is normalized to alphabetical key ordering. Without
+	// this, signing-time bytes (typed structs in declaration order)
+	// diverge from verify-time bytes (maps in alphabetical order)
+	// and signatures fail across the wire even when keys match. See
+	// the function comment for ENG-82 details.
+	var generic interface{}
+	if err := json.Unmarshal(typed, &generic); err != nil {
+		return nil
+	}
+	canonical, err := json.Marshal(generic)
+	if err != nil {
+		return nil
+	}
+	return canonical
 }
 
 // calculateBlockHash calculates the hash for a block.
