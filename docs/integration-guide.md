@@ -166,10 +166,10 @@ console.log("Owners:", ownership.ownershipMap);
 
 Event streams provide an immutable, append-only history for any quid or title. Each event is sequenced and cannot be modified once recorded, making them ideal for audit logs, activity feeds, and state change tracking.
 
-> **Note:** The examples in this section call the REST API directly via `fetch()`. The
-> `@quidnug/client` JavaScript SDK also provides `createEventTransaction()`,
-> `getEventStream()`, and `getStreamEvents()`. For the Go client (`pkg/client`), use
-> `c.EmitEvent`, `c.GetEventStream`, `c.GetStreamEvents`.
+> **Note:** The `@quidnug/client` JavaScript SDK does not currently wrap event stream
+> endpoints. The examples in this section call the REST API directly via `fetch()`.
+> For a typed interface, use the Go client (`pkg/client`): `c.EmitEvent`,
+> `c.GetEventStream`, `c.GetStreamEvents`.
 
 #### Creating Event Transactions
 
@@ -241,7 +241,7 @@ For payloads exceeding 64KB, use IPFS to store content externally:
 const largeDocument = JSON.stringify(detailedAuditReport);
 const pinResult = await fetch('http://localhost:8080/api/ipfs/pin', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { 'Content-Type': 'text/plain' },
   body: largeDocument
 }).then(r => r.json());
 const cid = pinResult.cid;
