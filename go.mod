@@ -1,10 +1,12 @@
 module github.com/quidnug/quidnug
 
-go 1.25.9 // SEC-1: bump to fix CVE-2026-33810 (x509 wildcard SAN constraint bypass)
+go 1.25.10 // SEC-58: bump to fix CVE-2026-33814 (HTTP/2 SETTINGS infinite loop DoS)
 
 require (
+	github.com/fsnotify/fsnotify v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
+	github.com/grandcat/zeroconf v1.0.0
 	github.com/miekg/pkcs11 v1.1.2
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.5.0
@@ -20,17 +22,15 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.10.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/grandcat/zeroconf v1.0.0 // indirect
 	github.com/miekg/dns v1.1.27 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	golang.org/x/crypto v0.18.0 // indirect
-	golang.org/x/net v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
