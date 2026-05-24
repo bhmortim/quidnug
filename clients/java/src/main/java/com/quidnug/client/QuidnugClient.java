@@ -400,6 +400,355 @@ public final class QuidnugClient {
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
 
     // =====================================================================
+    // Peers (QDP-0024 / scoreboard)
+    // =====================================================================
+
+    /** GET /api/peers — peer scoreboard snapshot. */
+    public JsonNode peers() { return doGet("peers"); }
+
+    /** GET /api/peers/{nodeQuid} — one peer's record. */
+    public JsonNode getPeer(String nodeQuid) {
+        if (nodeQuid == null || nodeQuid.isEmpty())
+            throw new ValidationException("nodeQuid is required");
+        try {
+            return doGet("peers/" + urlencode(nodeQuid));
+        } catch (ValidationException e) {
+            String code = (String) e.details().get("code");
+            if ("PEER_NOT_FOUND".equals(code) || "NOT_FOUND".equals(code)) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // Quids / blocks / domains / node-domains / gossip-domains
+    // =====================================================================
+
+    /** POST /api/quids — server-side keygen (trusted mode only). */
+    public JsonNode generateQuid(Map<String, Object> metadata) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("metadata", metadata == null ? Collections.emptyMap() : metadata);
+        return doPost("quids", body);
+    }
+
+    /** GET /api/blocks/tentative/{domain}. */
+    public JsonNode getTentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    /** POST /api/domains — register a trust domain. */
+    public JsonNode registerDomain(String domain, Map<String, Object> attrs) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        Map<String, Object> body = attrs == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(attrs);
+        body.put("name", domain);
+        return doPost("domains", body);
+    }
+
+    /** GET /api/domains/top — most-active domains. */
+    public JsonNode topDomains() { return doGet("domains/top"); }
+
+    /**
+     * GET /api/domains/{name}/query — query a domain registry directly.
+     *
+     * @param domain    domain name
+     * @param queryType "identity", "trust", or "title"
+     * @param param     lookup key (for trust queries, "observer:target")
+     */
+    public JsonNode queryDomain(String domain, String queryType, String param) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        if (!"identity".equals(queryType) && !"trust".equals(queryType) && !"title".equals(queryType))
+            throw new ValidationException("queryType must be 'identity', 'trust', or 'title'");
+        return doGet("domains/" + urlencode(domain) + "/query?type=" + urlencode(queryType)
+                + "&param=" + urlencode(param == null ? "" : param));
+    }
+
+    /** GET /api/node/domains — domains this node currently serves. */
+    public JsonNode getNodeDomains() { return doGet("node/domains"); }
+
+    /** POST /api/node/domains — replace the node's managed-domains list. */
+    public JsonNode updateNodeDomains(List<String> domains) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains == null ? Collections.emptyList() : domains);
+        return doPost("node/domains", body);
+    }
+
+    /** POST /api/gossip/domains — push a domain-gossip message. */
+    public JsonNode sendDomainGossip(Map<String, Object> gossip) {
+        return doPost("gossip/domains", gossip);
+    }
+
+    // =====================================================================
+    // Registry queries
+    // =====================================================================
+
+    /** GET /api/registry/trust — paginated/filterable trust registry. */
+    public JsonNode queryTrustRegistry() { return doGet("registry/trust"); }
+
+    /** GET /api/registry/identity — paginated/filterable identity registry. */
+    public JsonNode queryIdentityRegistry() { return doGet("registry/identity"); }
+
+    /** GET /api/registry/title — paginated/filterable title registry. */
+    public JsonNode queryTitleRegistry() { return doGet("registry/title"); }
+
+    /** POST /api/trust/query — multi-quid relational trust query. */
+    public JsonNode queryRelationalTrust(Map<String, Object> query) {
+        return doPost("trust/query", query);
+    }
+
+    // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /** POST /api/ipfs/pin — pin raw content; returns the CID. */
+    public String ipfsPin(byte[] content) {
+        if (content == null || content.length == 0)
+            throw new ValidationException("content is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        try {
+            HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+            JsonNode data = parseEnvelope(resp);
+            JsonNode cid = data.has("cid") ? data.get("cid") : data.get("value");
+            if (cid == null || cid.asText().isEmpty())
+                throw new NodeException("IPFS pin response missing cid", resp.statusCode(), resp.body());
+            return cid.asText();
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new NodeException("ipfs pin: " + e.getMessage(), e);
+        }
+    }
+
+    /** GET /api/ipfs/{cid} — fetch the pinned bytes. */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty())
+            throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        try {
+            HttpResponse<byte[]> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() >= 400)
+                throw new NodeException("IPFS get failed (HTTP " + resp.statusCode() + ")",
+                        resp.statusCode(), "");
+            return resp.body();
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new NodeException("ipfs get: " + e.getMessage(), e);
+        }
+    }
+
+    // =====================================================================
+    // Node advertisements (QDP-0014)
+    // =====================================================================
+
+    /** POST /api/node-advertisements — publish a signed node advertisement. */
+    public JsonNode createNodeAdvertisement(Map<String, Object> advertisement) {
+        return doPost("node-advertisements", advertisement);
+    }
+
+    // =====================================================================
+    // Guardian resignations (QDP-0006)
+    // =====================================================================
+
+    /** GET /api/guardian/resignations/{quid} — all resignations for a subject. */
+    public JsonNode getGuardianResignations(String quidId) {
+        if (quidId == null || quidId.isEmpty())
+            throw new ValidationException("quidId is required");
+        return doGet("guardian/resignations/" + urlencode(quidId));
+    }
+
+    // =====================================================================
+    // Moderation (QDP-0015)
+    // =====================================================================
+
+    /** POST /api/moderation/actions — submit a signed moderation action. */
+    public JsonNode createModerationAction(Map<String, Object> action) {
+        return doPost("moderation/actions", action);
+    }
+
+    /** GET /api/moderation/actions/{targetType}/{targetId}. */
+    public JsonNode getModerationActions(String targetType, String targetId) {
+        if (targetType == null || targetType.isEmpty() || targetId == null || targetId.isEmpty())
+            throw new ValidationException("targetType and targetId are required");
+        return doGet("moderation/actions/" + urlencode(targetType) + "/" + urlencode(targetId));
+    }
+
+    // =====================================================================
+    // Audit log (QDP-0018)
+    // =====================================================================
+
+    /** GET /api/audit/head — operator's current audit head. */
+    public JsonNode auditHead() { return doGet("audit/head"); }
+
+    /** GET /api/audit/entries — entries after a cursor. */
+    public JsonNode auditEntries(Long since, Integer limit) {
+        StringBuilder path = new StringBuilder("audit/entries");
+        boolean q = false;
+        if (since != null) { path.append("?since=").append(since); q = true; }
+        if (limit != null) { path.append(q ? "&" : "?").append("limit=").append(limit); }
+        return doGet(path.toString());
+    }
+
+    /** GET /api/audit/entry/{sequence} — one entry by sequence, or null on 404. */
+    public JsonNode auditEntry(long sequence) {
+        if (sequence < 0)
+            throw new ValidationException("sequence must be non-negative");
+        try {
+            return doGet("audit/entry/" + sequence);
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // Privacy (QDP-0017)
+    // =====================================================================
+
+    /** POST /api/privacy/dsr — submit a Data Subject Request. */
+    public JsonNode createDSR(Map<String, Object> request) { return doPost("privacy/dsr", request); }
+
+    /** GET /api/privacy/dsr/{requestTxId} — status of a DSR. */
+    public JsonNode getDSRStatus(String requestTxId) {
+        if (requestTxId == null || requestTxId.isEmpty())
+            throw new ValidationException("requestTxId is required");
+        try {
+            return doGet("privacy/dsr/" + urlencode(requestTxId));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** POST /api/privacy/consent/grants — record an opt-in. */
+    public JsonNode createConsentGrant(Map<String, Object> grant) {
+        return doPost("privacy/consent/grants", grant);
+    }
+
+    /** POST /api/privacy/consent/withdraws — revoke a prior grant. */
+    public JsonNode createConsentWithdraw(Map<String, Object> withdraw) {
+        return doPost("privacy/consent/withdraws", withdraw);
+    }
+
+    /** GET /api/privacy/consent/history?subject={quid}. */
+    public JsonNode getConsentHistory(String subjectQuid) {
+        if (subjectQuid == null || subjectQuid.isEmpty())
+            throw new ValidationException("subjectQuid is required");
+        return doGet("privacy/consent/history?subject=" + urlencode(subjectQuid));
+    }
+
+    /** POST /api/privacy/restrictions — narrow allowed processing. */
+    public JsonNode createProcessingRestriction(Map<String, Object> restriction) {
+        return doPost("privacy/restrictions", restriction);
+    }
+
+    /** GET /api/privacy/restrictions/{subjectQuid}. */
+    public JsonNode getRestrictionsForSubject(String subjectQuid) {
+        if (subjectQuid == null || subjectQuid.isEmpty())
+            throw new ValidationException("subjectQuid is required");
+        return doGet("privacy/restrictions/" + urlencode(subjectQuid));
+    }
+
+    /** POST /api/privacy/compliance — operator's compliance attestation. */
+    public JsonNode createDSRCompliance(Map<String, Object> compliance) {
+        return doPost("privacy/compliance", compliance);
+    }
+
+    // =====================================================================
+    // Discovery (QDP-0014)
+    // =====================================================================
+
+    /** GET /api/v2/discovery/domain/{name}. */
+    public JsonNode discoverDomain(String name) {
+        if (name == null || name.isEmpty())
+            throw new ValidationException("name is required");
+        return doGet("v2/discovery/domain/" + urlencode(name));
+    }
+
+    /** GET /api/v2/discovery/node/{quid}. */
+    public JsonNode discoverNode(String quid) {
+        if (quid == null || quid.isEmpty())
+            throw new ValidationException("quid is required");
+        return doGet("v2/discovery/node/" + urlencode(quid));
+    }
+
+    /** GET /api/v2/discovery/operator/{quid}. */
+    public JsonNode discoverOperator(String quid) {
+        if (quid == null || quid.isEmpty())
+            throw new ValidationException("quid is required");
+        return doGet("v2/discovery/operator/" + urlencode(quid));
+    }
+
+    /** GET /api/v2/discovery/quids. */
+    public JsonNode discoverQuids() { return doGet("v2/discovery/quids"); }
+
+    /** GET /api/v2/discovery/trusted-quids. */
+    public JsonNode discoverTrustedQuids() { return doGet("v2/discovery/trusted-quids"); }
+
+    // =====================================================================
+    // DNS attestation (QDP-0023)
+    // =====================================================================
+
+    public JsonNode submitDNSClaim(Map<String, Object> claim) {
+        return doPost("v2/dns/claim", claim);
+    }
+
+    public JsonNode submitDNSChallenge(Map<String, Object> challenge) {
+        return doPost("v2/dns/challenge", challenge);
+    }
+
+    public JsonNode submitDNSAttestation(Map<String, Object> attestation) {
+        return doPost("v2/dns/attestation", attestation);
+    }
+
+    public JsonNode submitDNSRenewal(Map<String, Object> renewal) {
+        return doPost("v2/dns/renewal", renewal);
+    }
+
+    public JsonNode submitDNSRevocation(Map<String, Object> revocation) {
+        return doPost("v2/dns/revocation", revocation);
+    }
+
+    public JsonNode submitAuthorityDelegate(Map<String, Object> delegate) {
+        return doPost("v2/dns/delegate", delegate);
+    }
+
+    public JsonNode submitAuthorityDelegateRevocation(Map<String, Object> revocation) {
+        return doPost("v2/dns/delegate-revocation", revocation);
+    }
+
+    public JsonNode getDNSAttestations(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("v2/dns/attestations/" + urlencode(domain));
+    }
+
+    public JsonNode getDNSAttestationsWeighted(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("v2/dns/attestations/" + urlencode(domain) + "/weighted");
+    }
+
+    public JsonNode resolveDNSRecord(String domain, String recordType) {
+        if (domain == null || domain.isEmpty() || recordType == null || recordType.isEmpty())
+            throw new ValidationException("domain and recordType are required");
+        return doGet("v2/dns/resolve/" + urlencode(domain) + "/" + urlencode(recordType));
+    }
+
+    // =====================================================================
     // Param objects (fluent builders)
     // =====================================================================
 

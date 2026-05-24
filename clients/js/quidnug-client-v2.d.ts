@@ -188,6 +188,25 @@ declare module "./quidnug-client.js" {
     // Fork-block
     submitForkBlock(fb: ForkBlock): Promise<unknown>;
     getForkBlockStatus(): Promise<unknown>;
+
+    // Discovery (QDP-0014)
+    discoverDomain(name: string): Promise<unknown>;
+    discoverNode(quid: string): Promise<unknown>;
+    discoverOperator(quid: string): Promise<unknown>;
+    discoverQuids(): Promise<unknown>;
+    discoverTrustedQuids(): Promise<unknown>;
+
+    // DNS attestation (QDP-0023)
+    submitDNSClaim(claim: Record<string, unknown>): Promise<unknown>;
+    submitDNSChallenge(challenge: Record<string, unknown>): Promise<unknown>;
+    submitDNSAttestation(attestation: Record<string, unknown>): Promise<unknown>;
+    submitDNSRenewal(renewal: Record<string, unknown>): Promise<unknown>;
+    submitDNSRevocation(revocation: Record<string, unknown>): Promise<unknown>;
+    submitAuthorityDelegate(delegate: Record<string, unknown>): Promise<unknown>;
+    submitAuthorityDelegateRevocation(revocation: Record<string, unknown>): Promise<unknown>;
+    getDNSAttestations(domain: string): Promise<unknown>;
+    getDNSAttestationsWeighted(domain: string): Promise<unknown>;
+    resolveDNSRecord(domain: string, recordType: string): Promise<unknown>;
   }
 
   namespace QuidnugClient {

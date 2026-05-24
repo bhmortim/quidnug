@@ -1514,6 +1514,241 @@ class QuidnugClient {
       throw new Error(`IPFS retrieval failed: ${error.message}`);
     }
   }
+
+  // ---------------------------------------------------------------------
+  // Additional v1 surface: health / info / peers / domains / moderation /
+  // audit / privacy / node-advertisements / gossip-domains
+  //
+  // These follow the same request shape as the existing v1 methods but
+  // are kept together at the end of the class so the v1 method list
+  // matches the canonical coverage matrix in docs/client-coverage.md
+  // one-for-one.
+  // ---------------------------------------------------------------------
+
+  /** GET /api/health — is the node up. */
+  async getHealth() {
+    return this._apiGet("health");
+  }
+
+  /** GET /api/info — node identity, version, features, domains. */
+  async getInfo() {
+    return this._apiGet("info");
+  }
+
+  /** GET /api/peers — peer scoreboard snapshot. */
+  async getPeers() {
+    return this._apiGet("peers");
+  }
+
+  /**
+   * GET /api/peers/{nodeQuid} — one peer's score record, or null if
+   * the node has no record for that quid.
+   */
+  async getPeer(nodeQuid) {
+    if (!nodeQuid) throw new Error("nodeQuid is required");
+    return this._apiGetOrNull(`peers/${encodeURIComponent(nodeQuid)}`);
+  }
+
+  /** GET /api/blocks/tentative/{domain} — tentative blocks for a domain. */
+  async getTentativeBlocks(domain) {
+    if (!domain) throw new Error("domain is required");
+    return this._apiGet(`blocks/tentative/${encodeURIComponent(domain)}`);
+  }
+
+  /** GET /api/domains — every domain this node knows about. */
+  async listDomains() {
+    return this._apiGet("domains");
+  }
+
+  /** POST /api/domains — register a trust domain. */
+  async registerDomain(domain, attrs = {}) {
+    if (!domain) throw new Error("domain is required");
+    return this._apiPost("domains", { name: domain, ...attrs });
+  }
+
+  /** GET /api/domains/top — top-N most-active domains. */
+  async getTopDomains() {
+    return this._apiGet("domains/top");
+  }
+
+  /** GET /api/node/domains — domains this node currently serves. */
+  async getNodeDomains() {
+    return this._apiGet("node/domains");
+  }
+
+  /** POST /api/node/domains — replace this node's managed-domains list. */
+  async updateNodeDomains(domains) {
+    if (!Array.isArray(domains)) throw new Error("domains must be an array");
+    return this._apiPost("node/domains", { managedDomains: domains });
+  }
+
+  /** GET /api/trust/edges/{quidId} — direct trust edges for one quid. */
+  async getTrustEdges(quidId) {
+    if (!quidId) throw new Error("quidId is required");
+    return this._apiGet(`trust/edges/${encodeURIComponent(quidId)}`);
+  }
+
+  /** POST /api/gossip/domains — push a domain-gossip message. */
+  async sendDomainGossip(gossip) {
+    if (!gossip || typeof gossip !== "object") throw new Error("gossip is required");
+    return this._apiPost("gossip/domains", gossip);
+  }
+
+  /** POST /api/node-advertisements — publish a signed node advertisement. */
+  async createNodeAdvertisement(advertisement) {
+    if (!advertisement || typeof advertisement !== "object") {
+      throw new Error("advertisement is required");
+    }
+    return this._apiPost("node-advertisements", advertisement);
+  }
+
+  // --- Moderation (QDP-0015) -------------------------------------------
+
+  /** POST /api/moderation/actions — submit a signed moderation action. */
+  async createModerationAction(action) {
+    if (!action || !action.moderatorQuid) {
+      throw new Error("moderatorQuid required");
+    }
+    return this._apiPost("moderation/actions", action);
+  }
+
+  /** GET /api/moderation/actions/{targetType}/{targetId}. */
+  async getModerationActions(targetType, targetId) {
+    if (!targetType || !targetId) {
+      throw new Error("targetType and targetId are required");
+    }
+    return this._apiGet(
+      `moderation/actions/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`,
+    );
+  }
+
+  // --- Audit log (QDP-0018) --------------------------------------------
+
+  /** GET /api/audit/head — operator's current audit head. */
+  async getAuditHead() {
+    return this._apiGet("audit/head");
+  }
+
+  /**
+   * GET /api/audit/entries — entries after a cursor, bounded by limit.
+   * @param {Object} opts - Optional `since` (cursor) and `limit`.
+   */
+  async getAuditEntries(opts = {}) {
+    const qs = new URLSearchParams();
+    if (opts.since !== undefined) qs.set("since", String(opts.since));
+    if (opts.limit !== undefined) qs.set("limit", String(opts.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return this._apiGet(`audit/entries${suffix}`);
+  }
+
+  /** GET /api/audit/entry/{sequence} — one entry by sequence, or null. */
+  async getAuditEntry(sequence) {
+    if (sequence == null || sequence < 0) {
+      throw new Error("sequence must be non-negative");
+    }
+    return this._apiGetOrNull(`audit/entry/${encodeURIComponent(String(sequence))}`);
+  }
+
+  // --- Privacy (QDP-0017) ----------------------------------------------
+
+  /** POST /api/privacy/dsr — submit a Data Subject Request. */
+  async createDSR(request) {
+    if (!request || !request.subjectQuid) throw new Error("subjectQuid required");
+    return this._apiPost("privacy/dsr", request);
+  }
+
+  /** GET /api/privacy/dsr/{requestTxId} — status of a DSR. */
+  async getDSRStatus(requestTxId) {
+    if (!requestTxId) throw new Error("requestTxId is required");
+    return this._apiGetOrNull(`privacy/dsr/${encodeURIComponent(requestTxId)}`);
+  }
+
+  /** POST /api/privacy/consent/grants — record an opt-in. */
+  async createConsentGrant(grant) {
+    if (!grant || !grant.subjectQuid) throw new Error("subjectQuid required");
+    return this._apiPost("privacy/consent/grants", grant);
+  }
+
+  /** POST /api/privacy/consent/withdraws — revoke a prior grant. */
+  async createConsentWithdraw(withdraw) {
+    if (!withdraw || !withdraw.withdrawsGrantTxId) {
+      throw new Error("withdrawsGrantTxId required");
+    }
+    return this._apiPost("privacy/consent/withdraws", withdraw);
+  }
+
+  /** GET /api/privacy/consent/history?subject={quid}. */
+  async getConsentHistory(subjectQuid) {
+    if (!subjectQuid) throw new Error("subjectQuid is required");
+    return this._apiGet(
+      `privacy/consent/history?subject=${encodeURIComponent(subjectQuid)}`,
+    );
+  }
+
+  /** POST /api/privacy/restrictions — narrow allowed processing. */
+  async createProcessingRestriction(restriction) {
+    if (!restriction || !restriction.subjectQuid) {
+      throw new Error("subjectQuid required");
+    }
+    return this._apiPost("privacy/restrictions", restriction);
+  }
+
+  /** GET /api/privacy/restrictions/{subjectQuid}. */
+  async getRestrictionsForSubject(subjectQuid) {
+    if (!subjectQuid) throw new Error("subjectQuid is required");
+    return this._apiGet(`privacy/restrictions/${encodeURIComponent(subjectQuid)}`);
+  }
+
+  /** POST /api/privacy/compliance — operator's compliance attestation. */
+  async createDSRCompliance(compliance) {
+    if (!compliance || !compliance.requestTxId) {
+      throw new Error("requestTxId required");
+    }
+    return this._apiPost("privacy/compliance", compliance);
+  }
+
+  // --- Shared low-level GET/POST helpers --------------------------------
+
+  /**
+   * @private
+   * GET /api/{path} and return the unwrapped `data` object. Throws an
+   * Error with `.code` mapped from the envelope on non-2xx.
+   */
+  async _apiGet(path) {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/${path}`);
+    return this._parseResponse(response);
+  }
+
+  /**
+   * @private
+   * Like `_apiGet` but returns `null` on a NOT_FOUND envelope rather
+   * than throwing. Match the Python SDK's pattern of returning
+   * `Optional[...]` for the obvious "absent" case.
+   */
+  async _apiGetOrNull(path) {
+    try {
+      return await this._apiGet(path);
+    } catch (err) {
+      if (err && err.code === "NOT_FOUND") return null;
+      if (err && err.code === "PEER_NOT_FOUND") return null;
+      throw err;
+    }
+  }
+
+  /**
+   * @private
+   * POST JSON body to /api/{path} and return the unwrapped `data`.
+   */
+  async _apiPost(path, body) {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return this._parseResponse(response);
+  }
 }
 
 // Example usage in a browser environment

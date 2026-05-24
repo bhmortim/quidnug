@@ -295,3 +295,256 @@ def test_post_is_not_retried_by_default(session):
     with pytest.raises(NodeError):
         client.grant_trust(q, trustee="x", level=0.5)
     assert len(session.calls) == 1
+
+
+# --- Wire-format coverage for new v1 + v2 methods --------------------------
+
+
+def test_peers_hits_peers_endpoint(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"peers": [], "count": 0}}))
+    assert client.peers() == {"peers": [], "count": 0}
+    method, url, _ = session.calls[0]
+    assert method == "GET"
+    assert url.endswith("/api/peers")
+
+
+def test_get_peer_returns_none_on_not_found(session, client):
+    session.queue(
+        _FakeResponse(
+            status_code=404,
+            payload={"success": False, "error": {"code": "PEER_NOT_FOUND"}},
+        )
+    )
+    assert client.get_peer("nodex") is None
+
+
+def test_generate_quid_posts_metadata(session, client):
+    session.queue(
+        _FakeResponse(
+            payload={"success": True, "data": {"quidId": "deadbeef", "publicKey": "...", "created": 1}}
+        )
+    )
+    client.generate_quid(metadata={"label": "alice"})
+    method, url, kw = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/api/quids")
+    body = json.loads(kw["data"])
+    assert body == {"metadata": {"label": "alice"}}
+
+
+def test_top_domains_hits_endpoint(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"domains": []}}))
+    client.top_domains()
+    method, url, _ = session.calls[0]
+    assert method == "GET"
+    assert url.endswith("/api/domains/top")
+
+
+def test_query_domain_sends_type_and_param(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {}}))
+    client.query_domain("foo.com", query_type="trust", param="a:b")
+    method, url, kw = session.calls[0]
+    assert method == "GET"
+    assert "/api/domains/foo.com/query" in url
+    assert kw["params"] == {"type": "trust", "param": "a:b"}
+
+
+def test_query_domain_rejects_bad_type(client):
+    with pytest.raises(ValidationError):
+        client.query_domain("foo.com", query_type="bogus", param="x")
+
+
+def test_create_moderation_action_emits_camel_case(session, client):
+    from quidnug.types import ModerationAction
+
+    session.queue(_FakeResponse(payload={"success": True, "data": {"id": "tx1"}}))
+    action = ModerationAction(
+        moderator_quid="modquid",
+        target_type="QUID",
+        target_id="targetquid",
+        scope="hide",
+        reason_code="spam",
+        nonce=1,
+        do_not_federate=True,
+    )
+    client.create_moderation_action(action)
+    method, url, kw = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/api/moderation/actions")
+    body = json.loads(kw["data"])
+    # snake_case dataclass field names must round-trip to camelCase JSON
+    assert body["moderatorQuid"] == "modquid"
+    assert body["targetType"] == "QUID"
+    assert body["targetId"] == "targetquid"
+    assert body["doNotFederate"] is True
+    # ensure no snake_case keys leaked
+    assert "moderator_quid" not in body
+
+
+def test_get_moderation_actions_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"actions": []}}))
+    client.get_moderation_actions(target_type="QUID", target_id="abc")
+    _, url, _ = session.calls[0]
+    assert "/api/moderation/actions/QUID/abc" in url
+
+
+def test_audit_head_decodes_envelope(session, client):
+    session.queue(
+        _FakeResponse(
+            payload={
+                "success": True,
+                "data": {
+                    "operatorQuid": "op",
+                    "height": 42,
+                    "headHash": "abcd",
+                    "headSequence": 41,
+                    "headTimestamp": 1000,
+                },
+            }
+        )
+    )
+    head = client.audit_head()
+    assert head.operator_quid == "op"
+    assert head.height == 42
+    assert head.head_hash == "abcd"
+
+
+def test_audit_entries_decodes_list(session, client):
+    session.queue(
+        _FakeResponse(
+            payload={
+                "success": True,
+                "data": {
+                    "operatorQuid": "op",
+                    "height": 2,
+                    "entries": [
+                        {
+                            "sequence": 0,
+                            "timestamp": 1,
+                            "hash": "h0",
+                            "prevHash": "0",
+                            "operatorQuid": "op",
+                            "eventType": "block_sealed",
+                            "payload": {"height": 0},
+                        }
+                    ],
+                },
+            }
+        )
+    )
+    entries, info = client.audit_entries(since=-1, limit=10)
+    assert len(entries) == 1
+    assert entries[0].sequence == 0
+    assert entries[0].hash == "h0"
+    assert info["height"] == 2
+
+
+def test_audit_entry_returns_none_on_404(session, client):
+    session.queue(
+        _FakeResponse(
+            status_code=404,
+            payload={"success": False, "error": {"code": "NOT_FOUND"}},
+        )
+    )
+    assert client.audit_entry(999) is None
+
+
+def test_create_dsr_camel_cases(session, client):
+    from quidnug.types import DataSubjectRequest
+
+    session.queue(_FakeResponse(payload={"success": True, "data": {"id": "tx"}}))
+    req = DataSubjectRequest(
+        subject_quid="sub",
+        request_type="ERASURE",
+        nonce=1,
+        contact_email="a@b",
+        jurisdiction="EU",
+    )
+    client.create_dsr(req)
+    body = json.loads(session.calls[0][2]["data"])
+    assert body["subjectQuid"] == "sub"
+    assert body["requestType"] == "ERASURE"
+    assert body["contactEmail"] == "a@b"
+    assert body["jurisdiction"] == "EU"
+
+
+def test_create_consent_grant_emits_camel_case_list(session, client):
+    from quidnug.types import ConsentGrant
+
+    session.queue(_FakeResponse(payload={"success": True, "data": {"id": "tx"}}))
+    grant = ConsentGrant(
+        subject_quid="sub",
+        controller_quid="ctrl",
+        scope=["MARKETING", "ANALYTICS"],
+        nonce=1,
+        policy_url="https://example/policy",
+        policy_hash="abc",
+    )
+    client.create_consent_grant(grant)
+    body = json.loads(session.calls[0][2]["data"])
+    assert body["scope"] == ["MARKETING", "ANALYTICS"]
+    assert body["policyUrl"] == "https://example/policy"
+    assert body["policyHash"] == "abc"
+
+
+def test_get_consent_history_uses_subject_query_param(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"entries": []}}))
+    client.get_consent_history("subq")
+    _, url, kw = session.calls[0]
+    assert url.endswith("/api/privacy/consent/history")
+    assert kw["params"] == {"subject": "subq"}
+
+
+def test_get_restrictions_path_segment(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"restrictedUses": []}}))
+    client.get_restrictions_for_subject("subq")
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/privacy/restrictions/subq")
+
+
+def test_discover_endpoints_use_v2_prefix(session, client):
+    for _ in range(5):
+        session.queue(_FakeResponse(payload={"success": True, "data": {}}))
+    client.discover_domain("foo")
+    client.discover_node("nodeq")
+    client.discover_operator("opq")
+    client.discover_quids()
+    client.discover_trusted_quids()
+    paths = [u for _, u, _ in session.calls]
+    assert paths[0].endswith("/api/v2/discovery/domain/foo")
+    assert paths[1].endswith("/api/v2/discovery/node/nodeq")
+    assert paths[2].endswith("/api/v2/discovery/operator/opq")
+    assert paths[3].endswith("/api/v2/discovery/quids")
+    assert paths[4].endswith("/api/v2/discovery/trusted-quids")
+
+
+def test_submit_dns_claim_camel_cases(session, client):
+    from quidnug.types import DNSClaim
+
+    session.queue(_FakeResponse(payload={"success": True, "data": {"id": "tx"}}))
+    claim = DNSClaim(
+        domain="example.com",
+        owner_quid="own",
+        root_quid="root",
+        nonce=1,
+        requested_valid_until=12345,
+        payment_method="stripe",
+        payment_reference="ref",
+        contact_email="a@b",
+    )
+    client.submit_dns_claim(claim)
+    _, url, kw = session.calls[0]
+    assert url.endswith("/api/v2/dns/claim")
+    body = json.loads(kw["data"])
+    assert body["domain"] == "example.com"
+    assert body["ownerQuid"] == "own"
+    assert body["rootQuid"] == "root"
+    assert body["requestedValidUntil"] == 12345
+    assert body["paymentMethod"] == "stripe"
+
+
+def test_resolve_dns_record_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {}}))
+    client.resolve_dns_record("example.com", "A")
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/v2/dns/resolve/example.com/A")

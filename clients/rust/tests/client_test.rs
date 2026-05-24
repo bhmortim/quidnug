@@ -204,3 +204,176 @@ async fn wait_for_identity_respects_deadline() {
         s
     );
 }
+
+// --- Coverage tests for the v1 + v2 surface added in the audit sweep ----
+
+#[tokio::test]
+async fn peers_hits_peers_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/peers"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "peers": [], "count": 0 }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    let r = client.peers().await.unwrap();
+    assert_eq!(r.get("count").unwrap().as_u64().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn get_peer_returns_none_on_peer_not_found() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/peers/nodex"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false, "error": { "code": "PEER_NOT_FOUND", "message": "n/a" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    assert!(client.get_peer("nodex").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn top_domains_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/domains/top"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": []
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    client.top_domains().await.unwrap();
+}
+
+#[tokio::test]
+async fn query_domain_validates_query_type() {
+    let server = MockServer::start().await;
+    let client = Client::new(&server.uri()).unwrap();
+    let err = client.query_domain("d", "bogus", "x").await.unwrap_err();
+    assert!(matches!(err, Error::Validation(_)));
+}
+
+#[tokio::test]
+async fn audit_endpoints_work() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/audit/head"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "height": 0 }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/audit/entry/999"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "success": false, "error": { "code": "NOT_FOUND" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    client.audit_head().await.unwrap();
+    assert!(client.audit_entry(999).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn moderation_action_post() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/moderation/actions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "id": "tx" }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    let action = json!({
+        "moderatorQuid": "mod",
+        "targetType": "QUID",
+        "targetId": "t",
+        "scope": "hide",
+        "reasonCode": "spam",
+        "nonce": 1,
+    });
+    let r = client.create_moderation_action(&action).await.unwrap();
+    assert_eq!(r.get("id").unwrap().as_str().unwrap(), "tx");
+}
+
+#[tokio::test]
+async fn dsr_post_get_round_trip() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/privacy/dsr"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "id": "tx" }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/privacy/dsr/tx"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "request": {} }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    client
+        .create_dsr(&json!({"subjectQuid": "s", "requestType": "ERASURE", "nonce": 1}))
+        .await
+        .unwrap();
+    let _ = client.get_dsr_status("tx").await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn discovery_endpoints_hit_v2_prefix() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/discovery/domain/foo"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": {}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/discovery/trusted-quids"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": {}
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    client.discover_domain("foo").await.unwrap();
+    client.discover_trusted_quids().await.unwrap();
+}
+
+#[tokio::test]
+async fn dns_claim_and_resolve() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/v2/dns/claim"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "id": "tx" }
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v2/dns/resolve/example.com/A"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "success": true, "data": { "records": [] }
+        })))
+        .mount(&server)
+        .await;
+    let client = Client::new(&server.uri()).unwrap();
+    let claim = json!({
+        "domain": "example.com",
+        "ownerQuid": "own",
+        "rootQuid": "root",
+        "nonce": 1,
+    });
+    client.submit_dns_claim(&claim).await.unwrap();
+    client.resolve_dns_record("example.com", "A").await.unwrap();
+}

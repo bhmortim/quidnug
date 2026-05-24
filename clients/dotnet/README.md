@@ -69,15 +69,25 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Health / info | `HealthAsync`, `InfoAsync`, `NodesAsync`, `PeersAsync`, `GetPeerAsync` |
+| Quids | `GenerateQuidAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync`, `QueryRelationalTrustAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Storage | `IpfsPinAsync`, `IpfsGetAsync` |
+| Blocks | `BlocksAsync`, `GetTentativeBlocksAsync`, `PendingTransactionsAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `TopDomainsAsync`, `QueryDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| Gossip / advertisements | `SendDomainGossipAsync`, `CreateNodeAdvertisementAsync` |
+| Guardians (QDP-0002 / 0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003 / 0005) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync`, `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Discovery (QDP-0014) | `DiscoverDomainAsync`, `DiscoverNodeAsync`, `DiscoverOperatorAsync`, `DiscoverQuidsAsync`, `DiscoverTrustedQuidsAsync` |
+| Moderation (QDP-0015) | `CreateModerationActionAsync`, `GetModerationActionsAsync` |
+| Privacy (QDP-0017) | `CreateDSRAsync`, `GetDSRStatusAsync`, `CreateConsentGrantAsync`, `CreateConsentWithdrawAsync`, `GetConsentHistoryAsync`, `CreateProcessingRestrictionAsync`, `GetRestrictionsForSubjectAsync`, `CreateDSRComplianceAsync` |
+| Audit (QDP-0018) | `AuditHeadAsync`, `AuditEntriesAsync`, `AuditEntryAsync` |
+| DNS attestation (QDP-0023) | `SubmitDNSClaimAsync`, `SubmitDNSChallengeAsync`, `SubmitDNSAttestationAsync`, `SubmitDNSRenewalAsync`, `SubmitDNSRevocationAsync`, `SubmitAuthorityDelegateAsync`, `SubmitAuthorityDelegateRevocationAsync`, `GetDNSAttestationsAsync`, `GetDNSAttestationsWeightedAsync`, `ResolveDNSRecordAsync` |
 
 ### `CanonicalBytes` / `Merkle`
 

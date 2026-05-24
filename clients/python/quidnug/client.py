@@ -52,8 +52,22 @@ from quidnug.errors import (
 from quidnug.types import (
     Anchor,
     AnchorGossipMessage,
+    AuditEntry,
+    AuditHead,
+    AuthorityDelegate,
+    AuthorityDelegateRevocation,
     Block,
+    ConsentGrant,
+    ConsentWithdraw,
+    DNSAttestation,
+    DNSChallenge,
+    DNSClaim,
+    DNSRenewal,
+    DNSRevocation,
+    DSRCompliance,
+    DataSubjectRequest,
     DomainFingerprint,
+    DomainGossip,
     Event,
     ForkBlock,
     GuardianRecoveryCommit,
@@ -63,8 +77,11 @@ from quidnug.types import (
     GuardianSet,
     GuardianSetUpdate,
     IdentityRecord,
+    ModerationAction,
+    NodeAdvertisement,
     NonceSnapshot,
     OwnershipStake,
+    ProcessingRestriction,
     Title,
     TrustEdge,
     TrustResult,
@@ -93,12 +110,25 @@ _UNAVAILABLE_CODES = frozenset({"FEATURE_NOT_ACTIVE", "NOT_READY", "BOOTSTRAPPIN
 # --- Helpers ---------------------------------------------------------------
 
 
+def _to_camel(name: str) -> str:
+    """Convert snake_case to camelCase. Keys already in camelCase pass through."""
+    if "_" not in name:
+        return name
+    parts = name.split("_")
+    return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
+
+
 def _dc(obj: Any) -> Any:
-    """Recursively convert dataclasses and enums to plain dicts."""
+    """Recursively convert dataclasses (and nested dicts/lists) to plain
+    JSON-ready dicts with camelCase keys matching the Go server tags.
+
+    Keys that are already camelCase (or have no underscores) pass through
+    unchanged, so callers can mix raw dicts with dataclasses freely.
+    """
     if hasattr(obj, "__dataclass_fields__"):
-        return {k: _dc(v) for k, v in asdict(obj).items()}
+        return {_to_camel(k): _dc(v) for k, v in asdict(obj).items()}
     if isinstance(obj, dict):
-        return {k: _dc(v) for k, v in obj.items()}
+        return {(_to_camel(k) if isinstance(k, str) else k): _dc(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_dc(v) for v in obj]
     return obj
@@ -299,6 +329,41 @@ class QuidnugClient:
     def nodes(self, *, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
         """GET /api/nodes — list known peers."""
         return self._request("GET", "nodes", params=_strip_none({"limit": limit, "offset": offset}))
+
+    def peers(self) -> Dict[str, Any]:
+        """GET /api/peers — peer scoreboard snapshot.
+
+        Returns a dict with ``peers`` (list of per-quid score records)
+        and ``count``. If the node hasn't enabled scoring the dict is
+        ``{"peers": [], "note": "scoring disabled"}``.
+        """
+        return self._request("GET", "peers")
+
+    def get_peer(self, node_quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/peers/{nodeQuid} — single peer's full score record.
+
+        Returns ``None`` if the node has no record for ``node_quid``.
+        """
+        if not node_quid:
+            raise ValidationError("node_quid is required")
+        try:
+            return self._request("GET", f"peers/{quote(node_quid, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "PEER_NOT_FOUND":
+                return None
+            raise
+
+    def generate_quid(self, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """POST /api/quids — ask the node to generate a fresh keypair.
+
+        Returns ``{quidId, publicKey, created}``. Note: the private key
+        is returned **only** when the server is running in trusted /
+        local mode; production deployments should generate keys with
+        :class:`quidnug.Quid.generate` client-side and never round-trip
+        them through the API.
+        """
+        body = {"metadata": metadata or {}}
+        return self._request("POST", "quids", body=body)
 
     # --- Identity ----------------------------------------------------------
 
@@ -858,10 +923,331 @@ class QuidnugClient:
         )
 
     def get_node_domains(self) -> Dict[str, Any]:
+        """GET /api/node/domains — domains this node currently serves."""
         return self._request("GET", "node/domains")
 
     def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
+        """POST /api/node/domains — replace the node's managed-domains list."""
         return self._request("POST", "node/domains", body={"managedDomains": domains})
+
+    # --- Domain queries + top domains -------------------------------------
+
+    def top_domains(self) -> Dict[str, Any]:
+        """GET /api/domains/top — top-N most-active domains.
+
+        Returns ``{domains: [...], updatedAt: int}``.
+        """
+        return self._request("GET", "domains/top")
+
+    def query_domain(
+        self,
+        domain: str,
+        *,
+        query_type: str,
+        param: str,
+    ) -> Dict[str, Any]:
+        """GET /api/domains/{name}/query — query a domain registry directly.
+
+        ``query_type`` is one of ``"identity"``, ``"trust"``, ``"title"``.
+        ``param`` is the lookup key. For trust queries use the
+        ``"observer:target"`` format.
+        """
+        if not domain:
+            raise ValidationError("domain is required")
+        if query_type not in ("identity", "trust", "title"):
+            raise ValidationError("query_type must be 'identity', 'trust', or 'title'")
+        path = f"domains/{quote(domain, safe='')}/query"
+        return self._request(
+            "GET",
+            path,
+            params={"type": query_type, "param": param},
+        )
+
+    # --- Domain gossip -----------------------------------------------------
+
+    def send_domain_gossip(self, gossip: "DomainGossip") -> Dict[str, Any]:
+        """POST /api/gossip/domains — push a domain-gossip message.
+
+        Returns ``{status: "accepted", nodeId: ...}`` on success.
+        """
+        return self._request("POST", "gossip/domains", body=_dc(gossip))
+
+    # --- Node advertisements (QDP-0014) ------------------------------------
+
+    def create_node_advertisement(
+        self, advertisement: "NodeAdvertisement"
+    ) -> Dict[str, Any]:
+        """POST /api/node-advertisements — publish a signed node ad.
+
+        Operators use this to advertise the endpoints and capabilities
+        of a node they run, so other nodes can route traffic to it.
+        """
+        return self._request("POST", "node-advertisements", body=_dc(advertisement))
+
+    # --- Moderation (QDP-0015) ---------------------------------------------
+
+    def create_moderation_action(
+        self, action: "ModerationAction"
+    ) -> Dict[str, Any]:
+        """POST /api/moderation/actions — submit a signed moderation action.
+
+        The action must be signed by ``action.moderator_quid``; the
+        node will reject it otherwise.
+        """
+        return self._request("POST", "moderation/actions", body=_dc(action))
+
+    def get_moderation_actions(
+        self, *, target_type: str, target_id: str
+    ) -> Dict[str, Any]:
+        """GET /api/moderation/actions/{targetType}/{targetId}.
+
+        Returns every moderation action recorded against the target,
+        plus the current ``effectiveScope`` (the resolved decision).
+        """
+        if not target_type or not target_id:
+            raise ValidationError("target_type and target_id are required")
+        path = (
+            f"moderation/actions/{quote(target_type, safe='')}/"
+            f"{quote(target_id, safe='')}"
+        )
+        return self._request("GET", path)
+
+    # --- Privacy (QDP-0017) ------------------------------------------------
+
+    def create_dsr(self, request: "DataSubjectRequest") -> Dict[str, Any]:
+        """POST /api/privacy/dsr — submit a Data Subject Request.
+
+        Self-signed by the subject quid. The operator's job is to
+        eventually publish a ``DSRComplianceTransaction`` against
+        the returned ``id``.
+        """
+        return self._request("POST", "privacy/dsr", body=_dc(request))
+
+    def get_dsr_status(self, request_tx_id: str) -> Optional[Dict[str, Any]]:
+        """GET /api/privacy/dsr/{requestTxId}.
+
+        Returns ``{request, compliance?}`` or ``None`` if the request
+        id is unknown. ``compliance`` is present only when the
+        operator has published a compliance attestation.
+        """
+        if not request_tx_id:
+            raise ValidationError("request_tx_id is required")
+        try:
+            return self._request(
+                "GET", f"privacy/dsr/{quote(request_tx_id, safe='')}"
+            )
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    def create_consent_grant(self, grant: "ConsentGrant") -> Dict[str, Any]:
+        """POST /api/privacy/consent/grants — record an opt-in.
+
+        The grant pins the policy text via ``policy_hash`` so future
+        audits can verify what the subject actually consented to.
+        """
+        return self._request("POST", "privacy/consent/grants", body=_dc(grant))
+
+    def create_consent_withdraw(
+        self, withdraw: "ConsentWithdraw"
+    ) -> Dict[str, Any]:
+        """POST /api/privacy/consent/withdraws — revoke a prior grant.
+
+        ``withdraw.withdraws_grant_tx_id`` MUST reference an existing
+        accepted grant. Honored by the serving layer immediately.
+        """
+        return self._request(
+            "POST", "privacy/consent/withdraws", body=_dc(withdraw)
+        )
+
+    def get_consent_history(self, subject_quid: str) -> Dict[str, Any]:
+        """GET /api/privacy/consent/history?subject={quid}.
+
+        Returns every consent grant for ``subject_quid`` and whether
+        it was withdrawn.
+        """
+        if not subject_quid:
+            raise ValidationError("subject_quid is required")
+        return self._request(
+            "GET",
+            "privacy/consent/history",
+            params={"subject": subject_quid},
+        )
+
+    def create_processing_restriction(
+        self, restriction: "ProcessingRestriction"
+    ) -> Dict[str, Any]:
+        """POST /api/privacy/restrictions — narrow allowed processing.
+
+        Maps to the GDPR Art. 18 right to restrict processing without
+        deleting the underlying records.
+        """
+        return self._request(
+            "POST", "privacy/restrictions", body=_dc(restriction)
+        )
+
+    def get_restrictions_for_subject(self, subject_quid: str) -> Dict[str, Any]:
+        """GET /api/privacy/restrictions/{subjectQuid}.
+
+        Returns the union of currently-active restricted uses.
+        """
+        if not subject_quid:
+            raise ValidationError("subject_quid is required")
+        return self._request(
+            "GET", f"privacy/restrictions/{quote(subject_quid, safe='')}"
+        )
+
+    def create_dsr_compliance(
+        self, compliance: "DSRCompliance"
+    ) -> Dict[str, Any]:
+        """POST /api/privacy/compliance — operator's compliance attestation.
+
+        Signed by the operator quid after a DSR workflow completes
+        (manifest generated, erasure published, etc.).
+        """
+        return self._request(
+            "POST", "privacy/compliance", body=_dc(compliance)
+        )
+
+    # --- Audit log (QDP-0018) ---------------------------------------------
+
+    def audit_head(self) -> "AuditHead":
+        """GET /api/audit/head — operator's current audit head.
+
+        Returns the hash, height, and sequence of the most recent
+        entry. On an empty log returns ``height=0`` with the zero
+        prev-hash.
+        """
+        data = self._request("GET", "audit/head")
+        return _audit_head_from_wire(data)
+
+    def audit_entries(
+        self,
+        *,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> Tuple[List["AuditEntry"], Dict[str, Any]]:
+        """GET /api/audit/entries?since=...&limit=...
+
+        Returns ``(entries, info)`` where ``info`` carries the
+        ``operatorQuid`` and current ``height``. ``since=-1`` (the
+        default at the server) returns from sequence 0.
+        """
+        params = _strip_none({"since": since, "limit": limit})
+        data = self._request("GET", "audit/entries", params=params)
+        raw = data.get("entries") or []
+        entries = [_audit_entry_from_wire(e) for e in raw] if isinstance(raw, list) else []
+        info = {
+            "operatorQuid": data.get("operatorQuid"),
+            "height": data.get("height"),
+        }
+        return entries, info
+
+    def audit_entry(self, sequence: int) -> Optional["AuditEntry"]:
+        """GET /api/audit/entry/{sequence} — one entry by sequence number.
+
+        Returns ``None`` if the sequence is out of range.
+        """
+        if sequence < 0:
+            raise ValidationError("sequence must be non-negative")
+        try:
+            data = self._request("GET", f"audit/entry/{sequence}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+        return _audit_entry_from_wire(data)
+
+    # --- Discovery (QDP-0014) ---------------------------------------------
+
+    def discover_domain(self, name: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/domain/{name} — domain consortium snapshot."""
+        if not name:
+            raise ValidationError("name is required")
+        return self._request("GET", f"v2/discovery/domain/{quote(name, safe='')}")
+
+    def discover_node(self, quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/node/{quid} — current endpoints for a node."""
+        if not quid:
+            raise ValidationError("quid is required")
+        return self._request("GET", f"v2/discovery/node/{quote(quid, safe='')}")
+
+    def discover_operator(self, quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/operator/{quid} — all nodes for one operator."""
+        if not quid:
+            raise ValidationError("quid is required")
+        return self._request("GET", f"v2/discovery/operator/{quote(quid, safe='')}")
+
+    def discover_quids(self) -> Dict[str, Any]:
+        """GET /api/v2/discovery/quids — every quid known to this node."""
+        return self._request("GET", "v2/discovery/quids")
+
+    def discover_trusted_quids(self) -> Dict[str, Any]:
+        """GET /api/v2/discovery/trusted-quids — quids trusted above threshold."""
+        return self._request("GET", "v2/discovery/trusted-quids")
+
+    # --- DNS attestation (QDP-0023) ---------------------------------------
+
+    def submit_dns_claim(self, claim: "DNSClaim") -> Dict[str, Any]:
+        """POST /api/v2/dns/claim — declare intent to attest a DNS domain."""
+        return self._request("POST", "v2/dns/claim", body=_dc(claim))
+
+    def submit_dns_challenge(self, challenge: "DNSChallenge") -> Dict[str, Any]:
+        """POST /api/v2/dns/challenge — root's challenge back to the claimant."""
+        return self._request("POST", "v2/dns/challenge", body=_dc(challenge))
+
+    def submit_dns_attestation(self, attestation: "DNSAttestation") -> Dict[str, Any]:
+        """POST /api/v2/dns/attestation — root signs the verified claim."""
+        return self._request("POST", "v2/dns/attestation", body=_dc(attestation))
+
+    def submit_dns_renewal(self, renewal: "DNSRenewal") -> Dict[str, Any]:
+        """POST /api/v2/dns/renewal — extend an attestation's validity."""
+        return self._request("POST", "v2/dns/renewal", body=_dc(renewal))
+
+    def submit_dns_revocation(self, revocation: "DNSRevocation") -> Dict[str, Any]:
+        """POST /api/v2/dns/revocation — revoke a DNS attestation."""
+        return self._request("POST", "v2/dns/revocation", body=_dc(revocation))
+
+    def submit_authority_delegate(
+        self, delegate: "AuthorityDelegate"
+    ) -> Dict[str, Any]:
+        """POST /api/v2/dns/delegate — delegate DNS authority to another quid."""
+        return self._request("POST", "v2/dns/delegate", body=_dc(delegate))
+
+    def submit_authority_delegate_revocation(
+        self, revocation: "AuthorityDelegateRevocation"
+    ) -> Dict[str, Any]:
+        """POST /api/v2/dns/delegate-revocation — revoke a delegation."""
+        return self._request(
+            "POST", "v2/dns/delegate-revocation", body=_dc(revocation)
+        )
+
+    def get_dns_attestations(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/attestations/{domain} — all attestations for a domain."""
+        if not domain:
+            raise ValidationError("domain is required")
+        return self._request("GET", f"v2/dns/attestations/{quote(domain, safe='')}")
+
+    def get_dns_attestations_weighted(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/attestations/{domain}/weighted — trust-weighted view."""
+        if not domain:
+            raise ValidationError("domain is required")
+        return self._request(
+            "GET", f"v2/dns/attestations/{quote(domain, safe='')}/weighted"
+        )
+
+    def resolve_dns_record(self, domain: str, record_type: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/resolve/{domain}/{recordType} — resolve a record.
+
+        Honors weighted attestations and trust thresholds.
+        """
+        if not domain or not record_type:
+            raise ValidationError("domain and record_type are required")
+        return self._request(
+            "GET",
+            f"v2/dns/resolve/{quote(domain, safe='')}/{quote(record_type, safe='')}",
+        )
 
 
 # --- Wire -> dataclass decoders -------------------------------------------
@@ -1004,6 +1390,28 @@ def _nonce_snapshot_from_wire(d: Dict[str, Any]) -> NonceSnapshot:
         producer_quid=d.get("producerQuid") or d.get("producer_quid") or "",
         signature=d.get("signature", ""),
         schema_version=int(d.get("schemaVersion", d.get("schema_version", 1))),
+    )
+
+
+def _audit_head_from_wire(d: Dict[str, Any]) -> AuditHead:
+    return AuditHead(
+        operator_quid=d.get("operatorQuid", ""),
+        height=int(d.get("height", 0)),
+        head_hash=d.get("headHash", ""),
+        head_sequence=d.get("headSequence"),
+        head_timestamp=d.get("headTimestamp"),
+    )
+
+
+def _audit_entry_from_wire(d: Dict[str, Any]) -> AuditEntry:
+    return AuditEntry(
+        sequence=int(d.get("sequence", 0)),
+        timestamp=int(d.get("timestamp", 0)),
+        hash=d.get("hash", ""),
+        prev_hash=d.get("prevHash") or d.get("prev_hash") or "",
+        operator_quid=d.get("operatorQuid") or d.get("operator_quid") or "",
+        event_type=d.get("eventType") or d.get("event_type") or "",
+        payload=d.get("payload") or {},
     )
 
 
