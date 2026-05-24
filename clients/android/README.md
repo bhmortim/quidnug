@@ -94,9 +94,13 @@ lifecycleScope.launch {
 }
 ```
 
-Full protocol surface is available via `client.client` (the
-underlying Java `QuidnugClient`) — every Java method works
-unchanged.
+Full protocol surface is available as suspending extension
+functions in `AndroidClientExtensions.kt` — `peers`, `auditHead`,
+`createModerationAction`, `createDSR`, `discoverDomain`,
+`submitDNSClaim`, `ipfsPin`, and so on — each one dispatching to
+`Dispatchers.IO`. The wrapped Java instance is still reachable via
+`client.client` for any surface not yet exposed as a Kotlin
+suspending function.
 
 ### `QuidVault`
 
@@ -127,7 +131,7 @@ fun TrustBadge(observer: String, target: String, client: QuidnugAndroidClient) {
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0010, 0014, 0015, 0017, 0018, 0023 |
 
 ## License
 

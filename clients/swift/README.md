@@ -73,15 +73,25 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health / info | `health`, `info`, `nodes`, `peers`, `getPeer` |
+| Quids | `generateQuid` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryRelationalTrust`, `queryTrustRegistry` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Storage | `ipfsPin`, `ipfsGet` |
+| Blocks | `blocks`, `getTentativeBlocks`, `pendingTransactions` |
+| Domains | `listDomains`, `registerDomain`, `topDomains`, `queryDomain`, `getNodeDomains`, `updateNodeDomains` |
+| Gossip / advertisements | `sendDomainGossip`, `createNodeAdvertisement` |
+| Guardians (QDP-0002 / 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003 / 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Discovery (QDP-0014) | `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
+| Moderation (QDP-0015) | `createModerationAction`, `getModerationActions` |
+| Privacy (QDP-0017) | `createDSR`, `getDSRStatus`, `createConsentGrant`, `createConsentWithdraw`, `getConsentHistory`, `createProcessingRestriction`, `getRestrictionsForSubject`, `createDSRCompliance` |
+| Audit (QDP-0018) | `auditHead`, `auditEntries`, `auditEntry` |
+| DNS attestation (QDP-0023) | `submitDNSClaim`, `submitDNSChallenge`, `submitDNSAttestation`, `submitDNSRenewal`, `submitDNSRevocation`, `submitAuthorityDelegate`, `submitAuthorityDelegateRevocation`, `getDNSAttestations`, `getDNSAttestationsWeighted`, `resolveDNSRecord` |
 
 ### `CanonicalBytes` / `Merkle`
 

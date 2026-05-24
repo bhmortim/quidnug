@@ -300,6 +300,235 @@ class TrustResult:
     domain: str
 
 
+# --- Moderation (QDP-0015) -------------------------------------------------
+
+
+@dataclass
+class ModerationAction:
+    moderator_quid: str
+    target_type: str
+    target_id: str
+    scope: str
+    reason_code: str
+    nonce: int
+    evidence_url: Optional[str] = None
+    annotation_text: Optional[str] = None
+    supersedes_tx_id: Optional[str] = None
+    effective_from: Optional[int] = None
+    effective_until: Optional[int] = None
+    do_not_federate: bool = False
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+# --- Privacy (QDP-0017) ----------------------------------------------------
+
+
+@dataclass
+class DataSubjectRequest:
+    subject_quid: str
+    request_type: str
+    nonce: int
+    controller_quid: Optional[str] = None
+    request_details: Optional[str] = None
+    contact_email: Optional[str] = None
+    jurisdiction: Optional[str] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class ConsentGrant:
+    subject_quid: str
+    controller_quid: str
+    scope: List[str]
+    nonce: int
+    policy_url: Optional[str] = None
+    policy_hash: Optional[str] = None
+    effective_until: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class ConsentWithdraw:
+    subject_quid: str
+    withdraws_grant_tx_id: str
+    nonce: int
+    reason: Optional[str] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class ProcessingRestriction:
+    subject_quid: str
+    restricted_uses: List[str]
+    nonce: int
+    controller_quid: Optional[str] = None
+    reason: Optional[str] = None
+    effective_until: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class DSRCompliance:
+    request_tx_id: str
+    request_type: str
+    operator_quid: str
+    completed_at: int
+    actions_category: str
+    nonce: int
+    carve_outs_applied: List[str] = field(default_factory=list)
+    manifest_url: Optional[str] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+# --- Audit log (QDP-0018) --------------------------------------------------
+
+
+@dataclass
+class AuditHead:
+    operator_quid: str
+    height: int
+    head_hash: str
+    head_sequence: Optional[int] = None
+    head_timestamp: Optional[int] = None
+
+
+@dataclass
+class AuditEntry:
+    sequence: int
+    timestamp: int
+    hash: str
+    prev_hash: str
+    operator_quid: str
+    event_type: str
+    payload: Dict[str, Any] = field(default_factory=dict)
+
+
+# --- Node advertisements (QDP-0014) ---------------------------------------
+
+
+@dataclass
+class NodeEndpoint:
+    kind: str
+    address: str
+    port: Optional[int] = None
+
+
+@dataclass
+class NodeCapabilities:
+    supports_ipfs: bool = False
+    supports_gossip: bool = False
+    supports_dns_attestation: bool = False
+    max_block_size: Optional[int] = None
+
+
+@dataclass
+class NodeAdvertisement:
+    node_quid: str
+    operator_quid: str
+    endpoints: List[NodeEndpoint]
+    capabilities: NodeCapabilities
+    protocol_version: str
+    expires_at: int
+    advertisement_nonce: int
+    supported_domains: List[str] = field(default_factory=list)
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+# --- Domain gossip ---------------------------------------------------------
+
+
+@dataclass
+class DomainGossip:
+    domain: str
+    node_id: str
+    timestamp: int
+    payload: Dict[str, Any] = field(default_factory=dict)
+    signature: str = ""
+
+
+# --- DNS attestation (QDP-0023) -------------------------------------------
+
+
+@dataclass
+class DNSClaim:
+    domain: str
+    owner_quid: str
+    root_quid: str
+    nonce: int
+    requested_valid_until: Optional[int] = None
+    payment_method: Optional[str] = None
+    payment_reference: Optional[str] = None
+    contact_email: Optional[str] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class DNSChallenge:
+    claim_ref: str
+    nonce: str
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class DNSAttestation:
+    domain: str
+    owner_quid: str
+    root_quid: str
+    claim_ref: str
+    nonce: int
+    records: Dict[str, Any] = field(default_factory=dict)
+    valid_until: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class DNSRenewal:
+    attestation_ref: str
+    nonce: int
+    requested_valid_until: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class DNSRevocation:
+    attestation_ref: str
+    reason: str
+    nonce: int
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class AuthorityDelegate:
+    root_quid: str
+    delegate_quid: str
+    domain_scope: str
+    nonce: int
+    valid_until: Optional[int] = None
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
+@dataclass
+class AuthorityDelegateRevocation:
+    delegate_ref: str
+    reason: str
+    nonce: int
+    timestamp: Optional[int] = None
+    signature: str = ""
+
+
 __all__ = [
     "TrustEdge",
     "IdentityRecord",
@@ -325,4 +554,23 @@ __all__ = [
     "ForkSig",
     "ForkBlock",
     "TrustResult",
+    "ModerationAction",
+    "DataSubjectRequest",
+    "ConsentGrant",
+    "ConsentWithdraw",
+    "ProcessingRestriction",
+    "DSRCompliance",
+    "AuditHead",
+    "AuditEntry",
+    "NodeEndpoint",
+    "NodeCapabilities",
+    "NodeAdvertisement",
+    "DomainGossip",
+    "DNSClaim",
+    "DNSChallenge",
+    "DNSAttestation",
+    "DNSRenewal",
+    "DNSRevocation",
+    "AuthorityDelegate",
+    "AuthorityDelegateRevocation",
 ]

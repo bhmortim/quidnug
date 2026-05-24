@@ -699,6 +699,127 @@ declare class QuidnugClient {
    * @returns List of nodes managing the domain
    */
   findNodesForDomain(domain: string): Promise<Node[]>;
+
+  // --- Event streams ---------------------------------------------------
+
+  /** Submit an EVENT transaction (the signer must own `subjectId`). */
+  createEventTransaction(
+    params: {
+      subjectId: string;
+      subjectType: 'QUID' | 'TITLE';
+      eventType: string;
+      domain?: string;
+      payload?: Record<string, unknown>;
+      payloadCid?: string;
+      sequence?: number;
+    },
+    quid: Quid,
+  ): Promise<APIResponse<unknown>>;
+
+  /** GET /api/streams/{subjectId} — event stream metadata. */
+  getEventStream(subjectId: string, domain?: string): Promise<APIResponse<unknown> | null>;
+
+  /** GET /api/streams/{subjectId}/events — events with optional pagination. */
+  getStreamEvents(
+    subjectId: string,
+    options?: { domain?: string; limit?: number; offset?: number },
+  ): Promise<PaginatedResponse<unknown>>;
+
+  // --- IPFS ------------------------------------------------------------
+
+  /** POST /api/ipfs/pin — pin raw content; returns the CID. */
+  pinToIPFS(content: ArrayBuffer | Uint8Array | string): Promise<{ cid: string }>;
+
+  /** GET /api/ipfs/{cid} — fetch the pinned bytes. */
+  getFromIPFS(cid: string): Promise<ArrayBuffer>;
+
+  // --- Health / info / peers ------------------------------------------
+
+  /** GET /api/health — is the node up. */
+  getHealth(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/info — node identity, version, features, domains. */
+  getInfo(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/peers — peer scoreboard snapshot. */
+  getPeers(): Promise<{ peers: unknown[]; count: number; note?: string }>;
+
+  /** GET /api/peers/{nodeQuid} — single peer's record, or null. */
+  getPeer(nodeQuid: string): Promise<unknown | null>;
+
+  // --- Blocks + domains -----------------------------------------------
+
+  /** GET /api/blocks/tentative/{domain}. */
+  getTentativeBlocks(domain: string): Promise<APIResponse<unknown>>;
+
+  /** GET /api/domains — every domain this node knows about. */
+  listDomains(): Promise<APIResponse<unknown>>;
+
+  /** POST /api/domains — register a trust domain. */
+  registerDomain(domain: string, attrs?: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/domains/top — top-N most-active domains. */
+  getTopDomains(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/node/domains — domains this node currently serves. */
+  getNodeDomains(): Promise<{ managedDomains: string[] }>;
+
+  /** POST /api/node/domains — replace this node's managed-domains list. */
+  updateNodeDomains(domains: string[]): Promise<APIResponse<unknown>>;
+
+  /** GET /api/trust/edges/{quidId} — direct trust edges for one quid. */
+  getTrustEdges(quidId: string): Promise<unknown[]>;
+
+  /** POST /api/gossip/domains — push a domain-gossip message. */
+  sendDomainGossip(gossip: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** POST /api/node-advertisements — publish a signed node advertisement. */
+  createNodeAdvertisement(advertisement: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  // --- Moderation (QDP-0015) -------------------------------------------
+
+  /** POST /api/moderation/actions — submit a signed moderation action. */
+  createModerationAction(action: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/moderation/actions/{targetType}/{targetId}. */
+  getModerationActions(targetType: string, targetId: string): Promise<APIResponse<unknown>>;
+
+  // --- Privacy (QDP-0017) ----------------------------------------------
+
+  /** POST /api/privacy/dsr — submit a Data Subject Request. */
+  createDSR(request: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/privacy/dsr/{requestTxId} — status of a DSR or null on 404. */
+  getDSRStatus(requestTxId: string): Promise<APIResponse<unknown> | null>;
+
+  /** POST /api/privacy/consent/grants — record an opt-in. */
+  createConsentGrant(grant: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** POST /api/privacy/consent/withdraws — revoke a prior grant. */
+  createConsentWithdraw(withdraw: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/privacy/consent/history?subject={quid}. */
+  getConsentHistory(subjectQuid: string): Promise<APIResponse<unknown>>;
+
+  /** POST /api/privacy/restrictions — narrow allowed processing. */
+  createProcessingRestriction(restriction: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/privacy/restrictions/{subjectQuid}. */
+  getRestrictionsForSubject(subjectQuid: string): Promise<APIResponse<unknown>>;
+
+  /** POST /api/privacy/compliance — operator's compliance attestation. */
+  createDSRCompliance(compliance: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  // --- Audit log (QDP-0018) -------------------------------------------
+
+  /** GET /api/audit/head — operator's current audit head. */
+  getAuditHead(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/audit/entries — entries after a cursor. */
+  getAuditEntries(opts?: { since?: number; limit?: number }): Promise<APIResponse<unknown>>;
+
+  /** GET /api/audit/entry/{sequence} — one entry by sequence, or null. */
+  getAuditEntry(sequence: number): Promise<APIResponse<unknown> | null>;
 }
 
 // ============================================================================

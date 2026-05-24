@@ -282,5 +282,104 @@ function _sortKeysDeep(v) {
   return v;
 }
 
+// ---------------------------------------------------------------------------
+// Discovery (QDP-0014)
+// ---------------------------------------------------------------------------
+
+/** GET /api/v2/discovery/domain/{name} — domain consortium snapshot. */
+QuidnugClient.prototype.discoverDomain = async function (name) {
+  if (!name) throw new Error("name required");
+  return _getJson(this, `v2/discovery/domain/${encodeURIComponent(name)}`);
+};
+
+/** GET /api/v2/discovery/node/{quid} — endpoints currently advertised by a node. */
+QuidnugClient.prototype.discoverNode = async function (quid) {
+  if (!quid) throw new Error("quid required");
+  return _getJson(this, `v2/discovery/node/${encodeURIComponent(quid)}`);
+};
+
+/** GET /api/v2/discovery/operator/{quid} — every node run by one operator. */
+QuidnugClient.prototype.discoverOperator = async function (quid) {
+  if (!quid) throw new Error("quid required");
+  return _getJson(this, `v2/discovery/operator/${encodeURIComponent(quid)}`);
+};
+
+/** GET /api/v2/discovery/quids — every quid known to this node. */
+QuidnugClient.prototype.discoverQuids = async function () {
+  return _getJson(this, "v2/discovery/quids");
+};
+
+/** GET /api/v2/discovery/trusted-quids — quids trusted above the threshold. */
+QuidnugClient.prototype.discoverTrustedQuids = async function () {
+  return _getJson(this, "v2/discovery/trusted-quids");
+};
+
+// ---------------------------------------------------------------------------
+// DNS attestation (QDP-0023)
+// ---------------------------------------------------------------------------
+
+/** POST /api/v2/dns/claim — declare intent to attest a DNS domain. */
+QuidnugClient.prototype.submitDNSClaim = async function (claim) {
+  if (!claim || !claim.domain) throw new Error("domain required");
+  return _postJson(this, "v2/dns/claim", claim);
+};
+
+/** POST /api/v2/dns/challenge — root's challenge back to the claimant. */
+QuidnugClient.prototype.submitDNSChallenge = async function (challenge) {
+  if (!challenge || !challenge.claimRef) throw new Error("claimRef required");
+  return _postJson(this, "v2/dns/challenge", challenge);
+};
+
+/** POST /api/v2/dns/attestation — root signs a verified DNS claim. */
+QuidnugClient.prototype.submitDNSAttestation = async function (attestation) {
+  if (!attestation || !attestation.domain) throw new Error("domain required");
+  return _postJson(this, "v2/dns/attestation", attestation);
+};
+
+/** POST /api/v2/dns/renewal — extend an attestation's validity. */
+QuidnugClient.prototype.submitDNSRenewal = async function (renewal) {
+  if (!renewal || !renewal.attestationRef) throw new Error("attestationRef required");
+  return _postJson(this, "v2/dns/renewal", renewal);
+};
+
+/** POST /api/v2/dns/revocation — revoke a DNS attestation. */
+QuidnugClient.prototype.submitDNSRevocation = async function (revocation) {
+  if (!revocation || !revocation.attestationRef) throw new Error("attestationRef required");
+  return _postJson(this, "v2/dns/revocation", revocation);
+};
+
+/** POST /api/v2/dns/delegate — delegate DNS authority to another quid. */
+QuidnugClient.prototype.submitAuthorityDelegate = async function (delegate) {
+  if (!delegate || !delegate.rootQuid) throw new Error("rootQuid required");
+  return _postJson(this, "v2/dns/delegate", delegate);
+};
+
+/** POST /api/v2/dns/delegate-revocation — revoke a delegation. */
+QuidnugClient.prototype.submitAuthorityDelegateRevocation = async function (revocation) {
+  if (!revocation || !revocation.delegateRef) throw new Error("delegateRef required");
+  return _postJson(this, "v2/dns/delegate-revocation", revocation);
+};
+
+/** GET /api/v2/dns/attestations/{domain} — all attestations for a domain. */
+QuidnugClient.prototype.getDNSAttestations = async function (domain) {
+  if (!domain) throw new Error("domain required");
+  return _getJson(this, `v2/dns/attestations/${encodeURIComponent(domain)}`);
+};
+
+/** GET /api/v2/dns/attestations/{domain}/weighted — trust-weighted view. */
+QuidnugClient.prototype.getDNSAttestationsWeighted = async function (domain) {
+  if (!domain) throw new Error("domain required");
+  return _getJson(this, `v2/dns/attestations/${encodeURIComponent(domain)}/weighted`);
+};
+
+/** GET /api/v2/dns/resolve/{domain}/{recordType} — resolve a record. */
+QuidnugClient.prototype.resolveDNSRecord = async function (domain, recordType) {
+  if (!domain || !recordType) throw new Error("domain and recordType required");
+  return _getJson(
+    this,
+    `v2/dns/resolve/${encodeURIComponent(domain)}/${encodeURIComponent(recordType)}`,
+  );
+};
+
 export default QuidnugClient;
 export { QuidnugClient };
