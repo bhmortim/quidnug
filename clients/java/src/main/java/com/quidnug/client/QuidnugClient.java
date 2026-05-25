@@ -92,6 +92,63 @@ public final class QuidnugClient {
     public JsonNode pendingTransactions() { return doGet("transactions"); }
     public JsonNode listDomains()  { return doGet("domains"); }
 
+    /** GET /api/blocks/tentative/{domain} — pending blocks not yet sealed for a domain. */
+    public JsonNode getTentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    /** POST /api/domains — register a new trust domain. */
+    public JsonNode registerDomain(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", domain);
+        return doPost("domains", body);
+    }
+
+    /**
+     * Idempotent {@link #registerDomain(String)}: swallows ALREADY_EXISTS so
+     * bootstrap scripts and demos don't have to special-case re-runs.
+     */
+    public JsonNode ensureDomain(String domain) {
+        try {
+            return registerDomain(domain);
+        } catch (ValidationException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            Object code = e.details().get("code");
+            if (msg.contains("already exists") || "ALREADY_EXISTS".equals(code)) {
+                Map<String, Object> fake = new LinkedHashMap<>();
+                fake.put("status", "success");
+                fake.put("domain", domain);
+                fake.put("message", "trust domain already exists");
+                return MAPPER.valueToTree(fake);
+            }
+            throw e;
+        } catch (ConflictException e) {
+            Object code = e.details().get("code");
+            if ("ALREADY_EXISTS".equals(code) || "DUPLICATE".equals(code)) {
+                Map<String, Object> fake = new LinkedHashMap<>();
+                fake.put("status", "success");
+                fake.put("domain", domain);
+                fake.put("message", "trust domain already exists");
+                return MAPPER.valueToTree(fake);
+            }
+            throw e;
+        }
+    }
+
+    /** GET /api/node/domains — domains this node currently manages. */
+    public JsonNode getNodeDomains() { return doGet("node/domains"); }
+
+    /** POST /api/node/domains — replace the set of domains this node manages. */
+    public JsonNode updateNodeDomains(List<String> domains) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains == null ? Collections.emptyList() : domains);
+        return doPost("node/domains", body);
+    }
+
     // =====================================================================
     // Identity
     // =====================================================================
@@ -133,6 +190,113 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * GET /api/registry/identity — paginated dump of committed identities,
+     * optionally filtered to a single trust domain.
+     *
+     * @param domain optional domain filter (null = all)
+     * @param limit  page size; null = server default
+     * @param offset page offset; null = 0
+     */
+    public JsonNode queryIdentityRegistry(String domain, Integer limit, Integer offset) {
+        StringBuilder path = new StringBuilder("registry/identity");
+        appendQuery(path, "domain", domain);
+        appendQuery(path, "limit",  limit);
+        appendQuery(path, "offset", offset);
+        return doGet(path.toString());
+    }
+
+    /**
+     * Block until the identity {@code quidId} is visible in the committed
+     * registry, polling at {@code pollInterval}. Returns the committed record.
+     *
+     * @throws UnavailableException if the deadline passes without commit
+     */
+    public Types.IdentityRecord waitForIdentity(
+            String quidId, String domain, Duration timeout, Duration pollInterval) {
+        if (quidId == null || quidId.isEmpty())
+            throw new ValidationException("quidId is required");
+        Duration t = timeout != null ? timeout : Duration.ofSeconds(30);
+        Duration p = pollInterval != null ? pollInterval : Duration.ofMillis(500);
+        long deadline = System.nanoTime() + t.toNanos();
+        while (true) {
+            Types.IdentityRecord rec = getIdentity(quidId, domain);
+            if (rec != null) return rec;
+            if (System.nanoTime() >= deadline) {
+                Map<String, Object> details = new HashMap<>();
+                details.put("code", "TIMEOUT");
+                details.put("quidId", quidId);
+                throw new UnavailableException(
+                        "identity " + quidId + " did not commit within " + t.toMillis() + "ms",
+                        details);
+            }
+            try { Thread.sleep(p.toMillis()); }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NodeException("interrupted waiting for identity " + quidId, e);
+            }
+        }
+    }
+
+    /**
+     * Block until every quid in {@code quidIds} is committed. A single
+     * {@code timeout} is shared across the whole batch. Returns the records
+     * in the same order as the input list.
+     */
+    public List<Types.IdentityRecord> waitForIdentities(
+            List<String> quidIds, String domain, Duration timeout) {
+        if (quidIds == null || quidIds.isEmpty()) return Collections.emptyList();
+        Duration t = timeout != null ? timeout : Duration.ofSeconds(30);
+        long deadline = System.nanoTime() + t.toNanos();
+        List<Types.IdentityRecord> out = new ArrayList<>(quidIds.size());
+        for (String qid : quidIds) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                Map<String, Object> details = new HashMap<>();
+                details.put("code", "TIMEOUT");
+                details.put("quidId", qid);
+                throw new UnavailableException(
+                        "identities not all committed within " + t.toMillis() + "ms "
+                                + "(blocked on " + qid + ")", details);
+            }
+            out.add(waitForIdentity(qid, domain, Duration.ofNanos(remaining), Duration.ofMillis(500)));
+        }
+        return out;
+    }
+
+    /**
+     * Block until the title for {@code assetId} is visible in the committed
+     * registry, polling at {@code pollInterval}. Returns the committed
+     * record.
+     *
+     * @throws UnavailableException if the deadline passes without commit
+     */
+    public Types.Title waitForTitle(
+            String assetId, String domain, Duration timeout, Duration pollInterval) {
+        if (assetId == null || assetId.isEmpty())
+            throw new ValidationException("assetId is required");
+        Duration t = timeout != null ? timeout : Duration.ofSeconds(30);
+        Duration p = pollInterval != null ? pollInterval : Duration.ofMillis(500);
+        long deadline = System.nanoTime() + t.toNanos();
+        while (true) {
+            Types.Title rec = getTitle(assetId, domain);
+            if (rec != null) return rec;
+            if (System.nanoTime() >= deadline) {
+                Map<String, Object> details = new HashMap<>();
+                details.put("code", "TIMEOUT");
+                details.put("assetId", assetId);
+                throw new UnavailableException(
+                        "title " + assetId + " did not commit within " + t.toMillis() + "ms",
+                        details);
+            }
+            try { Thread.sleep(p.toMillis()); }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new NodeException("interrupted waiting for title " + assetId, e);
+            }
+        }
+    }
+
     // =====================================================================
     // Trust
     // =====================================================================
@@ -166,6 +330,51 @@ public final class QuidnugClient {
         } catch (Exception e) {
             throw new NodeException("decode trust result: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * POST /api/trust/query — structured relational-trust query. Identical
+     * semantics to {@link #getTrust(String, String, String, int)} but lets
+     * the caller opt into unverified edges (transitive paths whose
+     * intermediate trusters haven't anchored their TRUST tx in a sealed
+     * block yet).
+     */
+    public Types.TrustResult queryRelationalTrust(
+            String observer, String target, String domain,
+            Integer maxDepth, boolean includeUnverified) {
+        if (observer == null || observer.isEmpty())
+            throw new ValidationException("observer is required");
+        if (target == null || target.isEmpty())
+            throw new ValidationException("target is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", domain == null ? "default" : domain);
+        body.put("maxDepth", maxDepth == null ? 5 : maxDepth);
+        body.put("includeUnverified", includeUnverified);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust result: " + e.getMessage(), e);
+        }
+    }
+
+    /** GET /api/registry/trust — paginated dump of committed trust edges. */
+    public JsonNode queryTrustRegistry(String domain, Integer limit, Integer offset) {
+        StringBuilder path = new StringBuilder("registry/trust");
+        appendQuery(path, "domain", domain);
+        appendQuery(path, "limit",  limit);
+        appendQuery(path, "offset", offset);
+        return doGet(path.toString());
+    }
+
+    /** GET /api/registry/title — paginated dump of committed titles. */
+    public JsonNode queryTitleRegistry(String domain, Integer limit, Integer offset) {
+        StringBuilder path = new StringBuilder("registry/title");
+        appendQuery(path, "domain", domain);
+        appendQuery(path, "limit",  limit);
+        appendQuery(path, "offset", offset);
+        return doGet(path.toString());
     }
 
     @SuppressWarnings("unchecked")
@@ -343,6 +552,79 @@ public final class QuidnugClient {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
             throw e;
         }
+    }
+
+    /**
+     * GET /api/guardian/resignations/{quidId} — list resignation records
+     * filed against the subject's guardian set. Returns an empty list when
+     * none have been filed.
+     */
+    public List<JsonNode> getGuardianResignations(String quidId) {
+        if (quidId == null || quidId.isEmpty())
+            throw new ValidationException("quidId is required");
+        JsonNode data = doGet("guardian/resignations/" + urlencode(quidId));
+        JsonNode arr = data.has("data") ? data.get("data")
+                       : data.has("resignations") ? data.get("resignations") : null;
+        if (arr == null || !arr.isArray()) return Collections.emptyList();
+        List<JsonNode> out = new ArrayList<>(arr.size());
+        for (JsonNode n : arr) out.add(n);
+        return out;
+    }
+
+    // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /**
+     * POST /api/ipfs/pin — pin raw bytes and return the resulting CID.
+     * Sends {@code application/octet-stream}.
+     */
+    public String ipfsPin(byte[] content) {
+        if (content == null) content = new byte[0];
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<String> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new NodeException("POST ipfs/pin: " + e.getMessage(), e);
+        }
+        JsonNode data = parseEnvelope(resp);
+        String cid = data.has("cid") ? data.get("cid").asText(null)
+                     : data.has("value") ? data.get("value").asText(null) : null;
+        if (cid == null || cid.isEmpty())
+            throw new NodeException("IPFS pin response missing cid", resp.statusCode(), resp.body());
+        return cid;
+    }
+
+    /** GET /api/ipfs/{cid} — fetch raw bytes for a pinned CID. */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty())
+            throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<byte[]> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+        } catch (Exception e) {
+            throw new NodeException("GET ipfs/" + cid + ": " + e.getMessage(), e);
+        }
+        int sc = resp.statusCode();
+        if (sc >= 400) {
+            String body = resp.body() == null ? "" : new String(resp.body(), StandardCharsets.UTF_8);
+            throw new NodeException("IPFS fetch failed (HTTP " + sc + ")", sc, body);
+        }
+        return resp.body() == null ? new byte[0] : resp.body();
     }
 
     // =====================================================================
@@ -618,5 +900,17 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /**
+     * Append {@code key=value} to {@code path}, prefixed by {@code ?} or
+     * {@code &} as appropriate. No-op when {@code value} is null or empty.
+     */
+    private static void appendQuery(StringBuilder path, String key, Object value) {
+        if (value == null) return;
+        String v = value.toString();
+        if (v.isEmpty()) return;
+        path.append(path.indexOf("?") >= 0 ? '&' : '?')
+            .append(key).append('=').append(urlencode(v));
     }
 }

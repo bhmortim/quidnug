@@ -64,7 +64,8 @@ corresponding typed method.
 | Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
 | Fork-block | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
-| Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_node_domains`, `update_node_domains` |
+| Commit-wait helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
 
 ### `Quid` — cryptographic identity
 

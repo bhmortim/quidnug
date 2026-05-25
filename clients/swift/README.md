@@ -69,19 +69,41 @@ Python, Java, .NET, Rust, and JavaScript SDKs. Quid ID is
 ### `QuidnugClient` — async HTTP surface
 
 `QuidnugClient` is an `actor` so all mutation is isolated. Every
-method uses `async throws`.
+method uses `async throws`. Coverage is one-for-one with the Python
+and Go reference SDKs across the full v2 protocol surface (QDPs
+0001–0010).
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health / info | `health`, `info`, `nodes` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| IPFS | `ipfsPin`, `ipfsGet` |
+| Guardians (QDP-0002 / QDP-0006) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003 / QDP-0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Blocks | `getBlocks`, `getTentativeBlocks`, `getPendingTransactions` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain`, `getNodeDomains`, `updateNodeDomains` |
+| Commit-wait helpers | `waitForIdentity`, `waitForIdentities`, `waitForTitle` |
+
+#### Commit-wait helpers
+
+A just-submitted identity / title transaction lives in the pending
+pool until the next block is sealed. The commit-wait helpers block
+the calling task with a poll loop so demos and bootstrap scripts
+don't race the block producer:
+
+```swift
+_ = try await client.registerIdentity(signer: alice, name: "Alice")
+let record = try await client.waitForIdentity(quidId: alice.id, timeout: 10)
+// record is guaranteed to be in the committed registry now.
+```
+
+`ensureDomain` is the idempotent counterpart for trust-domain
+registration — it swallows the server's "already exists" rejection.
 
 ### `CanonicalBytes` / `Merkle`
 

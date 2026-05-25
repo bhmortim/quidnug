@@ -300,6 +300,17 @@ class AsyncQuidnugClient:
             raise
         return _identity_from_wire(data)
 
+    async def query_identity_registry(
+        self,
+        *,
+        quid_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/registry/identity — paginated dump / single lookup."""
+        params = _strip_none({"quid_id": quid_id, "limit": limit, "offset": offset})
+        return await self._request("GET", "registry/identity", params=params)
+
     # --- Trust -----------------------------------------------------------
 
     async def grant_trust(
@@ -355,6 +366,33 @@ class AsyncQuidnugClient:
         if not isinstance(raw, list):
             return []
         return [_trust_edge_from_wire(e) for e in raw]
+
+    async def query_relational_trust(
+        self,
+        *,
+        observer: str,
+        target: str,
+        domain: str = "default",
+        max_depth: int = 5,
+    ) -> TrustResult:
+        """POST /api/trust/query — structured relational trust query."""
+        body = {"observer": observer, "target": target, "domain": domain, "maxDepth": max_depth}
+        data = await self._request("POST", "trust/query", body=body)
+        return _trust_result_from_wire(observer, target, domain, data)
+
+    async def query_trust_registry(
+        self,
+        *,
+        truster: Optional[str] = None,
+        trustee: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/registry/trust — paginated trust-edge listing."""
+        params = _strip_none(
+            {"truster": truster, "trustee": trustee, "limit": limit, "offset": offset}
+        )
+        return await self._request("GET", "registry/trust", params=params)
 
     # --- Title -----------------------------------------------------------
 
@@ -417,6 +455,19 @@ class AsyncQuidnugClient:
                 return None
             raise
         return _title_from_wire(data)
+
+    async def query_title_registry(
+        self,
+        *,
+        asset_id: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        params = _strip_none(
+            {"asset_id": asset_id, "owner_id": owner_id, "limit": limit, "offset": offset}
+        )
+        return await self._request("GET", "registry/title", params=params)
 
     # --- Events ----------------------------------------------------------
 
@@ -493,6 +544,45 @@ class AsyncQuidnugClient:
         pagination = data.get("pagination") or {}
         return events, pagination
 
+    # --- IPFS ------------------------------------------------------------
+
+    async def ipfs_pin(self, content: "str | bytes") -> str:
+        """POST /api/ipfs/pin — returns the CID of pinned content."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._owns_client = True
+        headers = {"Content-Type": "application/octet-stream"}
+        if isinstance(content, str):
+            body = content.encode("utf-8")
+        else:
+            body = content
+        resp = await self._client.post(
+            urljoin(self.api_base + "/", "ipfs/pin"),
+            content=body,
+            headers=headers,
+        )
+        data = self._parse_envelope(resp)
+        cid = data.get("cid") or data.get("value")
+        if not cid:
+            raise NodeError("IPFS pin response missing cid")
+        return cid
+
+    async def ipfs_get(self, cid: str) -> bytes:
+        """GET /api/ipfs/{cid} — fetch raw bytes."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._owns_client = True
+        resp = await self._client.get(
+            urljoin(self.api_base + "/", f"ipfs/{quote(cid, safe='')}"),
+        )
+        if resp.status_code >= 400:
+            raise NodeError(
+                f"IPFS fetch failed (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return resp.content
+
     # --- Guardians / gossip / bootstrap / fork-block (short form) --------
     #
     # The remaining endpoints mirror the sync client. They all go through
@@ -500,6 +590,22 @@ class AsyncQuidnugClient:
 
     async def submit_guardian_set_update(self, update: GuardianSetUpdate) -> Dict[str, Any]:
         return await self._request("POST", "guardian/set-update", body=_dc(update))
+
+    async def submit_recovery_init(self, init: GuardianRecoveryInit) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/init — start the M-of-N recovery delay."""
+        return await self._request("POST", "guardian/recovery/init", body=_dc(init))
+
+    async def submit_recovery_veto(self, veto: GuardianRecoveryVeto) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/veto — owner or guardian aborts recovery."""
+        return await self._request("POST", "guardian/recovery/veto", body=_dc(veto))
+
+    async def submit_recovery_commit(self, commit: GuardianRecoveryCommit) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/commit — finalize the delayed recovery."""
+        return await self._request("POST", "guardian/recovery/commit", body=_dc(commit))
+
+    async def submit_guardian_resignation(self, resignation: GuardianResignation) -> Dict[str, Any]:
+        """POST /api/guardian/resign — guardian leaves the set."""
+        return await self._request("POST", "guardian/resign", body=_dc(resignation))
 
     async def get_guardian_set(self, quid: str) -> Optional[GuardianSet]:
         try:
@@ -510,8 +616,35 @@ class AsyncQuidnugClient:
             raise
         return _guardian_set_from_wire(data)
 
+    async def get_pending_recovery(self, quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/guardian/pending-recovery/{quid}."""
+        try:
+            return await self._request("GET", f"guardian/pending-recovery/{quote(quid, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    async def get_guardian_resignations(self, quid: str) -> List[Dict[str, Any]]:
+        """GET /api/guardian/resignations/{quid}."""
+        data = await self._request("GET", f"guardian/resignations/{quote(quid, safe='')}")
+        raw = data.get("data") or data.get("resignations") or []
+        return raw if isinstance(raw, list) else []
+
     async def submit_anchor_gossip(self, message: AnchorGossipMessage) -> Dict[str, Any]:
         return await self._request("POST", "anchor-gossip", body=_dc(message))
+
+    async def submit_domain_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        """POST /api/domain-fingerprints — publish a signed fingerprint."""
+        return await self._request("POST", "domain-fingerprints", body=_dc(fp))
+
+    async def push_anchor(self, message: AnchorGossipMessage) -> Dict[str, Any]:
+        """POST /api/gossip/push-anchor — push gossip variant (QDP-0005)."""
+        return await self._request("POST", "gossip/push-anchor", body=_dc(message))
+
+    async def push_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        """POST /api/gossip/push-fingerprint — push gossip variant (QDP-0005)."""
+        return await self._request("POST", "gossip/push-fingerprint", body=_dc(fp))
 
     async def get_latest_domain_fingerprint(self, domain: str) -> Optional[DomainFingerprint]:
         try:
@@ -522,6 +655,22 @@ class AsyncQuidnugClient:
             raise
         return _domain_fingerprint_from_wire(data)
 
+    # --- Bootstrap + nonce snapshots -------------------------------------
+
+    async def submit_nonce_snapshot(self, snapshot: NonceSnapshot) -> Dict[str, Any]:
+        """POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot."""
+        return await self._request("POST", "nonce-snapshots", body=_dc(snapshot))
+
+    async def get_latest_nonce_snapshot(self, domain: str) -> Optional[NonceSnapshot]:
+        """GET /api/nonce-snapshots/{domain}/latest."""
+        try:
+            data = await self._request("GET", f"nonce-snapshots/{quote(domain, safe='')}/latest")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+        return _nonce_snapshot_from_wire(data)
+
     async def submit_fork_block(self, fb: ForkBlock) -> Dict[str, Any]:
         return await self._request("POST", "fork-block", body=_dc(fb))
 
@@ -530,6 +679,94 @@ class AsyncQuidnugClient:
 
     async def bootstrap_status(self) -> Dict[str, Any]:
         return await self._request("GET", "bootstrap/status")
+
+    # --- Blocks + transactions -------------------------------------------
+
+    async def get_blocks(self, *, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
+        return await self._request("GET", "blocks", params=_strip_none({"limit": limit, "offset": offset}))
+
+    async def get_tentative_blocks(self, domain: str) -> Dict[str, Any]:
+        return await self._request("GET", f"blocks/tentative/{quote(domain, safe='')}")
+
+    async def get_pending_transactions(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        return await self._request("GET", "transactions", params=_strip_none({"limit": limit, "offset": offset}))
+
+    # --- Domains ---------------------------------------------------------
+
+    async def list_domains(self) -> Dict[str, Any]:
+        return await self._request("GET", "domains")
+
+    async def register_domain(self, domain: str, **attrs: Any) -> Dict[str, Any]:
+        body = {"name": domain, **attrs}
+        return await self._request("POST", "domains", body=body)
+
+    async def ensure_domain(self, domain: str, **attrs: Any) -> Dict[str, Any]:
+        """Register the domain if it doesn't already exist. Idempotent."""
+        try:
+            return await self.register_domain(domain, **attrs)
+        except ValidationError as e:
+            if "already exists" in str(e).lower():
+                return {"status": "success", "domain": domain,
+                        "message": "trust domain already exists"}
+            raise
+
+    async def get_node_domains(self) -> Dict[str, Any]:
+        return await self._request("GET", "node/domains")
+
+    async def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
+        return await self._request("POST", "node/domains", body={"managedDomains": domains})
+
+    # --- Wait helpers ----------------------------------------------------
+
+    async def wait_for_identity(
+        self, quid_id: str, *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> "IdentityRecord":
+        """Block until the identity with ``quid_id`` is visible in
+        the committed registry, or raise TimeoutError."""
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            rec = await self.get_identity(quid_id)
+            if rec is not None:
+                return rec
+            await asyncio.sleep(poll)
+        raise TimeoutError(
+            f"identity {quid_id} did not commit within {timeout}s"
+        )
+
+    async def wait_for_identities(
+        self, quid_ids: List[str], *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> None:
+        """Block until every quid_id in the list is committed.
+        Shares a single deadline across all ids."""
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        for qid in quid_ids:
+            remaining = max(0.0, deadline - _time.monotonic())
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"identities not all committed within {timeout}s "
+                    f"(blocked on {qid})"
+                )
+            await self.wait_for_identity(qid, timeout=remaining, poll=poll)
+
+    async def wait_for_title(
+        self, asset_id: str, *, timeout: float = 30.0, poll: float = 0.5,
+    ) -> "Title":
+        """Block until the title with ``asset_id`` is visible in
+        the committed registry, or raise TimeoutError."""
+        import time as _time
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            rec = await self.get_title(asset_id)
+            if rec is not None:
+                return rec
+            await asyncio.sleep(poll)
+        raise TimeoutError(
+            f"title {asset_id} did not commit within {timeout}s"
+        )
 
 
 def _json_fallback(obj: Any) -> Any:

@@ -25,6 +25,7 @@ Typical usage::
 
 from quidnug.crypto import Quid, canonical_bytes, sign_bytes, verify_signature
 from quidnug.client import QuidnugClient
+from quidnug.async_client import AsyncQuidnugClient
 from quidnug.errors import (
     QuidnugError,
     ValidationError,
@@ -35,10 +36,15 @@ from quidnug.errors import (
 )
 from quidnug.types import (
     TrustEdge,
+    IdentityRecord,
     Event,
     Anchor,
     GuardianSet,
     GuardianRef,
+    GuardianSetUpdate,
+    GuardianRecoveryInit,
+    GuardianRecoveryVeto,
+    GuardianRecoveryCommit,
     GuardianResignation,
     OwnershipStake,
     Title,
@@ -56,6 +62,7 @@ __version__ = "2.0.0"
 __all__ = [
     "__version__",
     "QuidnugClient",
+    "AsyncQuidnugClient",
     "Quid",
     "canonical_bytes",
     "sign_bytes",
@@ -68,10 +75,15 @@ __all__ = [
     "NodeError",
     "CryptoError",
     "TrustEdge",
+    "IdentityRecord",
     "Event",
     "Anchor",
     "GuardianSet",
     "GuardianRef",
+    "GuardianSetUpdate",
+    "GuardianRecoveryInit",
+    "GuardianRecoveryVeto",
+    "GuardianRecoveryCommit",
     "GuardianResignation",
     "OwnershipStake",
     "Title",

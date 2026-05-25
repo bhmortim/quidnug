@@ -1,14 +1,43 @@
 # @quidnug/vue-reviews
 
-Vue 3 wrappers around Quidnug's trust-weighted review
-components. Thin adapter layer over `@quidnug/web-components`
-that lets you use `<QnAurora>`, `<QnConstellation>`, and
-`<QnTrace>` as first-class Vue components with props + events.
+Vue 3 composables + components for Quidnug's trust-weighted
+review system. Wraps `@quidnug/web-components` and the
+`@quidnug/client` SDK with idiomatic Vue APIs that mirror
+`@quidnug/react-reviews` one-for-one — so a user that knows the
+React surface can switch frameworks without relearning.
 
 ## Install
 
 ```bash
-npm install @quidnug/vue-reviews @quidnug/web-components
+npm install @quidnug/vue-reviews @quidnug/web-components @quidnug/client
+```
+
+## 30-second example
+
+```vue
+<script setup>
+import QuidnugClient from "@quidnug/client";
+import {
+    provideQuidnug,
+    useTrustWeightedRating,
+    QuidnugStars,
+} from "@quidnug/vue-reviews";
+
+const client = new QuidnugClient({ defaultNode: "https://node.example" });
+provideQuidnug({ client });
+
+const { data, loading } = useTrustWeightedRating("title:movie:dune2", "movies");
+</script>
+
+<template>
+    <p v-if="loading">…</p>
+    <p v-else-if="data">
+        Your weighted rating: {{ data.rating?.toFixed(1) }}
+        ({{ data.contributingReviews }} trusted reviewers)
+    </p>
+
+    <QuidnugStars product="title:movie:dune2" topic="movies" show-count />
+</template>
 ```
 
 ## Vite / compiler setup
@@ -34,36 +63,52 @@ export default {
 };
 ```
 
-## Use
+## Provider
+
+Composables and components need a Quidnug client (and optionally
+a signed-in observer Quid) in their context. Call
+`provideQuidnug` once in a root component:
 
 ```vue
 <script setup>
-import { QnAurora, QnTrace } from "@quidnug/vue-reviews";
+import { ref } from "vue";
+import QuidnugClient from "@quidnug/client";
+import { provideQuidnug } from "@quidnug/vue-reviews";
 
-const contributors = [
-    { id: "vet",  name: "veteran",   rating: 4.8, weight: 0.6, direct: true },
-    { id: "sam",  name: "sam-tech",  rating: 4.5, weight: 0.2, direct: true },
-    { id: "kai",  name: "kai",       rating: 4.2, weight: 0.1, direct: false },
-];
-
-function openDrilldown(detail) {
-    // show a modal with the full breakdown
-}
+const client = new QuidnugClient({ defaultNode: "https://node.example" });
+const quid = ref(null); // or a Quid object loaded from storage
+provideQuidnug({ client, quid });
 </script>
-
-<template>
-    <QnAurora :rating="4.7"
-              :contributors="7" :direct="5" :crowd="4.1"
-              observer-name="alice"
-              show-delta show-histogram
-              :contributor-ratings="[4.5, 4.8, 4.2, 5, 4, 4.3, 4.7]"
-              @aurora-click="openDrilldown" />
-
-    <QnTrace :contributors="contributors" show-labels />
-</template>
 ```
 
-## Primitives
+Both `client` and `quid` may be plain values or Vue refs. The
+composables unwrap both forms and re-run when the underlying
+ref changes.
+
+## Composables
+
+| Composable | Signature | Returns |
+| --- | --- | --- |
+| `useTrustWeightedRating` | `(product, topic, options?)` | `{ data, loading, error, refetch }` — refs. `data` is a `WeightedRatingResult` or `null`. |
+| `useReviews` | `(product, topic, { limit?, offset? }?)` | `{ data, loading, error, refetch }` — refs. `data` is an array of `REVIEW` events. |
+| `useWriteReview` | `()` | `{ mutate, loading, error, data }`. Call `mutate({ product, topic, rating, title, body, ... })` to post a review; throws if no signed-in Quid is provided. |
+
+`product` and `topic` may be plain strings or refs. Passing refs
+makes the composable re-fetch automatically when they change.
+
+## Components
+
+| Component | Props | Notes |
+| --- | --- | --- |
+| `<QuidnugStars>` | `product`, `topic`, `max?` (default 5), `showCount?`, emits `@rating` | Compact star widget. Fetches its own data via `useTrustWeightedRating`. |
+| `<QuidnugReviewPanel>` | `product`, `topic`, `showWrite?` | Full review experience: headline rating + sorted review list + (optional) inline write form. |
+| `<QuidnugReviewList>` | `product`, `topic`, `contributions?`, `sort?` (`weight` \| `recent` \| `rating-high` \| `rating-low`), `limit?` | Sorted review list. Highlights reviews that contributed to your weighted rating. |
+| `<QuidnugWriteReview>` | `product`, `topic`, emits `@success` | Inline form for posting a new review. Requires `quid.has_private_key`. |
+
+### Primitives
+
+The low-level primitives are still exported for cases where you
+already have rating data and just want to render:
 
 | Component | Purpose |
 | --- | --- |
@@ -72,14 +117,6 @@ function openDrilldown(detail) {
 | `<QnTrace>` | Horizontal stacked weight bar. One segment per contributor. |
 
 See [../web-components/stories/index.html](../web-components/stories/index.html) for every visual state.
-
-## Roadmap
-
-- Vue composables mirroring the React hooks (`useTrustWeightedRating`,
-  `useReviews`, `useWriteReview`).
-- High-level `<QuidnugReviewPanel>`, `<QuidnugStars>` Vue components
-  that fetch + compute + render automatically.
-- Nuxt integration (SSR-safe).
 
 ## License
 

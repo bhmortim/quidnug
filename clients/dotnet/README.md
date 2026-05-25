@@ -64,20 +64,26 @@ Java, JavaScript, and Rust SDKs. The quid ID is `sha256(publicKey)[0..8]`.
 
 ### `QuidnugClient` — async HTTP surface
 
-Every method returns a `Task`. Thread-safe — one instance may be
-shared across request handlers.
+Every method returns a `Task` and accepts an optional
+`CancellationToken`. Thread-safe — one instance may be shared
+across request handlers. Every endpoint of the Quidnug node has a
+corresponding method (matches the Python SDK one-for-one).
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Health / info | `HealthAsync`, `InfoAsync`, `NodesAsync` |
+| Blocks / transactions | `BlocksAsync`, `GetBlocksAsync`, `GetTentativeBlocksAsync`, `PendingTransactionsAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `QueryRelationalTrustAsync`, `GetTrustEdgesAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Storage (IPFS) | `IpfsPinAsync`, `IpfsGetAsync` |
+| Guardians (QDP-0002 / QDP-0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInitAsync`, `SubmitRecoveryVetoAsync`, `SubmitRecoveryCommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003 / QDP-0005) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `BootstrapStatusAsync`, `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `EnsureDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| Polling helpers | `WaitForIdentityAsync`, `WaitForIdentitiesAsync`, `WaitForTitleAsync` |
 
 ### `CanonicalBytes` / `Merkle`
 

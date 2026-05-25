@@ -119,13 +119,13 @@ pub struct TrustResult {
 /// Event-stream row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
-    #[serde(rename = "subjectId")]
+    #[serde(rename = "subjectId", default)]
     /// Subject quid / title id.
     pub subject_id: String,
-    #[serde(rename = "subjectType")]
+    #[serde(rename = "subjectType", default)]
     /// `"QUID"` or `"TITLE"`.
     pub subject_type: String,
-    #[serde(rename = "eventType")]
+    #[serde(rename = "eventType", default)]
     /// Event type discriminator.
     pub event_type: String,
     #[serde(default)]
@@ -140,6 +140,12 @@ pub struct Event {
     #[serde(default)]
     /// Sequence number in the subject's stream.
     pub sequence: i64,
+    #[serde(default)]
+    /// Quid that emitted the event.
+    pub creator: String,
+    #[serde(default)]
+    /// IEEE-1363 hex signature.
+    pub signature: String,
 }
 
 /// Guardian (QDP-0002).
@@ -153,6 +159,9 @@ pub struct GuardianRef {
     #[serde(default)]
     /// Key epoch the guardian's signature is valid under.
     pub epoch: u32,
+    #[serde(rename = "addedAtBlock", default, skip_serializing_if = "Option::is_none")]
+    /// Block height at which guardian was added.
+    pub added_at_block: Option<i64>,
 }
 
 fn one_u32() -> u32 {
@@ -169,9 +178,15 @@ pub struct GuardianSet {
     pub guardians: Vec<GuardianRef>,
     /// Weighted quorum threshold.
     pub threshold: u32,
-    #[serde(rename = "recoveryDelaySeconds")]
+    #[serde(rename = "recoveryDelaySeconds", default)]
     /// Delay between recovery init and commit.
     pub recovery_delay_seconds: i64,
+    #[serde(rename = "requireGuardianRotation", default)]
+    /// Whether guardian rotation is mandatory on recovery.
+    pub require_guardian_rotation: bool,
+    #[serde(rename = "updatedAtBlock", default, skip_serializing_if = "Option::is_none")]
+    /// Block height at which the set was last updated.
+    pub updated_at_block: Option<i64>,
 }
 
 /// Domain fingerprint (QDP-0003).
@@ -179,17 +194,28 @@ pub struct GuardianSet {
 pub struct DomainFingerprint {
     /// Domain.
     pub domain: String,
-    #[serde(rename = "blockHeight")]
+    #[serde(rename = "blockHeight", default)]
     /// Fingerprinted block height.
     pub block_height: i64,
-    #[serde(rename = "blockHash")]
+    #[serde(rename = "blockHash", default)]
     /// Fingerprinted block hash.
     pub block_hash: String,
-    #[serde(rename = "producerQuid")]
+    #[serde(rename = "producerQuid", default)]
     /// Producing node quid.
     pub producer_quid: String,
+    #[serde(default)]
     /// Unix timestamp.
     pub timestamp: i64,
+    #[serde(default)]
+    /// Producer signature.
+    pub signature: String,
+    #[serde(rename = "schemaVersion", default = "one_i64")]
+    /// Schema version.
+    pub schema_version: i64,
+}
+
+fn one_i64() -> i64 {
+    1
 }
 
 /// Nonce snapshot entry (QDP-0008).
@@ -207,11 +233,30 @@ pub struct NonceSnapshotEntry {
 /// Nonce snapshot (QDP-0008).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NonceSnapshot {
-    #[serde(rename = "blockHeight")]
+    #[serde(rename = "blockHeight", default)]
     /// Snapshot block height.
     pub block_height: i64,
-    /// Entries.
+    #[serde(rename = "blockHash", default)]
+    /// Snapshot block hash.
+    pub block_hash: String,
+    #[serde(default)]
+    /// Unix timestamp.
+    pub timestamp: i64,
+    #[serde(rename = "trustDomain", default)]
+    /// Trust domain.
+    pub trust_domain: String,
+    #[serde(default)]
+    /// Per-quid nonce-ceiling entries.
     pub entries: Vec<NonceSnapshotEntry>,
+    #[serde(rename = "producerQuid", default)]
+    /// Producing node quid.
+    pub producer_quid: String,
+    #[serde(default)]
+    /// Producer signature.
+    pub signature: String,
+    #[serde(rename = "schemaVersion", default = "one_i64")]
+    /// Schema version.
+    pub schema_version: i64,
 }
 
 /// Fork-activation block (QDP-0009).

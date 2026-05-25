@@ -49,6 +49,6 @@ pub use crypto::Quid;
 pub use error::{Error, Result};
 pub use merkle::{verify_inclusion_proof, MerkleProofFrame};
 pub use types::{
-    DomainFingerprint, Event, ForkBlock, GuardianRef, GuardianSet, IdentityRecord,
-    NonceSnapshot, OwnershipStake, Title, TrustEdge, TrustResult,
+    DomainFingerprint, Event, ForkBlock, GuardianRef, GuardianSet, IdentityRecord, NonceSnapshot,
+    NonceSnapshotEntry, OwnershipStake, Title, TrustEdge, TrustResult,
 };

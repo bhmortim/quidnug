@@ -63,6 +63,45 @@ public struct Event: Codable, Sendable {
     public let payloadCid: String?
     public let timestamp: Int64
     public let sequence: Int64
+    public let signature: String?
+    public let creator: String?
+
+    enum CodingKeys: String, CodingKey {
+        case subjectId, subjectType, eventType, payloadCid, timestamp, sequence
+        case signature, creator
+    }
+
+    public init(
+        subjectId: String,
+        subjectType: String,
+        eventType: String,
+        payloadCid: String? = nil,
+        timestamp: Int64,
+        sequence: Int64,
+        signature: String? = nil,
+        creator: String? = nil
+    ) {
+        self.subjectId = subjectId
+        self.subjectType = subjectType
+        self.eventType = eventType
+        self.payloadCid = payloadCid
+        self.timestamp = timestamp
+        self.sequence = sequence
+        self.signature = signature
+        self.creator = creator
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.subjectId = try c.decodeIfPresent(String.self, forKey: .subjectId) ?? ""
+        self.subjectType = try c.decodeIfPresent(String.self, forKey: .subjectType) ?? "QUID"
+        self.eventType = try c.decodeIfPresent(String.self, forKey: .eventType) ?? ""
+        self.payloadCid = try c.decodeIfPresent(String.self, forKey: .payloadCid)
+        self.timestamp = try c.decodeIfPresent(Int64.self, forKey: .timestamp) ?? 0
+        self.sequence = try c.decodeIfPresent(Int64.self, forKey: .sequence) ?? 0
+        self.signature = try c.decodeIfPresent(String.self, forKey: .signature)
+        self.creator = try c.decodeIfPresent(String.self, forKey: .creator)
+    }
 }
 
 /// Guardian entry.
@@ -87,4 +126,49 @@ public struct DomainFingerprint: Codable, Sendable {
     public let blockHash: String
     public let producerQuid: String
     public let timestamp: Int64
+}
+
+/// Per-(quid, epoch) nonce snapshot entry for K-of-K bootstrap (QDP-0008).
+public struct NonceSnapshotEntry: Codable, Sendable {
+    public let quid: String
+    public let epoch: Int
+    public let maxNonce: Int64
+
+    public init(quid: String, epoch: Int, maxNonce: Int64) {
+        self.quid = quid
+        self.epoch = epoch
+        self.maxNonce = maxNonce
+    }
+}
+
+/// Signed K-of-K nonce snapshot used during bootstrap (QDP-0008).
+public struct NonceSnapshot: Codable, Sendable {
+    public let blockHeight: Int64
+    public let blockHash: String
+    public let timestamp: Int64
+    public let trustDomain: String
+    public let entries: [NonceSnapshotEntry]
+    public let producerQuid: String
+    public let signature: String?
+    public let schemaVersion: Int?
+
+    public init(
+        blockHeight: Int64,
+        blockHash: String,
+        timestamp: Int64,
+        trustDomain: String,
+        entries: [NonceSnapshotEntry],
+        producerQuid: String,
+        signature: String? = nil,
+        schemaVersion: Int? = 1
+    ) {
+        self.blockHeight = blockHeight
+        self.blockHash = blockHash
+        self.timestamp = timestamp
+        self.trustDomain = trustDomain
+        self.entries = entries
+        self.producerQuid = producerQuid
+        self.signature = signature
+        self.schemaVersion = schemaVersion
+    }
 }
