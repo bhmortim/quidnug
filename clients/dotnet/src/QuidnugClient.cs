@@ -91,7 +91,37 @@ public sealed class QuidnugClient : IDisposable
         => RequestAsync(HttpMethod.Get, "nodes", null, ct);
 
     public Task<JsonNode?> BlocksAsync(CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Get, "blocks", null, ct);
+        => GetBlocksAsync(null, null, ct);
+
+    /// <summary>GET /api/blocks — paginated blocks list.</summary>
+    public Task<JsonNode?> GetBlocksAsync(
+        int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        var path = "blocks";
+        var q = BuildQuery(("limit", limit), ("offset", offset));
+        if (q.Length > 0) path += "?" + q;
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/blocks/tentative/{domain}.</summary>
+    public Task<JsonNode?> GetTentativeBlocksAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        return RequestAsync(HttpMethod.Get,
+            $"blocks/tentative/{Uri.EscapeDataString(domain)}", null, ct);
+    }
+
+    /// <summary>GET /api/transactions — pending transaction pool.</summary>
+    public Task<JsonNode?> PendingTransactionsAsync(
+        string? domain = null, int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        var path = "transactions";
+        var q = BuildQuery(("domain", domain), ("limit", limit), ("offset", offset));
+        if (q.Length > 0) path += "?" + q;
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
 
     // =====================================================================
     // Identity
@@ -425,6 +455,326 @@ public sealed class QuidnugClient : IDisposable
     public Task<JsonNode?> BootstrapStatusAsync(CancellationToken ct = default)
         => RequestAsync(HttpMethod.Get, "bootstrap/status", null, ct);
 
+    public async Task<NonceSnapshot?> GetLatestNonceSnapshotAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        try
+        {
+            var node = await RequestAsync(HttpMethod.Get,
+                $"nonce-snapshots/{Uri.EscapeDataString(domain)}/latest", null, ct);
+            return node is null ? null : JsonSerializer.Deserialize<NonceSnapshot>(node.ToJsonString());
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    public Task<JsonNode?> SubmitNonceSnapshotAsync(object s, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "nonce-snapshots", s, ct);
+
+    // =====================================================================
+    // Guardian resignations / pending recovery (QDP-0002 / QDP-0006)
+    // =====================================================================
+
+    /// <summary>POST /api/guardian/resign — guardian leaves the set.</summary>
+    public Task<JsonNode?> SubmitGuardianResignationAsync(object r, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "guardian/resign", r, ct);
+
+    /// <summary>GET /api/guardian/pending-recovery/{quidId} — null if none.</summary>
+    public async Task<JsonNode?> GetPendingRecoveryAsync(string quidId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(quidId))
+            throw new QuidnugValidationException("quidId is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"guardian/pending-recovery/{Uri.EscapeDataString(quidId)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/guardian/resignations/{quidId}.</summary>
+    public async Task<List<JsonNode>> GetGuardianResignationsAsync(string quidId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(quidId))
+            throw new QuidnugValidationException("quidId is required");
+        var node = await RequestAsync(HttpMethod.Get,
+            $"guardian/resignations/{Uri.EscapeDataString(quidId)}", null, ct);
+        if (node is not JsonObject obj) return new List<JsonNode>();
+        var arr = obj["data"] as JsonArray ?? obj["resignations"] as JsonArray;
+        if (arr is null) return new List<JsonNode>();
+        var result = new List<JsonNode>(arr.Count);
+        foreach (var item in arr)
+        {
+            if (item is not null) result.Add(item.DeepClone());
+        }
+        return result;
+    }
+
+    // =====================================================================
+    // Push-gossip variants (QDP-0005)
+    // =====================================================================
+
+    /// <summary>POST /api/gossip/push-anchor — push gossip variant.</summary>
+    public Task<JsonNode?> PushAnchorAsync(object msg, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-anchor", msg, ct);
+
+    /// <summary>POST /api/gossip/push-fingerprint — push gossip variant.</summary>
+    public Task<JsonNode?> PushFingerprintAsync(object fp, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-fingerprint", fp, ct);
+
+    // =====================================================================
+    // Registries
+    // =====================================================================
+
+    /// <summary>GET /api/registry/identity — paginated dump / single lookup.</summary>
+    public Task<JsonNode?> QueryIdentityRegistryAsync(
+        string? domain = null, int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        var path = "registry/identity";
+        var q = BuildQuery(("domain", domain), ("limit", limit), ("offset", offset));
+        if (q.Length > 0) path += "?" + q;
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/registry/trust — paginated trust-edge listing.</summary>
+    public Task<JsonNode?> QueryTrustRegistryAsync(
+        string? domain = null, int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        var path = "registry/trust";
+        var q = BuildQuery(("domain", domain), ("limit", limit), ("offset", offset));
+        if (q.Length > 0) path += "?" + q;
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/registry/title — paginated title listing.</summary>
+    public Task<JsonNode?> QueryTitleRegistryAsync(
+        string? domain = null, int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        var path = "registry/title";
+        var q = BuildQuery(("domain", domain), ("limit", limit), ("offset", offset));
+        if (q.Length > 0) path += "?" + q;
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>POST /api/trust/query — structured relational trust query.</summary>
+    public async Task<TrustResult> QueryRelationalTrustAsync(
+        string observer,
+        string target,
+        string? domain = null,
+        int? maxDepth = null,
+        bool includeUnverified = false,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(observer) || string.IsNullOrEmpty(target))
+            throw new QuidnugValidationException("observer and target are required");
+        var body = new Dictionary<string, object?>
+        {
+            ["observer"] = observer,
+            ["target"] = target,
+            ["domain"] = domain ?? "default",
+            ["maxDepth"] = maxDepth ?? 5,
+            ["includeUnverified"] = includeUnverified,
+        };
+        var node = await RequestAsync(HttpMethod.Post, "trust/query", body, ct)
+                   ?? throw new QuidnugNodeException("empty response", 200, null);
+        return JsonSerializer.Deserialize<TrustResult>(node.ToJsonString())
+               ?? throw new QuidnugNodeException("decode trust result failed", 200, node.ToJsonString());
+    }
+
+    // =====================================================================
+    // IPFS storage
+    // =====================================================================
+
+    /// <summary>POST /api/ipfs/pin — pin raw bytes, returns the CID.</summary>
+    public async Task<string> IpfsPinAsync(byte[] content, CancellationToken ct = default)
+    {
+        if (content is null) throw new QuidnugValidationException("content is required");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _apiBase + "/ipfs/pin");
+        req.Headers.Accept.Clear();
+        req.Headers.Accept.ParseAdd("application/json");
+        req.Content = new ByteArrayContent(content);
+        req.Content.Headers.ContentType =
+            new MediaTypeHeaderValue("application/octet-stream");
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new QuidnugNodeException($"network error on POST ipfs/pin: {e.Message}", e);
+        }
+        var data = await ParseEnvelopeAsync(resp, ct)
+                   ?? throw new QuidnugNodeException("empty IPFS pin response", 200, null);
+        string? cid = data["cid"]?.GetValue<string>() ?? data["value"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(cid))
+            throw new QuidnugNodeException("IPFS pin response missing cid", 200, data.ToJsonString());
+        return cid;
+    }
+
+    /// <summary>GET /api/ipfs/{cid} — fetch raw bytes.</summary>
+    public async Task<byte[]> IpfsGetAsync(string cid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(cid))
+            throw new QuidnugValidationException("cid is required");
+        using var req = new HttpRequestMessage(HttpMethod.Get,
+            _apiBase + "/ipfs/" + Uri.EscapeDataString(cid));
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new QuidnugNodeException($"network error on GET ipfs/{cid}: {e.Message}", e);
+        }
+        using (resp)
+        {
+            if ((int)resp.StatusCode >= 400)
+            {
+                string body = await resp.Content.ReadAsStringAsync(ct);
+                throw new QuidnugNodeException(
+                    $"IPFS fetch failed (HTTP {(int)resp.StatusCode})",
+                    (int)resp.StatusCode, body);
+            }
+            return await resp.Content.ReadAsByteArrayAsync(ct);
+        }
+    }
+
+    // =====================================================================
+    // Domains
+    // =====================================================================
+
+    /// <summary>GET /api/domains — list known trust domains.</summary>
+    public Task<JsonNode?> ListDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "domains", null, ct);
+
+    /// <summary>POST /api/domains — register a new trust domain.</summary>
+    public Task<JsonNode?> RegisterDomainAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        var body = new Dictionary<string, object?> { ["name"] = domain };
+        return RequestAsync(HttpMethod.Post, "domains", body, ct);
+    }
+
+    /// <summary>Idempotent <see cref="RegisterDomainAsync"/> — catches "already exists".</summary>
+    public async Task<JsonNode?> EnsureDomainAsync(string domain, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RegisterDomainAsync(domain, ct);
+        }
+        catch (QuidnugConflictException) { /* already exists */ }
+        catch (QuidnugValidationException ex)
+            when (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase)) { }
+        var existing = new JsonObject
+        {
+            ["status"] = "success",
+            ["domain"] = domain,
+            ["message"] = "trust domain already exists",
+        };
+        return existing;
+    }
+
+    /// <summary>GET /api/node/domains — domains this node currently manages.</summary>
+    public Task<JsonNode?> GetNodeDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "node/domains", null, ct);
+
+    /// <summary>POST /api/node/domains — update the set of domains this node manages.</summary>
+    public Task<JsonNode?> UpdateNodeDomainsAsync(
+        IEnumerable<string> domains, CancellationToken ct = default)
+    {
+        if (domains is null)
+            throw new QuidnugValidationException("domains is required");
+        var body = new Dictionary<string, object?>
+        {
+            ["managedDomains"] = domains.ToList(),
+        };
+        return RequestAsync(HttpMethod.Post, "node/domains", body, ct);
+    }
+
+    // =====================================================================
+    // Polling helpers
+    // =====================================================================
+
+    /// <summary>Block until <paramref name="quidId"/> commits, or throw <see cref="TimeoutException"/>.</summary>
+    public async Task<IdentityRecord> WaitForIdentityAsync(
+        string quidId,
+        string? domain = null,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(quidId))
+            throw new QuidnugValidationException("quidId is required");
+        var to = timeout ?? TimeSpan.FromSeconds(30);
+        var poll = pollInterval ?? TimeSpan.FromMilliseconds(500);
+        var deadline = DateTimeOffset.UtcNow + to;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var rec = await GetIdentityAsync(quidId, domain, ct);
+            if (rec is not null) return rec;
+            await Task.Delay(poll, ct);
+        }
+        throw new TimeoutException(
+            $"identity {quidId} did not commit within {to.TotalSeconds}s");
+    }
+
+    /// <summary>Block until every quidId in <paramref name="quidIds"/> commits; shares one deadline.</summary>
+    public async Task WaitForIdentitiesAsync(
+        IEnumerable<string> quidIds,
+        string? domain = null,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
+    {
+        if (quidIds is null) throw new QuidnugValidationException("quidIds is required");
+        var to = timeout ?? TimeSpan.FromSeconds(30);
+        var deadline = DateTimeOffset.UtcNow + to;
+        foreach (var qid in quidIds)
+        {
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException(
+                    $"identities not all committed within {to.TotalSeconds}s (blocked on {qid})");
+            await WaitForIdentityAsync(qid, domain, remaining, null, ct);
+        }
+    }
+
+    /// <summary>Block until <paramref name="assetId"/> commits, or throw <see cref="TimeoutException"/>.</summary>
+    public async Task<Title> WaitForTitleAsync(
+        string assetId,
+        string? domain = null,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(assetId))
+            throw new QuidnugValidationException("assetId is required");
+        var to = timeout ?? TimeSpan.FromSeconds(30);
+        var poll = pollInterval ?? TimeSpan.FromMilliseconds(500);
+        var deadline = DateTimeOffset.UtcNow + to;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var rec = await GetTitleAsync(assetId, domain, ct);
+            if (rec is not null) return rec;
+            await Task.Delay(poll, ct);
+        }
+        throw new TimeoutException(
+            $"title {assetId} did not commit within {to.TotalSeconds}s");
+    }
+
     // =====================================================================
     // HTTP plumbing
     // =====================================================================
@@ -541,5 +891,23 @@ public sealed class QuidnugClient : IDisposable
     {
         if (signer is null || !signer.HasPrivateKey)
             throw new QuidnugValidationException("signer must have a private key");
+    }
+
+    /// <summary>Build a URL-encoded query string, skipping null/empty values.</summary>
+    private static string BuildQuery(params (string Key, object? Value)[] pairs)
+    {
+        var parts = new List<string>(pairs.Length);
+        foreach (var (key, value) in pairs)
+        {
+            if (value is null) continue;
+            string? s = value switch
+            {
+                string str => string.IsNullOrEmpty(str) ? null : str,
+                _ => value.ToString(),
+            };
+            if (string.IsNullOrEmpty(s)) continue;
+            parts.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(s)}");
+        }
+        return string.Join("&", parts);
     }
 }

@@ -73,3 +73,20 @@ public sealed record DomainFingerprint(
     [property: JsonPropertyName("blockHash")]    string BlockHash,
     [property: JsonPropertyName("producerQuid")] string ProducerQuid,
     [property: JsonPropertyName("timestamp")]    long Timestamp);
+
+/// <summary>One per-quid entry in a K-of-K bootstrap snapshot.</summary>
+public sealed record NonceSnapshotEntry(
+    [property: JsonPropertyName("quid")]     string Quid,
+    [property: JsonPropertyName("epoch")]    int Epoch,
+    [property: JsonPropertyName("maxNonce")] long MaxNonce);
+
+/// <summary>K-of-K bootstrap snapshot (QDP-0008).</summary>
+public sealed record NonceSnapshot(
+    [property: JsonPropertyName("blockHeight")]   long BlockHeight,
+    [property: JsonPropertyName("blockHash")]     string BlockHash,
+    [property: JsonPropertyName("timestamp")]     long Timestamp,
+    [property: JsonPropertyName("trustDomain")]   string TrustDomain,
+    [property: JsonPropertyName("entries")]       List<NonceSnapshotEntry>? Entries,
+    [property: JsonPropertyName("producerQuid")]  string ProducerQuid,
+    [property: JsonPropertyName("signature")]     string? Signature = null,
+    [property: JsonPropertyName("schemaVersion")] int SchemaVersion = 1);

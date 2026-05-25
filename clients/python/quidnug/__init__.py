@@ -35,10 +35,15 @@ from quidnug.errors import (
 )
 from quidnug.types import (
     TrustEdge,
+    IdentityRecord,
     Event,
     Anchor,
     GuardianSet,
     GuardianRef,
+    GuardianSetUpdate,
+    GuardianRecoveryInit,
+    GuardianRecoveryVeto,
+    GuardianRecoveryCommit,
     GuardianResignation,
     OwnershipStake,
     Title,
@@ -52,10 +57,21 @@ from quidnug.types import (
 )
 from quidnug.merkle import verify_inclusion_proof
 
+def __getattr__(name: str):
+    # `AsyncQuidnugClient` pulls in httpx, which is an optional
+    # extra (`quidnug[async]`). Defer the import until first access
+    # so the rest of the package stays usable without it.
+    if name == "AsyncQuidnugClient":
+        from quidnug.async_client import AsyncQuidnugClient as _A
+        return _A
+    raise AttributeError(f"module 'quidnug' has no attribute {name!r}")
+
+
 __version__ = "2.0.0"
 __all__ = [
     "__version__",
     "QuidnugClient",
+    "AsyncQuidnugClient",
     "Quid",
     "canonical_bytes",
     "sign_bytes",
@@ -68,10 +84,15 @@ __all__ = [
     "NodeError",
     "CryptoError",
     "TrustEdge",
+    "IdentityRecord",
     "Event",
     "Anchor",
     "GuardianSet",
     "GuardianRef",
+    "GuardianSetUpdate",
+    "GuardianRecoveryInit",
+    "GuardianRecoveryVeto",
+    "GuardianRecoveryCommit",
     "GuardianResignation",
     "OwnershipStake",
     "Title",

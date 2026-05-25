@@ -104,6 +104,20 @@ public actor QuidnugClient {
         }
     }
 
+    /// GET /api/registry/identity — paginated identity registry dump.
+    public func queryIdentityRegistry(
+        domain: String? = nil, limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/identity"
+        let q = buildQuery([
+            "domain": domain,
+            "limit": limit.map { String($0) },
+            "offset": offset.map { String($0) },
+        ])
+        if !q.isEmpty { path += "?" + q }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
     // =========================================================================
     // Trust
     // =========================================================================
@@ -154,6 +168,42 @@ public actor QuidnugClient {
         return try JSONDecoder().decode([TrustEdge].self, from: data)
     }
 
+    /// POST /api/trust/query — structured relational trust query.
+    public func queryRelationalTrust(
+        observer: String,
+        target: String,
+        domain: String? = nil,
+        maxDepth: Int? = nil,
+        includeUnverified: Bool = false
+    ) async throws -> TrustResult {
+        guard !observer.isEmpty, !target.isEmpty else {
+            throw QuidnugError.validation("observer and target are required")
+        }
+        var body: [String: Any] = [
+            "observer": observer,
+            "target": target,
+            "includeUnverified": includeUnverified,
+        ]
+        if let d = domain { body["domain"] = d }
+        if let m = maxDepth { body["maxDepth"] = m }
+        let raw = try await requestJSON(method: "POST", path: "trust/query", body: body)
+        return try decode(TrustResult.self, from: raw)
+    }
+
+    /// GET /api/registry/trust — paginated trust-edge registry.
+    public func queryTrustRegistry(
+        domain: String? = nil, limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/trust"
+        let q = buildQuery([
+            "domain": domain,
+            "limit": limit.map { String($0) },
+            "offset": offset.map { String($0) },
+        ])
+        if !q.isEmpty { path += "?" + q }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
     // =========================================================================
     // Title
     // =========================================================================
@@ -197,6 +247,20 @@ public actor QuidnugClient {
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
+    }
+
+    /// GET /api/registry/title — paginated title registry.
+    public func queryTitleRegistry(
+        domain: String? = nil, limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/title"
+        let q = buildQuery([
+            "domain": domain,
+            "limit": limit.map { String($0) },
+            "offset": offset.map { String($0) },
+        ])
+        if !q.isEmpty { path += "?" + q }
+        return try await requestJSON(method: "GET", path: path, body: nil)
     }
 
     // =========================================================================
@@ -275,11 +339,62 @@ public actor QuidnugClient {
     }
 
     // =========================================================================
+    // IPFS / large-payload storage
+    // =========================================================================
+
+    /// POST /api/ipfs/pin — pin raw bytes and return the resulting CID.
+    public func ipfsPin(content: Data) async throws -> String {
+        let (raw, status) = try await requestRaw(
+            method: "POST",
+            path: "ipfs/pin",
+            body: content,
+            contentType: "application/octet-stream",
+            envelope: true
+        )
+        let env = try parseEnvelope(data: raw, statusCode: status)
+        if let cid = env["cid"] as? String { return cid }
+        if let v = env["value"] as? String { return v }
+        throw QuidnugError.node(status: status, message: "IPFS pin response missing cid")
+    }
+
+    /// GET /api/ipfs/{cid} — fetch raw pinned bytes.
+    public func ipfsGet(cid: String) async throws -> Data {
+        let (data, _) = try await requestRaw(
+            method: "GET",
+            path: "ipfs/\(urlEscape(cid))",
+            body: nil,
+            contentType: nil,
+            envelope: false
+        )
+        return data
+    }
+
+    // =========================================================================
     // Guardians / gossip / fork-block / bootstrap
     // =========================================================================
 
     public func submitGuardianSetUpdate(_ update: [String: Any]) async throws -> [String: Any] {
         try await requestJSON(method: "POST", path: "guardian/set-update", body: update)
+    }
+
+    /// POST /api/guardian/recovery/init — start the M-of-N recovery delay.
+    public func submitRecoveryInit(_ `init`: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/init", body: `init`)
+    }
+
+    /// POST /api/guardian/recovery/veto — abort a pending recovery.
+    public func submitRecoveryVeto(_ veto: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/veto", body: veto)
+    }
+
+    /// POST /api/guardian/recovery/commit — finalize a delayed recovery.
+    public func submitRecoveryCommit(_ commit: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/commit", body: commit)
+    }
+
+    /// POST /api/guardian/resign — guardian leaves the set.
+    public func submitGuardianResignation(_ r: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/resign", body: r)
     }
 
     public func getGuardianSet(quidId: String) async throws -> GuardianSet? {
@@ -291,6 +406,37 @@ public actor QuidnugClient {
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
+    }
+
+    /// GET /api/guardian/pending-recovery/{quidId} — pending recovery for an account.
+    public func getPendingRecovery(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(
+                method: "GET",
+                path: "guardian/pending-recovery/\(urlEscape(quidId))",
+                body: nil
+            )
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/guardian/resignations/{quidId} — guardian resignations for an account.
+    public func getGuardianResignations(quidId: String) async throws -> [[String: Any]] {
+        let raw = try await requestJSON(
+            method: "GET",
+            path: "guardian/resignations/\(urlEscape(quidId))",
+            body: nil
+        )
+        if let arr = raw["data"] as? [[String: Any]] { return arr }
+        if let arr = raw["resignations"] as? [[String: Any]] { return arr }
+        if let arr = raw["value"] as? [[String: Any]] { return arr }
+        return []
+    }
+
+    /// POST /api/domain-fingerprints — publish a signed fingerprint.
+    public func submitDomainFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "domain-fingerprints", body: fp)
     }
 
     public func getLatestDomainFingerprint(domain: String) async throws -> DomainFingerprint? {
@@ -305,12 +451,226 @@ public actor QuidnugClient {
         }
     }
 
+    /// POST /api/anchor-gossip — deliver a cross-domain anchor message.
+    /// Idempotent on the server: re-delivery of an already-accepted
+    /// `messageId` returns 200 with `data.duplicate=true`.
+    public func submitAnchorGossip(_ msg: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "anchor-gossip", body: msg)
+    }
+
+    /// POST /api/gossip/push-anchor — push-gossip variant (QDP-0005).
+    public func pushAnchor(_ msg: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-anchor", body: msg)
+    }
+
+    /// POST /api/gossip/push-fingerprint — push-gossip variant (QDP-0005).
+    public func pushFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-fingerprint", body: fp)
+    }
+
+    /// POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot (QDP-0008).
+    public func submitNonceSnapshot(_ s: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "nonce-snapshots", body: s)
+    }
+
+    /// GET /api/nonce-snapshots/{domain}/latest — latest signed snapshot for a domain.
+    public func getLatestNonceSnapshot(domain: String) async throws -> NonceSnapshot? {
+        do {
+            return try decode(
+                NonceSnapshot.self,
+                from: await requestJSON(
+                    method: "GET",
+                    path: "nonce-snapshots/\(urlEscape(domain))/latest",
+                    body: nil
+                )
+            )
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
     public func bootstrapStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "bootstrap/status", body: nil)
     }
 
+    /// POST /api/fork-block — submit a signed fork-activation block (QDP-0009).
+    public func submitForkBlock(_ fb: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "fork-block", body: fb)
+    }
+
     public func forkBlockStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "fork-block/status", body: nil)
+    }
+
+    // =========================================================================
+    // Blocks + pending transactions
+    // =========================================================================
+
+    /// GET /api/blocks — recent committed blocks (paginated).
+    public func getBlocks(limit: Int? = nil, offset: Int? = nil) async throws -> [String: Any] {
+        var path = "blocks"
+        let q = buildQuery([
+            "limit": limit.map { String($0) },
+            "offset": offset.map { String($0) },
+        ])
+        if !q.isEmpty { path += "?" + q }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    /// GET /api/blocks/tentative/{domain} — uncommitted blocks for a domain.
+    public func getTentativeBlocks(domain: String) async throws -> [String: Any] {
+        try await requestJSON(
+            method: "GET",
+            path: "blocks/tentative/\(urlEscape(domain))",
+            body: nil
+        )
+    }
+
+    /// GET /api/transactions — pending mempool transactions.
+    public func getPendingTransactions(
+        domain: String? = nil, limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "transactions"
+        let q = buildQuery([
+            "domain": domain,
+            "limit": limit.map { String($0) },
+            "offset": offset.map { String($0) },
+        ])
+        if !q.isEmpty { path += "?" + q }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    // =========================================================================
+    // Domains
+    // =========================================================================
+
+    /// GET /api/domains — list all trust domains known to the node.
+    public func listDomains() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "domains", body: nil)
+    }
+
+    /// POST /api/domains — register a new trust domain.
+    public func registerDomain(_ domain: String) async throws -> [String: Any] {
+        guard !domain.isEmpty else { throw QuidnugError.validation("domain is required") }
+        return try await requestJSON(
+            method: "POST",
+            path: "domains",
+            body: ["name": domain]
+        )
+    }
+
+    /// Idempotent wrapper around `registerDomain` — returns success even when
+    /// the domain already exists. Useful in demo / bootstrap scripts.
+    public func ensureDomain(_ domain: String) async throws -> [String: Any] {
+        do {
+            return try await registerDomain(domain)
+        } catch QuidnugError.validation(let m) where m.lowercased().contains("already exists") {
+            return [
+                "status": "success",
+                "domain": domain,
+                "message": "trust domain already exists",
+            ]
+        } catch QuidnugError.conflict(_, let m) where m.lowercased().contains("already exists") {
+            return [
+                "status": "success",
+                "domain": domain,
+                "message": "trust domain already exists",
+            ]
+        }
+    }
+
+    /// GET /api/node/domains — domains the node is configured to manage.
+    public func getNodeDomains() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "node/domains", body: nil)
+    }
+
+    /// POST /api/node/domains — update the set of domains this node manages.
+    public func updateNodeDomains(_ domains: [String]) async throws -> [String: Any] {
+        try await requestJSON(
+            method: "POST",
+            path: "node/domains",
+            body: ["managedDomains": domains]
+        )
+    }
+
+    // =========================================================================
+    // Commit-wait helpers
+    // =========================================================================
+
+    /// Poll `getIdentity` until the record commits or the timeout elapses.
+    ///
+    /// A just-submitted IDENTITY transaction lives in the pending pool
+    /// until the next block is sealed. Code that immediately emits
+    /// events or title transactions referencing the new quid must
+    /// wait for commit first.
+    @discardableResult
+    public func waitForIdentity(
+        quidId: String,
+        domain: String? = nil,
+        timeout: TimeInterval = 30,
+        pollInterval: TimeInterval = 0.5
+    ) async throws -> IdentityRecord {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let rec = try await getIdentity(quidId: quidId, domain: domain) {
+                return rec
+            }
+            try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
+        throw QuidnugError.unavailable(
+            code: "TIMEOUT",
+            message: "identity \(quidId) did not commit within \(timeout)s"
+        )
+    }
+
+    /// Block until every quid id in `quidIds` is committed, sharing a
+    /// single deadline across all waits.
+    @discardableResult
+    public func waitForIdentities(
+        quidIds: [String],
+        domain: String? = nil,
+        timeout: TimeInterval = 30
+    ) async throws -> [IdentityRecord] {
+        let deadline = Date().addingTimeInterval(timeout)
+        var results: [IdentityRecord] = []
+        results.reserveCapacity(quidIds.count)
+        for qid in quidIds {
+            let remaining = max(0, deadline.timeIntervalSinceNow)
+            if remaining <= 0 {
+                throw QuidnugError.unavailable(
+                    code: "TIMEOUT",
+                    message: "identities not all committed within \(timeout)s (blocked on \(qid))"
+                )
+            }
+            let rec = try await waitForIdentity(
+                quidId: qid,
+                domain: domain,
+                timeout: remaining
+            )
+            results.append(rec)
+        }
+        return results
+    }
+
+    /// Poll `getTitle` until the record commits or the timeout elapses.
+    @discardableResult
+    public func waitForTitle(
+        assetId: String,
+        domain: String? = nil,
+        timeout: TimeInterval = 30,
+        pollInterval: TimeInterval = 0.5
+    ) async throws -> Title {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let rec = try await getTitle(assetId: assetId, domain: domain) {
+                return rec
+            }
+            try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
+        throw QuidnugError.unavailable(
+            code: "TIMEOUT",
+            message: "title \(assetId) did not commit within \(timeout)s"
+        )
     }
 
     // =========================================================================
@@ -420,5 +780,71 @@ public actor QuidnugClient {
     private func urlEscape(_ s: String) -> String {
         s.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
             ?? s
+    }
+
+    /// Build a URL-encoded query string from a `[name: value?]` map. Nil
+    /// values are dropped (matches Go's omitempty / Python's `_strip_none`).
+    private func buildQuery(_ params: [String: String?]) -> String {
+        var pairs: [String] = []
+        // Sort for stable ordering — easier on tests + caches.
+        for key in params.keys.sorted() {
+            guard let value = params[key], let v = value else { continue }
+            let ek = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key
+            let ev = v.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? v
+            pairs.append("\(ek)=\(ev)")
+        }
+        return pairs.joined(separator: "&")
+    }
+
+    /// Issue a request that bypasses JSON body encoding — used for raw
+    /// payloads (IPFS pin) and raw response bodies (IPFS fetch).
+    ///
+    /// - Parameter envelope: if `true` the caller will parse the returned
+    ///   bytes as the standard `{success,data,error}` JSON envelope; if
+    ///   `false`, the raw response body is returned unchanged.
+    private func requestRaw(
+        method: String,
+        path: String,
+        body: Data?,
+        contentType: String?,
+        envelope: Bool = true
+    ) async throws -> (Data, Int) {
+        let url = apiBase.appendingPathComponent(path.hasPrefix("/") ? String(path.dropFirst()) : path)
+        let u = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let finalURL = u?.url ?? url
+
+        var req = URLRequest(url: finalURL, timeoutInterval: timeout)
+        req.httpMethod = method
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if envelope {
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
+        if let b = body {
+            req.httpBody = b
+            if let ct = contentType {
+                req.setValue(ct, forHTTPHeaderField: "Content-Type")
+            }
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw QuidnugError.node(status: 0, message: "network: \(error)")
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        if !envelope && http.statusCode >= 400 {
+            throw QuidnugError.node(
+                status: http.statusCode,
+                message: "raw fetch failed (HTTP \(http.statusCode))"
+            )
+        }
+        return (data, http.statusCode)
     }
 }

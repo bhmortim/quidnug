@@ -40,6 +40,20 @@ const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
 ```
 
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Quid lifecycle | `generateQuid`, `importQuid` |
+| Nodes | `addNode`, `getNodes`, `findNodesForDomain` |
+| Transactions | `createTrustTransaction`, `createIdentityTransaction`, `createTitleTransaction`, `createEventTransaction`, `submitTransaction` |
+| Trust queries | `getTrustLevel`, `queryRelationalTrust`, `findTrustPath`, `queryTrustRegistry`, `computeTransitiveTrust` |
+| Identity / title | `getIdentity`, `getAssetOwnership`, `queryIdentityRegistry`, `queryTitleRegistry` |
+| Events | `getEventStream`, `getStreamEvents` |
+| Blocks / pending | `getBlocks`, `getPendingTransactions` |
+| Domains | `queryDomain` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+
 ## v2 extensions (QDPs 0002–0010)
 
 Importing the v2 module installs guardian / gossip / bootstrap /
