@@ -73,15 +73,19 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
+| Health / info | `health`, `info`, `nodes`, `blocks`, `getTentativeBlocks`, `getTransactions`, `listDomains`, `getMetrics` |
 | Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryRelationalTrust` |
 | Title | `registerTitle`, `getTitle` |
+| Registry | `queryTrustRegistry`, `queryIdentityRegistry`, `queryTitleRegistry` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Domain mgmt | `registerDomain`, `ensureDomain`, `queryDomain`, `getNodeDomains`, `updateNodeDomains` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003) | `getLatestDomainFingerprint`, `submitDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint`, `submitNonceSnapshot`, `getLatestNonceSnapshot` |
 | Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Fork-block (QDP-0009) | `forkBlockStatus`, `submitForkBlock` |
+| Commit-wait | `waitForIdentity`, `waitForIdentities`, `waitForTitle` |
 
 ### `CanonicalBytes` / `Merkle`
 

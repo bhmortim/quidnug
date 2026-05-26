@@ -61,6 +61,53 @@ public actor QuidnugClient {
         try await requestJSON(method: "GET", path: "nodes", body: nil)
     }
 
+    public func blocks() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "blocks", body: nil)
+    }
+
+    public func getTentativeBlocks(domain: String) async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "blocks/tentative/\(urlEscape(domain))", body: nil)
+    }
+
+    public func getTransactions(limit: Int? = nil, offset: Int? = nil) async throws -> [String: Any] {
+        var path = "transactions"
+        var q: [String] = []
+        if let l = limit { q.append("limit=\(l)") }
+        if let o = offset { q.append("offset=\(o)") }
+        if !q.isEmpty { path += "?" + q.joined(separator: "&") }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    public func listDomains() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "domains", body: nil)
+    }
+
+    /// GET /metrics — Prometheus exposition format (text, not JSON).
+    public func getMetrics() async throws -> String {
+        let base = apiBase.absoluteString.hasSuffix("/api")
+            ? String(apiBase.absoluteString.dropLast(4))
+            : apiBase.absoluteString
+        guard let url = URL(string: base + "/metrics") else {
+            throw QuidnugError.validation("invalid metrics URL")
+        }
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "GET"
+        req.setValue("text/plain", forHTTPHeaderField: "Accept")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        guard http.statusCode == 200 else {
+            throw QuidnugError.node(status: http.statusCode,
+                message: "metrics: HTTP \(http.statusCode)")
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     // =========================================================================
     // Identity
     // =========================================================================
@@ -154,6 +201,19 @@ public actor QuidnugClient {
         return try JSONDecoder().decode([TrustEdge].self, from: data)
     }
 
+    public func queryRelationalTrust(
+        observer: String, target: String, domain: String = "default", maxDepth: Int = 5
+    ) async throws -> TrustResult {
+        let body: [String: Any] = [
+            "observer": observer,
+            "target": target,
+            "domain": domain,
+            "maxDepth": maxDepth
+        ]
+        let raw = try await requestJSON(method: "POST", path: "trust/query", body: body)
+        return try decode(TrustResult.self, from: raw)
+    }
+
     // =========================================================================
     // Title
     // =========================================================================
@@ -197,6 +257,138 @@ public actor QuidnugClient {
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
+    }
+
+    // =========================================================================
+    // Registry queries
+    // =========================================================================
+
+    public func queryTrustRegistry(
+        truster: String? = nil, trustee: String? = nil,
+        limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/trust"
+        var q: [String] = []
+        if let t = truster { q.append("truster=\(urlEscape(t))") }
+        if let t = trustee { q.append("trustee=\(urlEscape(t))") }
+        if let l = limit { q.append("limit=\(l)") }
+        if let o = offset { q.append("offset=\(o)") }
+        if !q.isEmpty { path += "?" + q.joined(separator: "&") }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    public func queryIdentityRegistry(
+        quidId: String? = nil, limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/identity"
+        var q: [String] = []
+        if let id = quidId { q.append("quidId=\(urlEscape(id))") }
+        if let l = limit { q.append("limit=\(l)") }
+        if let o = offset { q.append("offset=\(o)") }
+        if !q.isEmpty { path += "?" + q.joined(separator: "&") }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    public func queryTitleRegistry(
+        assetId: String? = nil, owner: String? = nil,
+        limit: Int? = nil, offset: Int? = nil
+    ) async throws -> [String: Any] {
+        var path = "registry/title"
+        var q: [String] = []
+        if let a = assetId { q.append("assetId=\(urlEscape(a))") }
+        if let o = owner { q.append("owner=\(urlEscape(o))") }
+        if let l = limit { q.append("limit=\(l)") }
+        if let o = offset { q.append("offset=\(o)") }
+        if !q.isEmpty { path += "?" + q.joined(separator: "&") }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    // =========================================================================
+    // IPFS
+    // =========================================================================
+
+    public func pinToIPFS(content: Data) async throws -> String {
+        let url = apiBase.appendingPathComponent("ipfs/pin")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.httpBody = content
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        let parsed = try parseEnvelope(data: data, statusCode: http.statusCode)
+        if let cid = parsed["cid"] as? String { return cid }
+        if let value = parsed["value"] as? String { return value }
+        throw QuidnugError.node(status: http.statusCode, message: "ipfs pin response missing cid")
+    }
+
+    public func pinToIPFS(content: String) async throws -> String {
+        try await pinToIPFS(content: Data(content.utf8))
+    }
+
+    public func getFromIPFS(cid: String) async throws -> Data {
+        let url = apiBase.appendingPathComponent("ipfs/\(urlEscape(cid))")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "GET"
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        if http.statusCode >= 400 {
+            throw QuidnugError.node(status: http.statusCode,
+                message: "ipfs get: HTTP \(http.statusCode)")
+        }
+        return data
+    }
+
+    // =========================================================================
+    // Domain management
+    // =========================================================================
+
+    public func registerDomain(name: String) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "domains", body: ["name": name])
+    }
+
+    public func ensureDomain(name: String) async throws -> [String: Any] {
+        do {
+            return try await registerDomain(name: name)
+        } catch QuidnugError.validation(let m) where m.lowercased().contains("already exists") {
+            return ["status": "success", "domain": name,
+                    "message": "trust domain already exists"]
+        } catch QuidnugError.conflict(_, let m) where m.lowercased().contains("already exists") {
+            return ["status": "success", "domain": name,
+                    "message": "trust domain already exists"]
+        }
+    }
+
+    public func queryDomain(
+        name: String, type: String? = nil, param: String? = nil
+    ) async throws -> [String: Any] {
+        var path = "domains/\(urlEscape(name))/query"
+        var q: [String] = []
+        if let t = type { q.append("type=\(urlEscape(t))") }
+        if let p = param { q.append("param=\(urlEscape(p))") }
+        if !q.isEmpty { path += "?" + q.joined(separator: "&") }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    public func getNodeDomains() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "node/domains", body: nil)
+    }
+
+    public func updateNodeDomains(domains: [String]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "node/domains",
+            body: ["managedDomains": domains])
     }
 
     // =========================================================================
@@ -293,6 +485,76 @@ public actor QuidnugClient {
         }
     }
 
+    public func submitRecoveryInit(_ init_: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/init", body: init_)
+    }
+
+    public func submitRecoveryVeto(_ veto: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/veto", body: veto)
+    }
+
+    public func submitRecoveryCommit(_ commit: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/commit", body: commit)
+    }
+
+    public func submitGuardianResignation(_ resignation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/resign", body: resignation)
+    }
+
+    public func getPendingRecovery(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                path: "guardian/pending-recovery/\(urlEscape(quidId))", body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    public func getGuardianResignations(quidId: String) async throws -> [[String: Any]] {
+        do {
+            let raw = try await requestJSON(method: "GET",
+                path: "guardian/resignations/\(urlEscape(quidId))", body: nil)
+            if let arr = raw["data"] as? [[String: Any]] { return arr }
+            if let arr = raw["resignations"] as? [[String: Any]] { return arr }
+            return []
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return []
+        }
+    }
+
+    public func submitDomainFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "domain-fingerprints", body: fp)
+    }
+
+    public func submitAnchorGossip(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "anchor-gossip", body: message)
+    }
+
+    public func pushAnchor(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-anchor", body: message)
+    }
+
+    public func pushFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-fingerprint", body: fp)
+    }
+
+    public func submitNonceSnapshot(_ snapshot: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "nonce-snapshots", body: snapshot)
+    }
+
+    public func getLatestNonceSnapshot(domain: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                path: "nonce-snapshots/\(urlEscape(domain))/latest", body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    public func submitForkBlock(_ fb: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "fork-block", body: fb)
+    }
+
     public func getLatestDomainFingerprint(domain: String) async throws -> DomainFingerprint? {
         do {
             return try decode(DomainFingerprint.self,
@@ -311,6 +573,54 @@ public actor QuidnugClient {
 
     public func forkBlockStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "fork-block/status", body: nil)
+    }
+
+    // =========================================================================
+    // Commit-wait helpers
+    // =========================================================================
+
+    public func waitForIdentity(
+        quidId: String, domain: String? = nil,
+        timeout: TimeInterval = 30, pollInterval: TimeInterval = 0.5
+    ) async throws -> IdentityRecord {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let rec = try await getIdentity(quidId: quidId, domain: domain) {
+                return rec
+            }
+            try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
+        throw QuidnugError.validation("identity \(quidId) did not commit within \(timeout)s")
+    }
+
+    public func waitForIdentities(
+        quidIds: [String], domain: String? = nil,
+        timeout: TimeInterval = 30, pollInterval: TimeInterval = 0.5
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        for qid in quidIds {
+            let remaining = max(0, deadline.timeIntervalSince(Date()))
+            if remaining <= 0 {
+                throw QuidnugError.validation(
+                    "identities not all committed within \(timeout)s (blocked on \(qid))")
+            }
+            _ = try await waitForIdentity(quidId: qid, domain: domain,
+                timeout: remaining, pollInterval: pollInterval)
+        }
+    }
+
+    public func waitForTitle(
+        assetId: String, domain: String? = nil,
+        timeout: TimeInterval = 30, pollInterval: TimeInterval = 0.5
+    ) async throws -> Title {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let t = try await getTitle(assetId: assetId, domain: domain) {
+                return t
+            }
+            try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        }
+        throw QuidnugError.validation("title \(assetId) did not commit within \(timeout)s")
     }
 
     // =========================================================================

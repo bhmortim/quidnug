@@ -699,6 +699,37 @@ declare class QuidnugClient {
    * @returns List of nodes managing the domain
    */
   findNodesForDomain(domain: string): Promise<Node[]>;
+
+  // ==========================================================================
+  // Health / info / domains / metrics (added for full canonical API coverage)
+  // ==========================================================================
+
+  /** GET /api/health — is the node up and reachable? */
+  healthCheck(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/info — node identity, version, features, managed domains. */
+  getInfo(): Promise<APIResponse<unknown>>;
+
+  /** GET /api/blocks/tentative/{domain} — proposed but uncommitted blocks. */
+  getTentativeBlocks(domain: string): Promise<APIResponse<unknown>>;
+
+  /** GET /api/domains — list all registered trust domains. */
+  getDomains(): Promise<APIResponse<unknown>>;
+
+  /** POST /api/domains — register a new trust domain. */
+  registerDomain(name: string, attrs?: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** Idempotent register-or-noop. Returns success on "already exists". */
+  ensureDomain(name: string, attrs?: Record<string, unknown>): Promise<APIResponse<unknown>>;
+
+  /** GET /api/node/domains — domains this node is managing. */
+  getNodeDomains(): Promise<APIResponse<unknown>>;
+
+  /** POST /api/node/domains — update the list of domains this node manages. */
+  updateNodeDomains(domains: string[]): Promise<APIResponse<unknown>>;
+
+  /** GET /metrics — Prometheus exposition format (text, not JSON). */
+  getMetrics(): Promise<string>;
 }
 
 // ============================================================================

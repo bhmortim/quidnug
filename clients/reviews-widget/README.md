@@ -74,13 +74,11 @@ frame-src https://widget.quidnug.dev;
 The widget is Apache-2.0. If you prefer to self-host:
 
 1. Clone the repo.
-2. Build:
-   ```bash
-   cd clients/reviews-widget
-   npm install
-   npm run build
-   ```
-3. Deploy `dist/` to your CDN.
+2. Copy `src/loader.js` to your static asset host as-is — it is a
+   single zero-dependency IIFE, no build step required. Optional:
+   minify with any JS minifier (esbuild, terser, swc) before
+   deploying.
+3. Update the `<script src>` to point at your hosted copy.
 
 ## License
 

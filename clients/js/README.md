@@ -15,9 +15,24 @@ npm install @quidnug/client
 ## v1 surface
 
 The default import provides the v1 surface — identities, trust,
-titles, event streams, IPFS, and the client-side relational trust BFS.
-These are covered by the existing test suite
-(`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
+titles, event streams, IPFS, registries, domain management, and the
+client-side relational trust BFS. These are covered by the existing
+test suite (`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
+
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Quids | `generateQuid`, `importQuid` |
+| Transactions | `createTrustTransaction`, `createIdentityTransaction`, `createTitleTransaction`, `createEventTransaction`, `submitTransaction` |
+| Trust | `getTrustLevel`, `findTrustPath`, `queryRelationalTrust`, `computeTransitiveTrust` |
+| Identity / Title / Stream | `getIdentity`, `getAssetOwnership`, `getEventStream`, `getStreamEvents` |
+| Health / info | `healthCheck`, `getInfo`, `getMetrics` |
+| Blocks / Tx | `getBlocks`, `getNodes`, `getPendingTransactions`, `getTentativeBlocks` |
+| Registry | `queryTrustRegistry`, `queryIdentityRegistry`, `queryTitleRegistry` |
+| Domains | `getDomains`, `registerDomain`, `ensureDomain`, `queryDomain`, `findNodesForDomain`, `getNodeDomains`, `updateNodeDomains` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Node pool | `addNode` |
 
 ```js
 import QuidnugClient from "@quidnug/client";

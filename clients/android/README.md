@@ -94,9 +94,28 @@ lifecycleScope.launch {
 }
 ```
 
-Full protocol surface is available via `client.client` (the
-underlying Java `QuidnugClient`) — every Java method works
-unchanged.
+**Suspending convenience wrappers** (run on `Dispatchers.IO`):
+`registerIdentity`, `grantTrust`, `getTrust`, `emitEvent`, `streamEvents`.
+
+**Full protocol surface** is available via `client.client` — the
+underlying Java [`QuidnugClient`](../java/), which covers the full
+canonical API (identity, trust, titles, events, IPFS, registries,
+domain management, guardians + recovery, gossip, bootstrap, fork-block,
+Merkle proofs). Every Java method works unchanged from Kotlin; wrap
+calls in `withContext(Dispatchers.IO) { ... }` to avoid blocking the
+main thread.
+
+```kotlin
+lifecycleScope.launch {
+    // Java methods accessible via `client.client`
+    val registry = withContext(Dispatchers.IO) {
+        client.client.queryTrustRegistry(quid.id(), null, 50, 0)
+    }
+    val cid = withContext(Dispatchers.IO) {
+        client.client.pinToIPFS("hello world")
+    }
+}
+```
 
 ### `QuidVault`
 
