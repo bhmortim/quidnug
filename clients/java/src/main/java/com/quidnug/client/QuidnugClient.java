@@ -89,8 +89,42 @@ public final class QuidnugClient {
     public JsonNode info()         { return doGet("info"); }
     public JsonNode nodes()        { return doGet("nodes"); }
     public JsonNode blocks()       { return doGet("blocks"); }
+
+    /** @deprecated Use {@link #getTransactions()} instead. */
+    @Deprecated
     public JsonNode pendingTransactions() { return doGet("transactions"); }
+
+    /** GET /api/transactions — pending mempool listing. */
+    public JsonNode getTransactions() { return doGet("transactions"); }
+
     public JsonNode listDomains()  { return doGet("domains"); }
+
+    /** GET /api/blocks/tentative/{domain} — proposed (not yet committed) blocks. */
+    public JsonNode getTentativeBlocks(String domain) {
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    /**
+     * GET /metrics — Prometheus text-format metrics. Note: this endpoint lives at the
+     * server root (not under /api), so it bypasses the normal envelope parsing.
+     */
+    public String getMetrics() {
+        try {
+            URI uri = URI.create(apiBase.replaceAll("/api$", "") + "/metrics");
+            HttpRequest.Builder rb = HttpRequest.newBuilder().uri(uri).timeout(timeout)
+                    .header("Accept", "text/plain")
+                    .header("User-Agent", userAgent).GET();
+            if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+            HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                throw new NodeException("metrics: HTTP " + resp.statusCode(), resp.statusCode(), resp.body());
+            }
+            return resp.body();
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new NodeException("metrics: " + e.getMessage(), e);
+        }
+    }
 
     // =====================================================================
     // Identity
@@ -131,6 +165,42 @@ public final class QuidnugClient {
         } catch (Exception e) {
             throw new NodeException("decode identity: " + e.getMessage(), e);
         }
+    }
+
+    // =====================================================================
+    // Registry queries
+    // =====================================================================
+
+    public JsonNode queryTrustRegistry(String truster, String trustee, Integer limit, Integer offset) {
+        StringBuilder p = new StringBuilder("registry/trust");
+        StringBuilder qs = new StringBuilder();
+        if (truster != null) qs.append("&truster=").append(urlencode(truster));
+        if (trustee != null) qs.append("&trustee=").append(urlencode(trustee));
+        if (limit != null) qs.append("&limit=").append(limit);
+        if (offset != null) qs.append("&offset=").append(offset);
+        if (qs.length() > 0) p.append("?").append(qs.substring(1));
+        return doGet(p.toString());
+    }
+
+    public JsonNode queryIdentityRegistry(String quidId, Integer limit, Integer offset) {
+        StringBuilder p = new StringBuilder("registry/identity");
+        StringBuilder qs = new StringBuilder();
+        if (quidId != null) qs.append("&quidId=").append(urlencode(quidId));
+        if (limit != null) qs.append("&limit=").append(limit);
+        if (offset != null) qs.append("&offset=").append(offset);
+        if (qs.length() > 0) p.append("?").append(qs.substring(1));
+        return doGet(p.toString());
+    }
+
+    public JsonNode queryTitleRegistry(String assetId, String owner, Integer limit, Integer offset) {
+        StringBuilder p = new StringBuilder("registry/title");
+        StringBuilder qs = new StringBuilder();
+        if (assetId != null) qs.append("&assetId=").append(urlencode(assetId));
+        if (owner != null) qs.append("&owner=").append(urlencode(owner));
+        if (limit != null) qs.append("&limit=").append(limit);
+        if (offset != null) qs.append("&offset=").append(offset);
+        if (qs.length() > 0) p.append("?").append(qs.substring(1));
+        return doGet(p.toString());
     }
 
     // =====================================================================
@@ -180,6 +250,19 @@ public final class QuidnugClient {
             return out;
         } catch (Exception e) {
             throw new NodeException("decode trust edges: " + e.getMessage(), e);
+        }
+    }
+
+    public Types.TrustResult queryRelationalTrust(String observer, String target, String domain, int maxDepth) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", domain);
+        body.put("maxDepth", maxDepth);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust query: " + e.getMessage(), e);
         }
     }
 
@@ -300,6 +383,61 @@ public final class QuidnugClient {
     }
 
     // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /** POST /api/ipfs/pin — returns the CID of pinned content. */
+    public String pinToIPFS(byte[] content) {
+        try {
+            URI uri = URI.create(apiBase + "/ipfs/pin");
+            HttpRequest.Builder rb = HttpRequest.newBuilder().uri(uri).timeout(timeout)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/octet-stream")
+                    .header("User-Agent", userAgent)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+            if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+            HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+            JsonNode env = MAPPER.readTree(resp.body());
+            if (!env.path("success").asBoolean(false)) {
+                throw new NodeException("ipfs pin failed: " + env.path("error").path("message").asText(),
+                        resp.statusCode(), resp.body());
+            }
+            JsonNode data = env.get("data");
+            String cid = data != null && data.has("cid") ? data.get("cid").asText() : null;
+            if (cid == null || cid.isEmpty())
+                throw new NodeException("ipfs pin response missing cid", 200, resp.body());
+            return cid;
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new NodeException("ipfs pin: " + e.getMessage(), e);
+        }
+    }
+
+    /** POST /api/ipfs/pin — UTF-8 string overload. */
+    public String pinToIPFS(String content) {
+        return pinToIPFS(content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** GET /api/ipfs/{cid} — fetch raw bytes. */
+    public byte[] getFromIPFS(String cid) {
+        try {
+            URI uri = URI.create(apiBase + "/ipfs/" + urlencode(cid));
+            HttpRequest.Builder rb = HttpRequest.newBuilder().uri(uri).timeout(timeout)
+                    .header("User-Agent", userAgent).GET();
+            if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+            HttpResponse<byte[]> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (resp.statusCode() >= 400) {
+                throw new NodeException("ipfs get: HTTP " + resp.statusCode(), resp.statusCode(),
+                        new String(resp.body(), StandardCharsets.UTF_8));
+            }
+            return resp.body();
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new NodeException("ipfs get: " + e.getMessage(), e);
+        }
+    }
+
+    // =====================================================================
     // Guardians (QDP-0002)
     // =====================================================================
 
@@ -341,6 +479,21 @@ public final class QuidnugClient {
             return doGet("guardian/pending-recovery/" + urlencode(quidId));
         } catch (ValidationException e) {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** GET /api/guardian/resignations/{quid} — list of pending/active resignations. */
+    public List<JsonNode> getGuardianResignations(String quidId) {
+        try {
+            JsonNode j = doGet("guardian/resignations/" + urlencode(quidId));
+            JsonNode arr = j.has("data") ? j.get("data") : j.has("resignations") ? j.get("resignations") : null;
+            if (arr == null || !arr.isArray()) return Collections.emptyList();
+            List<JsonNode> out = new ArrayList<>(arr.size());
+            for (JsonNode n : arr) out.add(n);
+            return out;
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return Collections.emptyList();
             throw e;
         }
     }
@@ -398,6 +551,102 @@ public final class QuidnugClient {
     }
 
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+
+    // =====================================================================
+    // Domain management
+    // =====================================================================
+
+    /** POST /api/domains — register a new trust domain. */
+    public JsonNode registerDomain(String name) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        return doPost("domains", body);
+    }
+
+    /** POST /api/domains — with additional attributes. */
+    public JsonNode registerDomain(String name, Map<String, Object> attrs) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        if (attrs != null) body.putAll(attrs);
+        return doPost("domains", body);
+    }
+
+    /** Idempotent: register the domain if it doesn't already exist. */
+    public JsonNode ensureDomain(String name) {
+        try {
+            return registerDomain(name);
+        } catch (ValidationException | ConflictException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            if (msg.contains("already exists")) {
+                Map<String, Object> ok = new LinkedHashMap<>();
+                ok.put("status", "success");
+                ok.put("domain", name);
+                ok.put("message", "trust domain already exists");
+                return MAPPER.valueToTree(ok);
+            }
+            throw e;
+        }
+    }
+
+    /** GET /api/domains/{name}/query — domain-scoped lookup. */
+    public JsonNode queryDomain(String name, String type, String param) {
+        StringBuilder p = new StringBuilder("domains/").append(urlencode(name)).append("/query");
+        StringBuilder qs = new StringBuilder();
+        if (type != null) qs.append("&type=").append(urlencode(type));
+        if (param != null) qs.append("&param=").append(urlencode(param));
+        if (qs.length() > 0) p.append("?").append(qs.substring(1));
+        return doGet(p.toString());
+    }
+
+    /** GET /api/node/domains — domains this node currently manages. */
+    public JsonNode getNodeDomains() {
+        return doGet("node/domains");
+    }
+
+    /** POST /api/node/domains — replace the list of managed domains. */
+    public JsonNode updateNodeDomains(List<String> domains) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains);
+        return doPost("node/domains", body);
+    }
+
+    // =====================================================================
+    // Commit-wait helpers (poll until tx is in committed registry)
+    // =====================================================================
+
+    public Types.IdentityRecord waitForIdentity(String quidId, Duration timeout, Duration pollInterval) {
+        Instant deadline = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(deadline)) {
+            Types.IdentityRecord rec = getIdentity(quidId);
+            if (rec != null) return rec;
+            try { Thread.sleep(pollInterval.toMillis()); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+        }
+        throw new ValidationException("identity " + quidId + " did not commit within " + timeout);
+    }
+
+    public void waitForIdentities(List<String> quidIds, Duration timeout, Duration pollInterval) {
+        Instant deadline = Instant.now().plus(timeout);
+        for (String qid : quidIds) {
+            Duration remaining = Duration.between(Instant.now(), deadline);
+            if (remaining.isNegative() || remaining.isZero()) {
+                throw new ValidationException("identities not all committed within " + timeout
+                        + " (blocked on " + qid + ")");
+            }
+            waitForIdentity(qid, remaining, pollInterval);
+        }
+    }
+
+    public Types.Title waitForTitle(String assetId, String domain, Duration timeout, Duration pollInterval) {
+        Instant deadline = Instant.now().plus(timeout);
+        while (Instant.now().isBefore(deadline)) {
+            Types.Title t = getTitle(assetId, domain);
+            if (t != null) return t;
+            try { Thread.sleep(pollInterval.toMillis()); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+        }
+        throw new ValidationException("title " + assetId + " did not commit within " + timeout);
+    }
 
     // =====================================================================
     // Param objects (fluent builders)

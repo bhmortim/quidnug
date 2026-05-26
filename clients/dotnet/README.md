@@ -69,15 +69,19 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
+| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync`, `GetTentativeBlocksAsync`, `GetTransactionsAsync`, `ListDomainsAsync`, `GetMetricsAsync` |
 | Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync`, `QueryRelationalTrustAsync` |
 | Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Registry | `QueryTrustRegistryAsync`, `QueryIdentityRegistryAsync`, `QueryTitleRegistryAsync` |
+| IPFS | `PinToIPFSAsync`, `GetFromIPFSAsync` |
+| Domains | `RegisterDomainAsync`, `EnsureDomainAsync`, `QueryDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
+| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync`, `SubmitGuardianResignationAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync`, `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync` |
 | Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Commit-wait | `WaitForIdentityAsync`, `WaitForIdentitiesAsync`, `WaitForTitleAsync` |
 
 ### `CanonicalBytes` / `Merkle`
 

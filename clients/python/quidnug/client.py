@@ -858,10 +858,43 @@ class QuidnugClient:
         )
 
     def get_node_domains(self) -> Dict[str, Any]:
+        """GET /api/node/domains — domains this node is managing."""
         return self._request("GET", "node/domains")
 
     def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
+        """POST /api/node/domains — set the list of domains this node manages."""
         return self._request("POST", "node/domains", body={"managedDomains": domains})
+
+    def query_domain(
+        self,
+        name: str,
+        *,
+        type: Optional[str] = None,
+        param: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/domains/{name}/query — domain-specific query.
+
+        ``type`` is one of ``'trust'``, ``'identity'``, ``'title'`` and
+        ``param`` is the operand (quid id, asset id, etc).
+        """
+        params = _strip_none({"type": type, "param": param})
+        return self._request("GET", f"domains/{quote(name, safe='')}/query", params=params)
+
+    def get_metrics(self) -> str:
+        """GET /metrics — Prometheus exposition format (text, not JSON).
+
+        Note: ``/metrics`` is served at the server root, NOT under ``/api``.
+        Returns the raw text body unchanged.
+        """
+        base = self.api_base[: -len("/api")] if self.api_base.endswith("/api") else self.api_base
+        resp = self._session.get(f"{base}/metrics", timeout=self.timeout)
+        if resp.status_code != 200:
+            raise NodeError(
+                f"metrics: HTTP {resp.status_code}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return resp.text
 
 
 # --- Wire -> dataclass decoders -------------------------------------------

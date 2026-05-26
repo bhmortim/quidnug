@@ -66,6 +66,25 @@ Runnable examples live in `examples/`:
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
 
+### `Client` — full HTTP surface
+
+| Area | Methods |
+| --- | --- |
+| Health | `health`, `info`, `nodes`, `get_metrics` |
+| Blocks/Tx | `get_blocks`, `get_tentative_blocks`, `get_transactions` |
+| Identity | `register_identity`, `get_identity` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges`, `query_relational_trust` |
+| Title | `register_title`, `get_title` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events` |
+| Registry | `query_trust_registry`, `query_identity_registry`, `query_title_registry` |
+| IPFS | `ipfs_pin`, `ipfs_get` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `query_domain`, `get_node_domains`, `update_node_domains` |
+| Guardians (QDP-0002) | `submit_guardian_set_update`, `submit_recovery_init/veto/commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
+| Gossip (QDP-0003/5) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint` |
+| Bootstrap (QDP-0008) | `bootstrap_status`, `submit_nonce_snapshot`, `get_latest_nonce_snapshot` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| Commit-wait | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
+
 ## Error taxonomy
 
 ```rust

@@ -1514,6 +1514,130 @@ class QuidnugClient {
       throw new Error(`IPFS retrieval failed: ${error.message}`);
     }
   }
+
+  /**
+   * Node health check (GET /api/health).
+   * @returns {Promise<Object>} status + node_id + uptime
+   */
+  async healthCheck() {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/health`);
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Node info (GET /api/info): identity, version, features, managed domains.
+   * @returns {Promise<Object>}
+   */
+  async getInfo() {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/info`);
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Tentative (proposed but uncommitted) blocks for a domain.
+   * @param {string} domain
+   * @returns {Promise<Object>}
+   */
+  async getTentativeBlocks(domain) {
+    if (!domain) throw new Error('domain is required');
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(
+      `${nodeUrl}/api/blocks/tentative/${encodeURIComponent(domain)}`
+    );
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * List all registered trust domains on this node.
+   * @returns {Promise<Object>}
+   */
+  async getDomains() {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`);
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Register a new trust domain.
+   * @param {string} name
+   * @param {Object} [attrs] - optional extra attributes (description, etc).
+   * @returns {Promise<Object>}
+   */
+  async registerDomain(name, attrs = {}) {
+    if (!name) throw new Error('domain name is required');
+    const nodeUrl = this._getHealthyNode();
+    const body = { name, ...attrs };
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Idempotent register-or-noop. Treats "already exists" as success.
+   * @param {string} name
+   * @param {Object} [attrs]
+   * @returns {Promise<Object>}
+   */
+  async ensureDomain(name, attrs = {}) {
+    try {
+      return await this.registerDomain(name, attrs);
+    } catch (err) {
+      if (err && typeof err.message === 'string' &&
+          err.message.toLowerCase().includes('already exists')) {
+        return { status: 'success', domain: name,
+                 message: 'trust domain already exists' };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Get the list of domains this node is currently managing.
+   * @returns {Promise<Object>}
+   */
+  async getNodeDomains() {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`);
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Update the list of domains this node manages.
+   * @param {string[]} domains
+   * @returns {Promise<Object>}
+   */
+  async updateNodeDomains(domains) {
+    if (!Array.isArray(domains)) throw new Error('domains must be an array');
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ managedDomains: domains }),
+    });
+    return await this._parseResponse(response);
+  }
+
+  /**
+   * Prometheus metrics endpoint (GET /metrics — at server root, not /api).
+   * Returns plain text exposition format, not JSON.
+   * @returns {Promise<string>}
+   */
+  async getMetrics() {
+    const nodeUrl = this._getHealthyNode();
+    const response = await this._fetchWithRetry(`${nodeUrl}/metrics`);
+    if (!response.ok) {
+      const err = new Error(`metrics: HTTP ${response.status}`);
+      err.code = 'METRICS_ERROR';
+      err.httpStatus = response.status;
+      throw err;
+    }
+    return await response.text();
+  }
 }
 
 // Example usage in a browser environment

@@ -87,15 +87,19 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
+| Health | `health`, `info`, `nodes`, `blocks`, `getTransactions`, `listDomains`, `getTentativeBlocks`, `getMetrics` |
 | Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
+| Registry | `queryTrustRegistry`, `queryIdentityRegistry`, `queryTitleRegistry` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryRelationalTrust` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Domains | `registerDomain`, `ensureDomain`, `queryDomain`, `getNodeDomains`, `updateNodeDomains` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Commit-wait | `waitForIdentity`, `waitForIdentities`, `waitForTitle` |
 
 ### `CanonicalBytes` — signable-bytes encoder
 
