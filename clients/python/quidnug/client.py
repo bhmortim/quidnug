@@ -651,31 +651,36 @@ class QuidnugClient:
         return resp.content
 
     # --- Guardian sets + recovery (QDP-0002 / QDP-0006) --------------------
+    #
+    # These endpoints are mounted by the node under /api/v2 (see
+    # internal/core/handlers.go where v2Router = router.PathPrefix(
+    # "/api/v2").Subrouter()). Earlier releases of this SDK posted them
+    # to /api/<path> which returns 404 against a stock node.
 
     def submit_guardian_set_update(self, update: GuardianSetUpdate) -> Dict[str, Any]:
-        """POST /api/guardian/set-update — install or rotate guardians."""
-        return self._request("POST", "guardian/set-update", body=_dc(update))
+        """POST /api/v2/guardian/set-update — install or rotate guardians."""
+        return self._request("POST", "v2/guardian/set-update", body=_dc(update))
 
     def submit_recovery_init(self, init: GuardianRecoveryInit) -> Dict[str, Any]:
-        """POST /api/guardian/recovery/init — start the M-of-N recovery delay."""
-        return self._request("POST", "guardian/recovery/init", body=_dc(init))
+        """POST /api/v2/guardian/recovery/init — start the M-of-N recovery delay."""
+        return self._request("POST", "v2/guardian/recovery/init", body=_dc(init))
 
     def submit_recovery_veto(self, veto: GuardianRecoveryVeto) -> Dict[str, Any]:
-        """POST /api/guardian/recovery/veto — owner or guardian aborts recovery."""
-        return self._request("POST", "guardian/recovery/veto", body=_dc(veto))
+        """POST /api/v2/guardian/recovery/veto — owner or guardian aborts recovery."""
+        return self._request("POST", "v2/guardian/recovery/veto", body=_dc(veto))
 
     def submit_recovery_commit(self, commit: GuardianRecoveryCommit) -> Dict[str, Any]:
-        """POST /api/guardian/recovery/commit — finalize the delayed recovery."""
-        return self._request("POST", "guardian/recovery/commit", body=_dc(commit))
+        """POST /api/v2/guardian/recovery/commit — finalize the delayed recovery."""
+        return self._request("POST", "v2/guardian/recovery/commit", body=_dc(commit))
 
     def submit_guardian_resignation(self, resignation: GuardianResignation) -> Dict[str, Any]:
-        """POST /api/guardian/resign — guardian leaves the set."""
-        return self._request("POST", "guardian/resign", body=_dc(resignation))
+        """POST /api/v2/guardian/resign — guardian leaves the set."""
+        return self._request("POST", "v2/guardian/resign", body=_dc(resignation))
 
     def get_guardian_set(self, quid: str) -> Optional[GuardianSet]:
-        """GET /api/guardian/set/{quid} — current guardian set or None."""
+        """GET /api/v2/guardian/set/{quid} — current guardian set or None."""
         try:
-            data = self._request("GET", f"guardian/set/{quote(quid, safe='')}")
+            data = self._request("GET", f"v2/guardian/set/{quote(quid, safe='')}")
         except ValidationError as exc:
             if (exc.details or {}).get("code") == "NOT_FOUND":
                 return None
@@ -683,30 +688,30 @@ class QuidnugClient:
         return _guardian_set_from_wire(data)
 
     def get_pending_recovery(self, quid: str) -> Optional[Dict[str, Any]]:
-        """GET /api/guardian/pending-recovery/{quid}."""
+        """GET /api/v2/guardian/pending-recovery/{quid}."""
         try:
-            return self._request("GET", f"guardian/pending-recovery/{quote(quid, safe='')}")
+            return self._request("GET", f"v2/guardian/pending-recovery/{quote(quid, safe='')}")
         except ValidationError as exc:
             if (exc.details or {}).get("code") == "NOT_FOUND":
                 return None
             raise
 
     def get_guardian_resignations(self, quid: str) -> List[Dict[str, Any]]:
-        """GET /api/guardian/resignations/{quid}."""
-        data = self._request("GET", f"guardian/resignations/{quote(quid, safe='')}")
+        """GET /api/v2/guardian/resignations/{quid}."""
+        data = self._request("GET", f"v2/guardian/resignations/{quote(quid, safe='')}")
         raw = data.get("data") or data.get("resignations") or []
         return raw if isinstance(raw, list) else []
 
     # --- Cross-domain gossip + fingerprints (QDP-0003 / QDP-0005) ----------
 
     def submit_domain_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
-        """POST /api/domain-fingerprints — publish a signed fingerprint."""
-        return self._request("POST", "domain-fingerprints", body=_dc(fp))
+        """POST /api/v2/domain-fingerprints — publish a signed fingerprint."""
+        return self._request("POST", "v2/domain-fingerprints", body=_dc(fp))
 
     def get_latest_domain_fingerprint(self, domain: str) -> Optional[DomainFingerprint]:
-        """GET /api/domain-fingerprints/{domain}/latest."""
+        """GET /api/v2/domain-fingerprints/{domain}/latest."""
         try:
-            data = self._request("GET", f"domain-fingerprints/{quote(domain, safe='')}/latest")
+            data = self._request("GET", f"v2/domain-fingerprints/{quote(domain, safe='')}/latest")
         except ValidationError as exc:
             if (exc.details or {}).get("code") == "NOT_FOUND":
                 return None
@@ -714,31 +719,31 @@ class QuidnugClient:
         return _domain_fingerprint_from_wire(data)
 
     def submit_anchor_gossip(self, message: AnchorGossipMessage) -> Dict[str, Any]:
-        """POST /api/anchor-gossip — deliver a cross-domain anchor message.
+        """POST /api/v2/anchor-gossip — deliver a cross-domain anchor message.
 
         Idempotent: the node returns 200 with ``data.duplicate=True`` on
         re-receipt of an already-accepted message_id.
         """
-        return self._request("POST", "anchor-gossip", body=_dc(message))
+        return self._request("POST", "v2/anchor-gossip", body=_dc(message))
 
     def push_anchor(self, message: AnchorGossipMessage) -> Dict[str, Any]:
-        """POST /api/gossip/push-anchor — push gossip variant (QDP-0005)."""
-        return self._request("POST", "gossip/push-anchor", body=_dc(message))
+        """POST /api/v2/gossip/push-anchor — push gossip variant (QDP-0005)."""
+        return self._request("POST", "v2/gossip/push-anchor", body=_dc(message))
 
     def push_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
-        """POST /api/gossip/push-fingerprint — push gossip variant (QDP-0005)."""
-        return self._request("POST", "gossip/push-fingerprint", body=_dc(fp))
+        """POST /api/v2/gossip/push-fingerprint — push gossip variant (QDP-0005)."""
+        return self._request("POST", "v2/gossip/push-fingerprint", body=_dc(fp))
 
     # --- Bootstrap + nonce snapshots (QDP-0008) ----------------------------
 
     def submit_nonce_snapshot(self, snapshot: NonceSnapshot) -> Dict[str, Any]:
-        """POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot."""
-        return self._request("POST", "nonce-snapshots", body=_dc(snapshot))
+        """POST /api/v2/nonce-snapshots — publish a K-of-K bootstrap snapshot."""
+        return self._request("POST", "v2/nonce-snapshots", body=_dc(snapshot))
 
     def get_latest_nonce_snapshot(self, domain: str) -> Optional[NonceSnapshot]:
-        """GET /api/nonce-snapshots/{domain}/latest."""
+        """GET /api/v2/nonce-snapshots/{domain}/latest."""
         try:
-            data = self._request("GET", f"nonce-snapshots/{quote(domain, safe='')}/latest")
+            data = self._request("GET", f"v2/nonce-snapshots/{quote(domain, safe='')}/latest")
         except ValidationError as exc:
             if (exc.details or {}).get("code") == "NOT_FOUND":
                 return None
@@ -746,18 +751,18 @@ class QuidnugClient:
         return _nonce_snapshot_from_wire(data)
 
     def bootstrap_status(self) -> Dict[str, Any]:
-        """GET /api/bootstrap/status."""
-        return self._request("GET", "bootstrap/status")
+        """GET /api/v2/bootstrap/status."""
+        return self._request("GET", "v2/bootstrap/status")
 
     # --- Fork-block (QDP-0009) ---------------------------------------------
 
     def submit_fork_block(self, fb: ForkBlock) -> Dict[str, Any]:
-        """POST /api/fork-block — submit a signed fork-activation block."""
-        return self._request("POST", "fork-block", body=_dc(fb))
+        """POST /api/v2/fork-block — submit a signed fork-activation block."""
+        return self._request("POST", "v2/fork-block", body=_dc(fb))
 
     def fork_block_status(self) -> Dict[str, Any]:
-        """GET /api/fork-block/status — activation status across features."""
-        return self._request("GET", "fork-block/status")
+        """GET /api/v2/fork-block/status — activation status across features."""
+        return self._request("GET", "v2/fork-block/status")
 
     # --- Blocks + transactions ---------------------------------------------
 
@@ -862,6 +867,274 @@ class QuidnugClient:
 
     def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
         return self._request("POST", "node/domains", body={"managedDomains": domains})
+
+    # --- v3: Peer scoreboard (QDP-0011) ------------------------------------
+
+    def get_peers(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """GET /api/peers — paginated peer scoreboard."""
+        return self._request(
+            "GET", "peers", params=_strip_none({"limit": limit, "offset": offset})
+        )
+
+    def get_peer(self, node_quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/peers/{nodeQuid} — per-peer breakdown or None on 404."""
+        if not node_quid:
+            raise ValidationError("node_quid is required")
+        try:
+            return self._request("GET", f"peers/{quote(node_quid, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    # --- v3: Node advertisements -------------------------------------------
+
+    def submit_node_advertisement(self, ad: Any) -> Dict[str, Any]:
+        """POST /api/node-advertisements — publish a node advertisement."""
+        if ad is None:
+            raise ValidationError("advertisement is required")
+        return self._request("POST", "node-advertisements", body=_dc(ad))
+
+    # --- v3: Domain registry extras ----------------------------------------
+
+    def get_top_domains(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """GET /api/domains/top — top domains by activity/score."""
+        return self._request(
+            "GET", "domains/top", params=_strip_none({"limit": limit, "offset": offset})
+        )
+
+    def submit_domain_gossip(self, msg: Any) -> Dict[str, Any]:
+        """POST /api/gossip/domains — gossip a domain registry update."""
+        if msg is None:
+            raise ValidationError("message is required")
+        return self._request("POST", "gossip/domains", body=_dc(msg))
+
+    # --- v3: Content moderation (QDP-0015) ---------------------------------
+
+    def submit_moderation_action(self, action: Any) -> Dict[str, Any]:
+        """POST /api/moderation/actions — record a moderation action."""
+        if action is None:
+            raise ValidationError("action is required")
+        return self._request("POST", "moderation/actions", body=_dc(action))
+
+    def get_moderation_actions(self, target_type: str, target_id: str) -> Dict[str, Any]:
+        """GET /api/moderation/actions/{targetType}/{targetId}."""
+        if not target_type or not target_id:
+            raise ValidationError("target_type and target_id are required")
+        return self._request(
+            "GET",
+            f"moderation/actions/{quote(target_type, safe='')}/{quote(target_id, safe='')}",
+        )
+
+    # --- v3: Operator audit log (QDP-0018) ---------------------------------
+
+    def get_audit_head(self) -> Dict[str, Any]:
+        """GET /api/audit/head — latest audit-log head pointer."""
+        return self._request("GET", "audit/head")
+
+    def get_audit_entries(
+        self, *, since: Optional[int] = None, limit: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """GET /api/audit/entries — audit-log slice."""
+        return self._request(
+            "GET", "audit/entries", params=_strip_none({"since": since, "limit": limit})
+        )
+
+    def get_audit_entry(self, sequence: int) -> Optional[Dict[str, Any]]:
+        """GET /api/audit/entry/{sequence} — single audit entry or None."""
+        if sequence is None:
+            raise ValidationError("sequence is required")
+        try:
+            return self._request("GET", f"audit/entry/{quote(str(sequence), safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    # --- v3: Privacy / DSR / consent (QDP-0017) ----------------------------
+
+    def submit_dsr(self, request: Any) -> Dict[str, Any]:
+        """POST /api/privacy/dsr — submit a data subject rights request."""
+        if request is None:
+            raise ValidationError("request is required")
+        return self._request("POST", "privacy/dsr", body=_dc(request))
+
+    def get_dsr_status(self, request_tx_id: str) -> Optional[Dict[str, Any]]:
+        """GET /api/privacy/dsr/{requestTxId} — current DSR status or None."""
+        if not request_tx_id:
+            raise ValidationError("request_tx_id is required")
+        try:
+            return self._request("GET", f"privacy/dsr/{quote(request_tx_id, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    def grant_consent(self, grant: Any) -> Dict[str, Any]:
+        """POST /api/privacy/consent/grants — record a consent grant."""
+        if grant is None:
+            raise ValidationError("grant is required")
+        return self._request("POST", "privacy/consent/grants", body=_dc(grant))
+
+    def withdraw_consent(self, withdraw: Any) -> Dict[str, Any]:
+        """POST /api/privacy/consent/withdraws — record a consent withdrawal."""
+        if withdraw is None:
+            raise ValidationError("withdraw is required")
+        return self._request("POST", "privacy/consent/withdraws", body=_dc(withdraw))
+
+    def get_consent_history(
+        self,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        subject_quid: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/privacy/consent/history — paginated consent history."""
+        return self._request(
+            "GET",
+            "privacy/consent/history",
+            params=_strip_none(
+                {"limit": limit, "offset": offset, "subjectQuid": subject_quid}
+            ),
+        )
+
+    def create_processing_restriction(self, restriction: Any) -> Dict[str, Any]:
+        """POST /api/privacy/restrictions — install a processing restriction."""
+        if restriction is None:
+            raise ValidationError("restriction is required")
+        return self._request("POST", "privacy/restrictions", body=_dc(restriction))
+
+    def get_processing_restrictions(self, subject_quid: str) -> Dict[str, Any]:
+        """GET /api/privacy/restrictions/{subjectQuid} — restrictions for a subject."""
+        if not subject_quid:
+            raise ValidationError("subject_quid is required")
+        return self._request(
+            "GET", f"privacy/restrictions/{quote(subject_quid, safe='')}"
+        )
+
+    def submit_dsr_compliance(self, compliance: Any) -> Dict[str, Any]:
+        """POST /api/privacy/compliance — submit DSR compliance evidence."""
+        if compliance is None:
+            raise ValidationError("compliance is required")
+        return self._request("POST", "privacy/compliance", body=_dc(compliance))
+
+    # --- v3: Network + operator discovery (QDP-0014) -----------------------
+    # All discovery routes live under /api/v2/discovery/*.
+
+    def get_discovery_domain(self, name: str) -> Optional[Dict[str, Any]]:
+        """GET /api/v2/discovery/domain/{name} — domain discovery record."""
+        if not name:
+            raise ValidationError("name is required")
+        try:
+            return self._request("GET", f"v2/discovery/domain/{quote(name, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    def get_discovery_node(self, quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/v2/discovery/node/{quid} — node discovery record."""
+        if not quid:
+            raise ValidationError("quid is required")
+        try:
+            return self._request("GET", f"v2/discovery/node/{quote(quid, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    def get_discovery_operator(self, quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/v2/discovery/operator/{quid} — operator discovery record."""
+        if not quid:
+            raise ValidationError("quid is required")
+        try:
+            return self._request("GET", f"v2/discovery/operator/{quote(quid, safe='')}")
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    def discovery_quids(self, **params: Any) -> Dict[str, Any]:
+        """GET /api/v2/discovery/quids — discover quids matching filters."""
+        return self._request("GET", "v2/discovery/quids", params=_strip_none(params))
+
+    def discovery_trusted_quids(self, **params: Any) -> Dict[str, Any]:
+        """GET /api/v2/discovery/trusted-quids — discover trusted quids."""
+        return self._request(
+            "GET", "v2/discovery/trusted-quids", params=_strip_none(params)
+        )
+
+    # --- v3: DNS domain attestation (QDP-0023) -----------------------------
+    # All DNS attestation routes live under /api/v2/dns/*.
+
+    def submit_dns_claim(self, claim: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/claim — claim a DNS domain."""
+        if claim is None:
+            raise ValidationError("claim is required")
+        return self._request("POST", "v2/dns/claim", body=_dc(claim))
+
+    def submit_dns_challenge(self, challenge: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/challenge — submit a DNS validation challenge."""
+        if challenge is None:
+            raise ValidationError("challenge is required")
+        return self._request("POST", "v2/dns/challenge", body=_dc(challenge))
+
+    def submit_dns_attestation(self, attestation: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/attestation — submit a DNS attestation."""
+        if attestation is None:
+            raise ValidationError("attestation is required")
+        return self._request("POST", "v2/dns/attestation", body=_dc(attestation))
+
+    def submit_dns_renewal(self, renewal: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/renewal — renew a DNS attestation."""
+        if renewal is None:
+            raise ValidationError("renewal is required")
+        return self._request("POST", "v2/dns/renewal", body=_dc(renewal))
+
+    def submit_dns_revocation(self, revocation: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/revocation — revoke a DNS attestation."""
+        if revocation is None:
+            raise ValidationError("revocation is required")
+        return self._request("POST", "v2/dns/revocation", body=_dc(revocation))
+
+    def submit_dns_delegate(self, delegate: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/delegate — delegate DNS authority."""
+        if delegate is None:
+            raise ValidationError("delegate is required")
+        return self._request("POST", "v2/dns/delegate", body=_dc(delegate))
+
+    def submit_dns_delegate_revocation(self, revocation: Any) -> Dict[str, Any]:
+        """POST /api/v2/dns/delegate-revocation — revoke a DNS delegation."""
+        if revocation is None:
+            raise ValidationError("revocation is required")
+        return self._request("POST", "v2/dns/delegate-revocation", body=_dc(revocation))
+
+    def get_dns_attestations(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/attestations/{domain} — attestations for a domain."""
+        if not domain:
+            raise ValidationError("domain is required")
+        return self._request("GET", f"v2/dns/attestations/{quote(domain, safe='')}")
+
+    def get_dns_attestations_weighted(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/attestations/{domain}/weighted — trust-weighted view."""
+        if not domain:
+            raise ValidationError("domain is required")
+        return self._request(
+            "GET", f"v2/dns/attestations/{quote(domain, safe='')}/weighted"
+        )
+
+    def resolve_dns(self, domain: str, record_type: str) -> Dict[str, Any]:
+        """GET /api/v2/dns/resolve/{domain}/{recordType} — resolve DNS records."""
+        if not domain or not record_type:
+            raise ValidationError("domain and record_type are required")
+        return self._request(
+            "GET",
+            f"v2/dns/resolve/{quote(domain, safe='')}/{quote(record_type, safe='')}",
+        )
 
 
 # --- Wire -> dataclass decoders -------------------------------------------

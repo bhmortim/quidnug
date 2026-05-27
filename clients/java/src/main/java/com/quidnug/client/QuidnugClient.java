@@ -67,8 +67,12 @@ public final class QuidnugClient {
     private final String authToken;
     private final String userAgent;
 
+    private final String apiBaseV2;
+
     private QuidnugClient(Builder b) {
-        this.apiBase        = b.baseUrl.replaceAll("/+$", "") + "/api";
+        String trimmed      = b.baseUrl.replaceAll("/+$", "");
+        this.apiBase        = trimmed + "/api";
+        this.apiBaseV2      = trimmed + "/api/v2";
         this.http           = b.http != null ? b.http : HttpClient.newBuilder()
                                    .connectTimeout(b.timeout)
                                    .build();
@@ -300,33 +304,33 @@ public final class QuidnugClient {
     }
 
     // =====================================================================
-    // Guardians (QDP-0002)
+    // Guardians (QDP-0002) — mounted under /api/v2/guardian/* on the node
     // =====================================================================
 
     public JsonNode submitGuardianSetUpdate(Map<String, Object> update) {
-        return doPost("guardian/set-update", update);
+        return doPostV2("guardian/set-update", update);
     }
 
     public JsonNode submitRecoveryInit(Map<String, Object> init) {
-        return doPost("guardian/recovery/init", init);
+        return doPostV2("guardian/recovery/init", init);
     }
 
     public JsonNode submitRecoveryVeto(Map<String, Object> veto) {
-        return doPost("guardian/recovery/veto", veto);
+        return doPostV2("guardian/recovery/veto", veto);
     }
 
     public JsonNode submitRecoveryCommit(Map<String, Object> commit) {
-        return doPost("guardian/recovery/commit", commit);
+        return doPostV2("guardian/recovery/commit", commit);
     }
 
     public JsonNode submitGuardianResignation(Map<String, Object> resig) {
-        return doPost("guardian/resign", resig);
+        return doPostV2("guardian/resign", resig);
     }
 
     public Types.GuardianSet getGuardianSet(String quidId) {
         try {
             return MAPPER.treeToValue(
-                    doGet("guardian/set/" + urlencode(quidId)),
+                    doGetV2("guardian/set/" + urlencode(quidId)),
                     Types.GuardianSet.class);
         } catch (ValidationException e) {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
@@ -338,25 +342,30 @@ public final class QuidnugClient {
 
     public JsonNode getPendingRecovery(String quidId) {
         try {
-            return doGet("guardian/pending-recovery/" + urlencode(quidId));
+            return doGetV2("guardian/pending-recovery/" + urlencode(quidId));
         } catch (ValidationException e) {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
             throw e;
         }
     }
 
+    /** GET /api/v2/guardian/resignations/{quidId} — recent guardian resignations. */
+    public JsonNode getGuardianResignations(String quidId) {
+        return doGetV2("guardian/resignations/" + urlencode(quidId));
+    }
+
     // =====================================================================
-    // Gossip + bootstrap + fork-block
+    // Gossip + bootstrap + fork-block — mounted under /api/v2/* on the node
     // =====================================================================
 
     public JsonNode submitDomainFingerprint(Map<String, Object> fp) {
-        return doPost("domain-fingerprints", fp);
+        return doPostV2("domain-fingerprints", fp);
     }
 
     public Types.DomainFingerprint getLatestDomainFingerprint(String domain) {
         try {
             return MAPPER.treeToValue(
-                    doGet("domain-fingerprints/" + urlencode(domain) + "/latest"),
+                    doGetV2("domain-fingerprints/" + urlencode(domain) + "/latest"),
                     Types.DomainFingerprint.class);
         } catch (ValidationException e) {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
@@ -367,37 +376,320 @@ public final class QuidnugClient {
     }
 
     public JsonNode submitAnchorGossip(Map<String, Object> msg) {
-        return doPost("anchor-gossip", msg);
+        return doPostV2("anchor-gossip", msg);
     }
 
     public JsonNode pushAnchor(Map<String, Object> msg) {
-        return doPost("gossip/push-anchor", msg);
+        return doPostV2("gossip/push-anchor", msg);
     }
 
     public JsonNode pushFingerprint(Map<String, Object> fp) {
-        return doPost("gossip/push-fingerprint", fp);
+        return doPostV2("gossip/push-fingerprint", fp);
     }
 
     public JsonNode submitNonceSnapshot(Map<String, Object> snapshot) {
-        return doPost("nonce-snapshots", snapshot);
+        return doPostV2("nonce-snapshots", snapshot);
     }
 
     public JsonNode getLatestNonceSnapshot(String domain) {
         try {
-            return doGet("nonce-snapshots/" + urlencode(domain) + "/latest");
+            return doGetV2("nonce-snapshots/" + urlencode(domain) + "/latest");
         } catch (ValidationException e) {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
             throw e;
         }
     }
 
-    public JsonNode bootstrapStatus() { return doGet("bootstrap/status"); }
+    public JsonNode bootstrapStatus() { return doGetV2("bootstrap/status"); }
 
     public JsonNode submitForkBlock(Map<String, Object> fb) {
-        return doPost("fork-block", fb);
+        return doPostV2("fork-block", fb);
     }
 
-    public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+    public JsonNode forkBlockStatus() { return doGetV2("fork-block/status"); }
+
+    // =====================================================================
+    // v3: Peers (QDP-0011 scoreboard) — mounted under /api/peers
+    // =====================================================================
+
+    /** GET /api/peers — peer scoreboard. */
+    public JsonNode getPeers(Integer limit, Integer offset) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "limit", limit);
+        appendParam(qs, "offset", offset);
+        return doGet("peers" + qs);
+    }
+
+    /** GET /api/peers/{nodeQuid} — per-peer breakdown. Returns null on 404. */
+    public JsonNode getPeer(String nodeQuid) {
+        if (nodeQuid == null || nodeQuid.isEmpty())
+            throw new ValidationException("nodeQuid is required");
+        try {
+            return doGet("peers/" + urlencode(nodeQuid));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // v3: Node advertisements — POST /api/node-advertisements
+    // =====================================================================
+
+    /** POST /api/node-advertisements — submit a signed node advertisement. */
+    public JsonNode submitNodeAdvertisement(Object ad) {
+        if (ad == null) throw new ValidationException("advertisement is required");
+        return doPost("node-advertisements", ad);
+    }
+
+    // =====================================================================
+    // v3: Domain registry extras
+    // =====================================================================
+
+    /** GET /api/domains/top — top domains by some scoring metric. */
+    public JsonNode getTopDomains(Integer limit, Integer offset) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "limit", limit);
+        appendParam(qs, "offset", offset);
+        return doGet("domains/top" + qs);
+    }
+
+    /** POST /api/gossip/domains — submit a domain-registry gossip message. */
+    public JsonNode submitDomainGossip(Object msg) {
+        if (msg == null) throw new ValidationException("message is required");
+        return doPost("gossip/domains", msg);
+    }
+
+    /** GET /api/blocks/tentative/{domain} — tentative (not-yet-final) blocks. */
+    public JsonNode getTentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    // =====================================================================
+    // v3: Content moderation (QDP-0015) — /api/moderation/*
+    // =====================================================================
+
+    /** POST /api/moderation/actions — submit a moderation action. */
+    public JsonNode submitModerationAction(Object action) {
+        if (action == null) throw new ValidationException("action is required");
+        return doPost("moderation/actions", action);
+    }
+
+    /** GET /api/moderation/actions/{targetType}/{targetId}. */
+    public JsonNode getModerationActions(String targetType, String targetId) {
+        if (targetType == null || targetType.isEmpty()
+                || targetId == null || targetId.isEmpty())
+            throw new ValidationException("targetType and targetId are required");
+        return doGet("moderation/actions/"
+                + urlencode(targetType) + "/" + urlencode(targetId));
+    }
+
+    // =====================================================================
+    // v3: Operator audit log (QDP-0018) — /api/audit/*
+    // =====================================================================
+
+    /** GET /api/audit/head — current head sequence + root. */
+    public JsonNode getAuditHead() { return doGet("audit/head"); }
+
+    /** GET /api/audit/entries — paginated audit entries. */
+    public JsonNode getAuditEntries(Long since, Integer limit) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "since", since);
+        appendParam(qs, "limit", limit);
+        return doGet("audit/entries" + qs);
+    }
+
+    /** GET /api/audit/entry/{sequence} — single audit entry. Returns null on 404. */
+    public JsonNode getAuditEntry(long sequence) {
+        try {
+            return doGet("audit/entry/" + sequence);
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // v3: Privacy / DSR / consent / restrictions (QDP-0017) — /api/privacy/*
+    // =====================================================================
+
+    /** POST /api/privacy/dsr — submit a data-subject-rights request. */
+    public JsonNode submitDSR(Object request) {
+        if (request == null) throw new ValidationException("request is required");
+        return doPost("privacy/dsr", request);
+    }
+
+    /** GET /api/privacy/dsr/{requestTxId} — status of a DSR. Returns null on 404. */
+    public JsonNode getDSRStatus(String requestTxId) {
+        if (requestTxId == null || requestTxId.isEmpty())
+            throw new ValidationException("requestTxId is required");
+        try {
+            return doGet("privacy/dsr/" + urlencode(requestTxId));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** POST /api/privacy/consent/grants — record a consent grant. */
+    public JsonNode grantConsent(Object grant) {
+        if (grant == null) throw new ValidationException("grant is required");
+        return doPost("privacy/consent/grants", grant);
+    }
+
+    /** POST /api/privacy/consent/withdraws — record a consent withdrawal. */
+    public JsonNode withdrawConsent(Object withdraw) {
+        if (withdraw == null) throw new ValidationException("withdraw is required");
+        return doPost("privacy/consent/withdraws", withdraw);
+    }
+
+    /** GET /api/privacy/consent/history — consent history page. */
+    public JsonNode getConsentHistory(Integer limit, Integer offset, String subjectQuid) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "limit", limit);
+        appendParam(qs, "offset", offset);
+        appendParam(qs, "subjectQuid", subjectQuid);
+        return doGet("privacy/consent/history" + qs);
+    }
+
+    /** POST /api/privacy/restrictions — create a processing restriction. */
+    public JsonNode createProcessingRestriction(Object restriction) {
+        if (restriction == null) throw new ValidationException("restriction is required");
+        return doPost("privacy/restrictions", restriction);
+    }
+
+    /** GET /api/privacy/restrictions/{subjectQuid}. */
+    public JsonNode getProcessingRestrictions(String subjectQuid) {
+        if (subjectQuid == null || subjectQuid.isEmpty())
+            throw new ValidationException("subjectQuid is required");
+        return doGet("privacy/restrictions/" + urlencode(subjectQuid));
+    }
+
+    /** POST /api/privacy/compliance — operator-side DSR compliance receipt. */
+    public JsonNode submitDSRCompliance(Object compliance) {
+        if (compliance == null) throw new ValidationException("compliance is required");
+        return doPost("privacy/compliance", compliance);
+    }
+
+    // =====================================================================
+    // v3: Network + operator discovery (QDP-0014) — /api/v2/discovery/*
+    // =====================================================================
+
+    /** GET /api/v2/discovery/domain/{name}. Returns null on 404. */
+    public JsonNode getDiscoveryDomain(String name) {
+        if (name == null || name.isEmpty())
+            throw new ValidationException("name is required");
+        try {
+            return doGetV2("discovery/domain/" + urlencode(name));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** GET /api/v2/discovery/node/{quid}. Returns null on 404. */
+    public JsonNode getDiscoveryNode(String quid) {
+        if (quid == null || quid.isEmpty())
+            throw new ValidationException("quid is required");
+        try {
+            return doGetV2("discovery/node/" + urlencode(quid));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** GET /api/v2/discovery/operator/{quid}. Returns null on 404. */
+    public JsonNode getDiscoveryOperator(String quid) {
+        if (quid == null || quid.isEmpty())
+            throw new ValidationException("quid is required");
+        try {
+            return doGetV2("discovery/operator/" + urlencode(quid));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    /** GET /api/v2/discovery/quids — search quids by free-form params. */
+    public JsonNode discoveryQuids(Map<String, String> params) {
+        return doGetV2("discovery/quids" + buildQueryString(params));
+    }
+
+    /** GET /api/v2/discovery/trusted-quids — observer-relative trusted quids. */
+    public JsonNode discoveryTrustedQuids(Map<String, String> params) {
+        return doGetV2("discovery/trusted-quids" + buildQueryString(params));
+    }
+
+    // =====================================================================
+    // v3: DNS domain attestation (QDP-0023) — /api/v2/dns/*
+    // =====================================================================
+
+    /** POST /api/v2/dns/claim — open a DNS attestation claim. */
+    public JsonNode submitDNSClaim(Object claim) {
+        if (claim == null) throw new ValidationException("claim is required");
+        return doPostV2("dns/claim", claim);
+    }
+
+    /** POST /api/v2/dns/challenge — submit a DNS challenge response. */
+    public JsonNode submitDNSChallenge(Object challenge) {
+        if (challenge == null) throw new ValidationException("challenge is required");
+        return doPostV2("dns/challenge", challenge);
+    }
+
+    /** POST /api/v2/dns/attestation — submit a DNS attestation. */
+    public JsonNode submitDNSAttestation(Object attestation) {
+        if (attestation == null) throw new ValidationException("attestation is required");
+        return doPostV2("dns/attestation", attestation);
+    }
+
+    /** POST /api/v2/dns/renewal — renew an existing DNS attestation. */
+    public JsonNode submitDNSRenewal(Object renewal) {
+        if (renewal == null) throw new ValidationException("renewal is required");
+        return doPostV2("dns/renewal", renewal);
+    }
+
+    /** POST /api/v2/dns/revocation — revoke a DNS attestation. */
+    public JsonNode submitDNSRevocation(Object revocation) {
+        if (revocation == null) throw new ValidationException("revocation is required");
+        return doPostV2("dns/revocation", revocation);
+    }
+
+    /** POST /api/v2/dns/delegate — delegate a DNS attestation. */
+    public JsonNode submitDNSDelegate(Object delegate) {
+        if (delegate == null) throw new ValidationException("delegate is required");
+        return doPostV2("dns/delegate", delegate);
+    }
+
+    /** POST /api/v2/dns/delegate-revocation — revoke a DNS delegation. */
+    public JsonNode submitDNSDelegateRevocation(Object revocation) {
+        if (revocation == null) throw new ValidationException("revocation is required");
+        return doPostV2("dns/delegate-revocation", revocation);
+    }
+
+    /** GET /api/v2/dns/attestations/{domain}. */
+    public JsonNode getDNSAttestations(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGetV2("dns/attestations/" + urlencode(domain));
+    }
+
+    /** GET /api/v2/dns/attestations/{domain}/weighted — trust-weighted view. */
+    public JsonNode getDNSAttestationsWeighted(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGetV2("dns/attestations/" + urlencode(domain) + "/weighted");
+    }
+
+    /** GET /api/v2/dns/resolve/{domain}/{recordType} — resolve a DNS record. */
+    public JsonNode resolveDNS(String domain, String recordType) {
+        if (domain == null || domain.isEmpty()
+                || recordType == null || recordType.isEmpty())
+            throw new ValidationException("domain and recordType are required");
+        return doGetV2("dns/resolve/" + urlencode(domain) + "/" + urlencode(recordType));
+    }
 
     // =====================================================================
     // Param objects (fluent builders)
@@ -515,19 +807,30 @@ public final class QuidnugClient {
     // =====================================================================
 
     private JsonNode doGet(String path) {
-        return request("GET", path, null);
+        return request("GET", path, null, false);
     }
 
     private JsonNode doPost(String path, Object body) {
-        return request("POST", path, body);
+        return request("POST", path, body, false);
     }
 
-    private JsonNode request(String method, String path, Object body) {
+    /** GET against the v2 router (mounted at /api/v2/<path> on the node). */
+    private JsonNode doGetV2(String path) {
+        return request("GET", path, null, true);
+    }
+
+    /** POST against the v2 router (mounted at /api/v2/<path> on the node). */
+    private JsonNode doPostV2(String path, Object body) {
+        return request("POST", path, body, true);
+    }
+
+    private JsonNode request(String method, String path, Object body, boolean v2) {
         int attempts = method.equals("GET") ? (maxRetries + 1) : 1;
         QuidnugException last = null;
+        String base = v2 ? apiBaseV2 : apiBase;
         for (int attempt = 0; attempt < attempts; attempt++) {
             HttpRequest.Builder rb = HttpRequest.newBuilder()
-                    .uri(URI.create(apiBase + "/" + path.replaceFirst("^/+", "")))
+                    .uri(URI.create(base + "/" + path.replaceFirst("^/+", "")))
                     .timeout(timeout)
                     .header("Accept", "application/json")
                     .header("User-Agent", userAgent);
@@ -618,5 +921,26 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /** Append {@code ?k=v} or {@code &k=v} to {@code qs} when {@code v} is non-null. */
+    private static void appendParam(StringBuilder qs, String name, Object value) {
+        if (value == null) return;
+        String s = value.toString();
+        if (s.isEmpty()) return;
+        qs.append(qs.length() == 0 ? '?' : '&')
+          .append(urlencode(name))
+          .append('=')
+          .append(urlencode(s));
+    }
+
+    /** Build a query string from a map; entries with null/empty values are skipped. */
+    private static String buildQueryString(Map<String, String> params) {
+        if (params == null || params.isEmpty()) return "";
+        StringBuilder qs = new StringBuilder();
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            appendParam(qs, e.getKey(), e.getValue());
+        }
+        return qs.toString();
     }
 }

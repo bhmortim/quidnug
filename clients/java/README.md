@@ -6,7 +6,10 @@ a decentralized protocol for relational, per-observer trust.
 Covers the **full v2 protocol surface** (QDPs 0001–0010): identity,
 trust, titles, event streams, anchors, guardian sets + recovery,
 cross-domain gossip, K-of-K bootstrap, fork-block activation, and
-compact Merkle inclusion proofs.
+compact Merkle inclusion proofs — plus the v3 extensions
+(QDPs 0011, 0014, 0015, 0017, 0018, 0023): peer scoreboard, network
++ operator discovery, content moderation, operator audit log, data
+subject rights / consent / restrictions, and DNS domain attestation.
 
 ## Install
 
@@ -92,10 +95,44 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 | Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+
+All guardian / gossip / bootstrap / fork-block / discovery / DNS
+methods route to `/api/v2/<path>` on the node, where the v2-only
+handlers are mounted. (Earlier `2.x` releases routed to
+`/api/<path>`, which returns 404 against a stock node.)
+
+### v3 extensions (QDPs 0011, 0014, 0015, 0017, 0018, 0023)
+
+| Area | Methods | Server path |
+| --- | --- | --- |
+| Peers (QDP-0011) | `getPeers`, `getPeer` | `/api/peers`, `/api/peers/{nodeQuid}` |
+| Node advertisements | `submitNodeAdvertisement` | `/api/node-advertisements` |
+| Domain registry | `getTopDomains`, `getTentativeBlocks`, `submitDomainGossip` | `/api/domains/top`, `/api/blocks/tentative/{domain}`, `/api/gossip/domains` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` | `/api/moderation/actions[...]` |
+| Audit (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` | `/api/audit/*` |
+| Privacy (QDP-0017) | `submitDSR`, `getDSRStatus`, `grantConsent`, `withdrawConsent`, `getConsentHistory`, `createProcessingRestriction`, `getProcessingRestrictions`, `submitDSRCompliance` | `/api/privacy/*` |
+| Discovery (QDP-0014) | `getDiscoveryDomain`, `getDiscoveryNode`, `getDiscoveryOperator`, `discoveryQuids`, `discoveryTrustedQuids` | `/api/v2/discovery/*` |
+| DNS attestation (QDP-0023) | `submitDNSClaim`, `submitDNSChallenge`, `submitDNSAttestation`, `submitDNSRenewal`, `submitDNSRevocation`, `submitDNSDelegate`, `submitDNSDelegateRevocation`, `getDNSAttestations`, `getDNSAttestationsWeighted`, `resolveDNS` | `/api/v2/dns/*` |
+
+```java
+// Operator audit log
+JsonNode head = client.getAuditHead();
+JsonNode page = client.getAuditEntries(head.get("sequence").asLong() - 100L, 100);
+
+// Network discovery
+JsonNode info = client.getDiscoveryDomain("contractors.home");
+
+// DNS attestation lookup
+JsonNode records = client.resolveDNS("example.org", "A");
+```
+
+All v3 reads that can 404 (`getPeer`, `getDiscovery*`, `getAuditEntry`,
+`getDSRStatus`) return `null` instead of throwing, matching the
+existing `getGuardianSet` / `getIdentity` convention.
 
 ### `CanonicalBytes` — signable-bytes encoder
 
@@ -228,6 +265,7 @@ roadmap.
 | SDK | Node | QDPs |
 | --- | --- | --- |
 | 2.x | 2.x | 0001–0010 |
+| 2.x (v3 methods) | 2.x with QDP-0011/0014/0015/0017/0018/0023 enabled | 0001–0023 |
 
 ## Contributing
 
