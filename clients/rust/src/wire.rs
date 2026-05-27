@@ -148,6 +148,57 @@ impl<'a> IdentityTx<'a> {
     }
 }
 
+/// Mirror of `core.TitleTransaction`.
+///
+/// Field order matches the Go struct (BaseTransaction first,
+/// then asset/owners/signatures). The `derive_id` helper hashes
+/// the same five-field seed as `AddTitleTransaction`.
+#[derive(Debug, Serialize)]
+pub struct TitleTx<'a> {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub tx_type: &'a str,
+    #[serde(rename = "trustDomain")]
+    pub trust_domain: &'a str,
+    pub timestamp: i64,
+    pub signature: String,
+    #[serde(rename = "publicKey")]
+    pub public_key: &'a str,
+    #[serde(rename = "assetId")]
+    pub asset_id: &'a str,
+    pub owners: Vec<crate::types::OwnershipStake>,
+    #[serde(rename = "previousOwners", skip_serializing_if = "Vec::is_empty")]
+    pub previous_owners: Vec<crate::types::OwnershipStake>,
+    pub signatures: std::collections::HashMap<String, String>,
+    #[serde(rename = "expiryDate", skip_serializing_if = "is_zero_i64")]
+    pub expiry_date: i64,
+    #[serde(rename = "titleType", skip_serializing_if = "str::is_empty")]
+    pub title_type: &'a str,
+}
+
+impl<'a> TitleTx<'a> {
+    /// Derive the tx ID per `AddTitleTransaction`. Payload:
+    /// `(AssetID, Owners, TrustDomain, Timestamp)`.
+    pub fn derive_id(&self) -> String {
+        #[derive(Serialize)]
+        #[allow(non_snake_case)]
+        struct Seed<'b> {
+            AssetID: &'b str,
+            Owners: &'b [crate::types::OwnershipStake],
+            TrustDomain: &'b str,
+            Timestamp: i64,
+        }
+        let seed = Seed {
+            AssetID: self.asset_id,
+            Owners: &self.owners,
+            TrustDomain: self.trust_domain,
+            Timestamp: self.timestamp,
+        };
+        let bytes = serde_json::to_vec(&seed).expect("seed serialize");
+        hex::encode(Sha256::digest(&bytes))
+    }
+}
+
 // ---------------------------------------------------------------
 // serde helpers
 // ---------------------------------------------------------------

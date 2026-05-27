@@ -9,7 +9,9 @@ namespace Quidnug.Client;
 /// <summary>
 /// Strongly-typed HTTP client for a Quidnug node.
 ///
-/// <para>Covers the full v2 protocol surface (QDPs 0001–0010). Thread-safe;
+/// <para>Covers the full v2 protocol surface (QDPs 0001–0010) plus the v3
+/// extensions (peers, audit, moderation, privacy, discovery, DNS
+/// attestation; QDPs 0011, 0014, 0015, 0017, 0018, 0023). Thread-safe;
 /// one instance can be shared across requests.</para>
 ///
 /// <para><b>Retry policy.</b> GETs retry on 5xx/429 with exponential
@@ -362,26 +364,26 @@ public sealed class QuidnugClient : IDisposable
     }
 
     // =====================================================================
-    // Guardians (QDP-0002)
+    // Guardians (QDP-0002) — under /api/v2/guardian/*
     // =====================================================================
 
     public Task<JsonNode?> SubmitGuardianSetUpdateAsync(object update, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "guardian/set-update", update, ct);
+        => RequestAsync(HttpMethod.Post, "v2/guardian/set-update", update, ct);
 
     public Task<JsonNode?> SubmitRecoveryInitAsync(object init, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "guardian/recovery/init", init, ct);
+        => RequestAsync(HttpMethod.Post, "v2/guardian/recovery/init", init, ct);
 
     public Task<JsonNode?> SubmitRecoveryVetoAsync(object veto, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "guardian/recovery/veto", veto, ct);
+        => RequestAsync(HttpMethod.Post, "v2/guardian/recovery/veto", veto, ct);
 
     public Task<JsonNode?> SubmitRecoveryCommitAsync(object commit, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "guardian/recovery/commit", commit, ct);
+        => RequestAsync(HttpMethod.Post, "v2/guardian/recovery/commit", commit, ct);
 
     public async Task<GuardianSet?> GetGuardianSetAsync(string quidId, CancellationToken ct = default)
     {
         try
         {
-            var node = await RequestAsync(HttpMethod.Get, $"guardian/set/{Uri.EscapeDataString(quidId)}", null, ct);
+            var node = await RequestAsync(HttpMethod.Get, $"v2/guardian/set/{Uri.EscapeDataString(quidId)}", null, ct);
             return node is null ? null : JsonSerializer.Deserialize<GuardianSet>(node.ToJsonString());
         }
         catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
@@ -392,18 +394,18 @@ public sealed class QuidnugClient : IDisposable
     }
 
     // =====================================================================
-    // Gossip / bootstrap / fork-block
+    // Gossip / bootstrap / fork-block — under /api/v2/*
     // =====================================================================
 
     public Task<JsonNode?> SubmitDomainFingerprintAsync(object fp, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "domain-fingerprints", fp, ct);
+        => RequestAsync(HttpMethod.Post, "v2/domain-fingerprints", fp, ct);
 
     public async Task<DomainFingerprint?> GetLatestDomainFingerprintAsync(string domain, CancellationToken ct = default)
     {
         try
         {
             var node = await RequestAsync(HttpMethod.Get,
-                $"domain-fingerprints/{Uri.EscapeDataString(domain)}/latest", null, ct);
+                $"v2/domain-fingerprints/{Uri.EscapeDataString(domain)}/latest", null, ct);
             return node is null ? null : JsonSerializer.Deserialize<DomainFingerprint>(node.ToJsonString());
         }
         catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
@@ -414,16 +416,355 @@ public sealed class QuidnugClient : IDisposable
     }
 
     public Task<JsonNode?> SubmitAnchorGossipAsync(object msg, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "anchor-gossip", msg, ct);
+        => RequestAsync(HttpMethod.Post, "v2/anchor-gossip", msg, ct);
 
     public Task<JsonNode?> SubmitForkBlockAsync(object fb, CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Post, "fork-block", fb, ct);
+        => RequestAsync(HttpMethod.Post, "v2/fork-block", fb, ct);
 
     public Task<JsonNode?> ForkBlockStatusAsync(CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Get, "fork-block/status", null, ct);
+        => RequestAsync(HttpMethod.Get, "v2/fork-block/status", null, ct);
 
     public Task<JsonNode?> BootstrapStatusAsync(CancellationToken ct = default)
-        => RequestAsync(HttpMethod.Get, "bootstrap/status", null, ct);
+        => RequestAsync(HttpMethod.Get, "v2/bootstrap/status", null, ct);
+
+    // =====================================================================
+    // v3 — Peers (QDP-0011 scoreboard) — /api/peers
+    // =====================================================================
+
+    /// <summary>GET /api/peers — peer scoreboard.</summary>
+    public Task<JsonNode?> GetPeersAsync(int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        var path = "peers" + BuildQueryString(("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/peers/{nodeQuid} — per-peer score breakdown. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetPeerAsync(string nodeQuid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(nodeQuid))
+            throw new QuidnugValidationException("nodeQuid is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get, $"peers/{Uri.EscapeDataString(nodeQuid)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    // =====================================================================
+    // v3 — Node advertisements — /api/node-advertisements
+    // =====================================================================
+
+    /// <summary>POST /api/node-advertisements — submit a signed node advertisement.</summary>
+    public Task<JsonNode?> SubmitNodeAdvertisementAsync(object ad, CancellationToken ct = default)
+    {
+        if (ad is null) throw new QuidnugValidationException("advertisement is required");
+        return RequestAsync(HttpMethod.Post, "node-advertisements", ad, ct);
+    }
+
+    // =====================================================================
+    // v3 — Domain registry extras — /api/domains, /api/gossip/domains, /api/blocks
+    // =====================================================================
+
+    /// <summary>GET /api/domains/top — top domains by activity.</summary>
+    public Task<JsonNode?> GetTopDomainsAsync(int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        var path = "domains/top" + BuildQueryString(("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>POST /api/gossip/domains — submit a domain gossip message.</summary>
+    public Task<JsonNode?> SubmitDomainGossipAsync(object msg, CancellationToken ct = default)
+    {
+        if (msg is null) throw new QuidnugValidationException("message is required");
+        return RequestAsync(HttpMethod.Post, "gossip/domains", msg, ct);
+    }
+
+    /// <summary>GET /api/blocks/tentative/{domain} — tentative blocks pending finalization.</summary>
+    public Task<JsonNode?> GetTentativeBlocksAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        return RequestAsync(HttpMethod.Get, $"blocks/tentative/{Uri.EscapeDataString(domain)}", null, ct);
+    }
+
+    // =====================================================================
+    // v3 — Moderation (QDP-0015) — /api/moderation/*
+    // =====================================================================
+
+    /// <summary>POST /api/moderation/actions — submit a moderation action.</summary>
+    public Task<JsonNode?> SubmitModerationActionAsync(object action, CancellationToken ct = default)
+    {
+        if (action is null) throw new QuidnugValidationException("action is required");
+        return RequestAsync(HttpMethod.Post, "moderation/actions", action, ct);
+    }
+
+    /// <summary>GET /api/moderation/actions/{targetType}/{targetId} — moderation history.</summary>
+    public Task<JsonNode?> GetModerationActionsAsync(string targetType, string targetId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(targetType) || string.IsNullOrEmpty(targetId))
+            throw new QuidnugValidationException("targetType and targetId are required");
+        return RequestAsync(HttpMethod.Get,
+            $"moderation/actions/{Uri.EscapeDataString(targetType)}/{Uri.EscapeDataString(targetId)}", null, ct);
+    }
+
+    // =====================================================================
+    // v3 — Audit (QDP-0018) — /api/audit/*
+    // =====================================================================
+
+    /// <summary>GET /api/audit/head — latest audit log head.</summary>
+    public Task<JsonNode?> GetAuditHeadAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "audit/head", null, ct);
+
+    /// <summary>GET /api/audit/entries — paginated audit entries.</summary>
+    public Task<JsonNode?> GetAuditEntriesAsync(long? since = null, int? limit = null, CancellationToken ct = default)
+    {
+        var path = "audit/entries" + BuildQueryString(("since", since), ("limit", limit));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/audit/entry/{sequence} — single audit entry. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetAuditEntryAsync(long sequence, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RequestAsync(HttpMethod.Get, $"audit/entry/{sequence}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    // =====================================================================
+    // v3 — Privacy / DSR (QDP-0017) — /api/privacy/*
+    // =====================================================================
+
+    /// <summary>POST /api/privacy/dsr — submit a data subject rights request.</summary>
+    public Task<JsonNode?> SubmitDSRAsync(object request, CancellationToken ct = default)
+    {
+        if (request is null) throw new QuidnugValidationException("request is required");
+        return RequestAsync(HttpMethod.Post, "privacy/dsr", request, ct);
+    }
+
+    /// <summary>GET /api/privacy/dsr/{requestTxId} — DSR status. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetDSRStatusAsync(string requestTxId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(requestTxId))
+            throw new QuidnugValidationException("requestTxId is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"privacy/dsr/{Uri.EscapeDataString(requestTxId)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>POST /api/privacy/consent/grants — record a consent grant.</summary>
+    public Task<JsonNode?> GrantConsentAsync(object grant, CancellationToken ct = default)
+    {
+        if (grant is null) throw new QuidnugValidationException("grant is required");
+        return RequestAsync(HttpMethod.Post, "privacy/consent/grants", grant, ct);
+    }
+
+    /// <summary>POST /api/privacy/consent/withdraws — record a consent withdrawal.</summary>
+    public Task<JsonNode?> WithdrawConsentAsync(object withdraw, CancellationToken ct = default)
+    {
+        if (withdraw is null) throw new QuidnugValidationException("withdraw is required");
+        return RequestAsync(HttpMethod.Post, "privacy/consent/withdraws", withdraw, ct);
+    }
+
+    /// <summary>GET /api/privacy/consent/history — paginated consent history.</summary>
+    public Task<JsonNode?> GetConsentHistoryAsync(
+        int? limit = null, int? offset = null, string? subjectQuid = null,
+        CancellationToken ct = default)
+    {
+        var path = "privacy/consent/history"
+                   + BuildQueryString(("limit", limit), ("offset", offset), ("subjectQuid", subjectQuid));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>POST /api/privacy/restrictions — create a processing restriction.</summary>
+    public Task<JsonNode?> CreateProcessingRestrictionAsync(object restriction, CancellationToken ct = default)
+    {
+        if (restriction is null) throw new QuidnugValidationException("restriction is required");
+        return RequestAsync(HttpMethod.Post, "privacy/restrictions", restriction, ct);
+    }
+
+    /// <summary>GET /api/privacy/restrictions/{subjectQuid} — list restrictions for a subject.</summary>
+    public Task<JsonNode?> GetProcessingRestrictionsAsync(string subjectQuid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(subjectQuid))
+            throw new QuidnugValidationException("subjectQuid is required");
+        return RequestAsync(HttpMethod.Get,
+            $"privacy/restrictions/{Uri.EscapeDataString(subjectQuid)}", null, ct);
+    }
+
+    /// <summary>POST /api/privacy/compliance — submit a DSR compliance attestation.</summary>
+    public Task<JsonNode?> SubmitDSRComplianceAsync(object compliance, CancellationToken ct = default)
+    {
+        if (compliance is null) throw new QuidnugValidationException("compliance is required");
+        return RequestAsync(HttpMethod.Post, "privacy/compliance", compliance, ct);
+    }
+
+    // =====================================================================
+    // v3 — Discovery (QDP-0014) — /api/v2/discovery/*
+    // =====================================================================
+
+    /// <summary>GET /api/v2/discovery/domain/{name}. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetDiscoveryDomainAsync(string name, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new QuidnugValidationException("name is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"v2/discovery/domain/{Uri.EscapeDataString(name)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/v2/discovery/node/{quid}. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetDiscoveryNodeAsync(string quid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(quid))
+            throw new QuidnugValidationException("quid is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"v2/discovery/node/{Uri.EscapeDataString(quid)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/v2/discovery/operator/{quid}. Returns null on NOT_FOUND.</summary>
+    public async Task<JsonNode?> GetDiscoveryOperatorAsync(string quid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(quid))
+            throw new QuidnugValidationException("quid is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"v2/discovery/operator/{Uri.EscapeDataString(quid)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>GET /api/v2/discovery/quids — discoverable QUIDs filtered by arbitrary query params.</summary>
+    public Task<JsonNode?> DiscoveryQuidsAsync(
+        IDictionary<string, string>? parameters = null, CancellationToken ct = default)
+    {
+        var path = "v2/discovery/quids" + BuildQueryString(parameters);
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    /// <summary>GET /api/v2/discovery/trusted-quids — discoverable QUIDs filtered by trust.</summary>
+    public Task<JsonNode?> DiscoveryTrustedQuidsAsync(
+        IDictionary<string, string>? parameters = null, CancellationToken ct = default)
+    {
+        var path = "v2/discovery/trusted-quids" + BuildQueryString(parameters);
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // v3 — DNS attestation (QDP-0023) — /api/v2/dns/*
+    // =====================================================================
+
+    /// <summary>POST /api/v2/dns/claim.</summary>
+    public Task<JsonNode?> SubmitDNSClaimAsync(object claim, CancellationToken ct = default)
+    {
+        if (claim is null) throw new QuidnugValidationException("claim is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/claim", claim, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/challenge.</summary>
+    public Task<JsonNode?> SubmitDNSChallengeAsync(object challenge, CancellationToken ct = default)
+    {
+        if (challenge is null) throw new QuidnugValidationException("challenge is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/challenge", challenge, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/attestation.</summary>
+    public Task<JsonNode?> SubmitDNSAttestationAsync(object attestation, CancellationToken ct = default)
+    {
+        if (attestation is null) throw new QuidnugValidationException("attestation is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/attestation", attestation, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/renewal.</summary>
+    public Task<JsonNode?> SubmitDNSRenewalAsync(object renewal, CancellationToken ct = default)
+    {
+        if (renewal is null) throw new QuidnugValidationException("renewal is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/renewal", renewal, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/revocation.</summary>
+    public Task<JsonNode?> SubmitDNSRevocationAsync(object revocation, CancellationToken ct = default)
+    {
+        if (revocation is null) throw new QuidnugValidationException("revocation is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/revocation", revocation, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/delegate.</summary>
+    public Task<JsonNode?> SubmitDNSDelegateAsync(object delegation, CancellationToken ct = default)
+    {
+        if (delegation is null) throw new QuidnugValidationException("delegate is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/delegate", delegation, ct);
+    }
+
+    /// <summary>POST /api/v2/dns/delegate-revocation.</summary>
+    public Task<JsonNode?> SubmitDNSDelegateRevocationAsync(object revocation, CancellationToken ct = default)
+    {
+        if (revocation is null) throw new QuidnugValidationException("revocation is required");
+        return RequestAsync(HttpMethod.Post, "v2/dns/delegate-revocation", revocation, ct);
+    }
+
+    /// <summary>GET /api/v2/dns/attestations/{domain} — raw attestations for a domain.</summary>
+    public Task<JsonNode?> GetDNSAttestationsAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        return RequestAsync(HttpMethod.Get,
+            $"v2/dns/attestations/{Uri.EscapeDataString(domain)}", null, ct);
+    }
+
+    /// <summary>GET /api/v2/dns/attestations/{domain}/weighted — trust-weighted attestations.</summary>
+    public Task<JsonNode?> GetDNSAttestationsWeightedAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        return RequestAsync(HttpMethod.Get,
+            $"v2/dns/attestations/{Uri.EscapeDataString(domain)}/weighted", null, ct);
+    }
+
+    /// <summary>GET /api/v2/dns/resolve/{domain}/{recordType} — resolved DNS records.</summary>
+    public Task<JsonNode?> ResolveDNSAsync(string domain, string recordType, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain) || string.IsNullOrEmpty(recordType))
+            throw new QuidnugValidationException("domain and recordType are required");
+        return RequestAsync(HttpMethod.Get,
+            $"v2/dns/resolve/{Uri.EscapeDataString(domain)}/{Uri.EscapeDataString(recordType)}", null, ct);
+    }
 
     // =====================================================================
     // HTTP plumbing
@@ -541,5 +882,28 @@ public sealed class QuidnugClient : IDisposable
     {
         if (signer is null || !signer.HasPrivateKey)
             throw new QuidnugValidationException("signer must have a private key");
+    }
+
+    private static string BuildQueryString(params (string key, object? value)[] parameters)
+    {
+        var parts = new List<string>();
+        foreach (var (k, v) in parameters)
+        {
+            if (v is null) continue;
+            parts.Add($"{Uri.EscapeDataString(k)}={Uri.EscapeDataString(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) ?? "")}");
+        }
+        return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
+    }
+
+    private static string BuildQueryString(IDictionary<string, string>? parameters)
+    {
+        if (parameters is null || parameters.Count == 0) return "";
+        var parts = new List<string>(parameters.Count);
+        foreach (var kv in parameters)
+        {
+            if (kv.Value is null) continue;
+            parts.Add($"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value)}");
+        }
+        return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
     }
 }

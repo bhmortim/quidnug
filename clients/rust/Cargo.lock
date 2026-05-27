@@ -1066,7 +1066,7 @@ dependencies = [
 
 [[package]]
 name = "quidnug"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "hex",
  "p256",

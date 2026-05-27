@@ -2,8 +2,12 @@ import Foundation
 
 /// Strongly-typed async HTTP client for a Quidnug node.
 ///
-/// Covers the full v2 protocol surface. Thread-safe by construction
-/// (immutable configuration + Foundation's thread-safe `URLSession`).
+/// Covers the full v2 and v3 protocol surface — identities, trust,
+/// titles, events, guardians, gossip, bootstrap, fork-block, peers,
+/// node advertisements, domain registry extras, moderation, audit,
+/// privacy/DSR, discovery, and DNS attestation. Thread-safe by
+/// construction (immutable configuration + Foundation's thread-safe
+/// `URLSession`).
 public actor QuidnugClient {
     private let apiBase: URL
     private let session: URLSession
@@ -275,28 +279,81 @@ public actor QuidnugClient {
     }
 
     // =========================================================================
-    // Guardians / gossip / fork-block / bootstrap
+    // Guardians (QDP-0002, QDP-0006) — /api/v2/guardian/*
     // =========================================================================
 
+    /// POST /api/v2/guardian/set-update
     public func submitGuardianSetUpdate(_ update: [String: Any]) async throws -> [String: Any] {
-        try await requestJSON(method: "POST", path: "guardian/set-update", body: update)
+        try await requestJSONV2(method: "POST", path: "guardian/set-update", body: update)
     }
 
+    /// POST /api/v2/guardian/recovery/init
+    public func submitRecoveryInit(_ init_: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "guardian/recovery/init", body: init_)
+    }
+
+    /// POST /api/v2/guardian/recovery/veto
+    public func submitRecoveryVeto(_ veto: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "guardian/recovery/veto", body: veto)
+    }
+
+    /// POST /api/v2/guardian/recovery/commit
+    public func submitRecoveryCommit(_ commit: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "guardian/recovery/commit", body: commit)
+    }
+
+    /// POST /api/v2/guardian/resign
+    public func submitGuardianResignation(_ resignation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "guardian/resign", body: resignation)
+    }
+
+    /// GET /api/v2/guardian/set/{quid}
     public func getGuardianSet(quidId: String) async throws -> GuardianSet? {
         do {
             return try decode(GuardianSet.self,
-                              from: await requestJSON(method: "GET",
-                                                      path: "guardian/set/\(urlEscape(quidId))",
-                                                      body: nil))
+                              from: await requestJSONV2(method: "GET",
+                                                        path: "guardian/set/\(urlEscape(quidId))",
+                                                        body: nil))
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
     }
 
+    /// GET /api/v2/guardian/pending-recovery/{quid}
+    public func getPendingRecovery(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSONV2(method: "GET",
+                                           path: "guardian/pending-recovery/\(urlEscape(quidId))",
+                                           body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/v2/guardian/resignations/{quid}
+    public func getGuardianResignations(quidId: String) async throws -> [[String: Any]] {
+        let raw = try await requestJSONV2(method: "GET",
+                                          path: "guardian/resignations/\(urlEscape(quidId))",
+                                          body: nil)
+        return (raw["data"] as? [[String: Any]])
+            ?? (raw["resignations"] as? [[String: Any]])
+            ?? []
+    }
+
+    // =========================================================================
+    // Gossip (QDP-0003, QDP-0005) — /api/v2/*
+    // =========================================================================
+
+    /// POST /api/v2/domain-fingerprints
+    public func submitDomainFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "domain-fingerprints", body: fp)
+    }
+
+    /// GET /api/v2/domain-fingerprints/{domain}/latest
     public func getLatestDomainFingerprint(domain: String) async throws -> DomainFingerprint? {
         do {
             return try decode(DomainFingerprint.self,
-                              from: await requestJSON(
+                              from: await requestJSONV2(
                                 method: "GET",
                                 path: "domain-fingerprints/\(urlEscape(domain))/latest",
                                 body: nil))
@@ -305,17 +362,363 @@ public actor QuidnugClient {
         }
     }
 
-    public func bootstrapStatus() async throws -> [String: Any] {
-        try await requestJSON(method: "GET", path: "bootstrap/status", body: nil)
+    /// POST /api/v2/anchor-gossip
+    public func submitAnchorGossip(_ msg: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "anchor-gossip", body: msg)
     }
 
+    /// POST /api/v2/gossip/push-anchor
+    public func pushAnchor(_ msg: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "gossip/push-anchor", body: msg)
+    }
+
+    /// POST /api/v2/gossip/push-fingerprint
+    public func pushFingerprint(_ fp: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "gossip/push-fingerprint", body: fp)
+    }
+
+    // =========================================================================
+    // Bootstrap (QDP-0008) — /api/v2/*
+    // =========================================================================
+
+    /// POST /api/v2/nonce-snapshots
+    public func submitNonceSnapshot(_ snapshot: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "nonce-snapshots", body: snapshot)
+    }
+
+    /// GET /api/v2/nonce-snapshots/{domain}/latest
+    public func getLatestNonceSnapshot(domain: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSONV2(method: "GET",
+                                           path: "nonce-snapshots/\(urlEscape(domain))/latest",
+                                           body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/v2/bootstrap/status
+    public func bootstrapStatus() async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET", path: "bootstrap/status", body: nil)
+    }
+
+    // =========================================================================
+    // Fork-block (QDP-0009) — /api/v2/*
+    // =========================================================================
+
+    /// POST /api/v2/fork-block
+    public func submitForkBlock(_ fb: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "fork-block", body: fb)
+    }
+
+    /// GET /api/v2/fork-block/status
     public func forkBlockStatus() async throws -> [String: Any] {
-        try await requestJSON(method: "GET", path: "fork-block/status", body: nil)
+        try await requestJSONV2(method: "GET", path: "fork-block/status", body: nil)
+    }
+
+    // =========================================================================
+    // v3: Peer scoreboard (QDP-0011) — /api/peers
+    // =========================================================================
+
+    /// GET /api/peers
+    public func getPeers(limit: Int? = nil, offset: Int? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let l = limit { params["limit"] = l }
+        if let o = offset { params["offset"] = o }
+        let path = "peers" + buildQueryString(params)
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    /// GET /api/peers/{nodeQuid}
+    public func getPeer(nodeQuid: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                                         path: "peers/\(urlEscape(nodeQuid))",
+                                         body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    // =========================================================================
+    // v3: Node advertisements — /api/node-advertisements
+    // =========================================================================
+
+    /// POST /api/node-advertisements
+    public func submitNodeAdvertisement(_ ad: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "node-advertisements", body: ad)
+    }
+
+    // =========================================================================
+    // v3: Domain registry extras — /api/*
+    // =========================================================================
+
+    /// GET /api/domains/top
+    public func getTopDomains(limit: Int? = nil, offset: Int? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let l = limit { params["limit"] = l }
+        if let o = offset { params["offset"] = o }
+        let path = "domains/top" + buildQueryString(params)
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    /// POST /api/gossip/domains
+    public func submitDomainGossip(_ msg: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/domains", body: msg)
+    }
+
+    /// GET /api/blocks/tentative/{domain}
+    public func getTentativeBlocks(domain: String) async throws -> [String: Any] {
+        try await requestJSON(method: "GET",
+                              path: "blocks/tentative/\(urlEscape(domain))",
+                              body: nil)
+    }
+
+    // =========================================================================
+    // v3: Moderation (QDP-0015) — /api/moderation/*
+    // =========================================================================
+
+    /// POST /api/moderation/actions
+    public func submitModerationAction(_ action: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "moderation/actions", body: action)
+    }
+
+    /// GET /api/moderation/actions/{type}/{id}
+    public func getModerationActions(targetType: String, targetId: String) async throws -> [String: Any] {
+        try await requestJSON(method: "GET",
+                              path: "moderation/actions/\(urlEscape(targetType))/\(urlEscape(targetId))",
+                              body: nil)
+    }
+
+    // =========================================================================
+    // v3: Audit (QDP-0018) — /api/audit/*
+    // =========================================================================
+
+    /// GET /api/audit/head
+    public func getAuditHead() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "audit/head", body: nil)
+    }
+
+    /// GET /api/audit/entries
+    public func getAuditEntries(since: Int64? = nil, limit: Int? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let s = since { params["since"] = s }
+        if let l = limit { params["limit"] = l }
+        let path = "audit/entries" + buildQueryString(params)
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    /// GET /api/audit/entry/{sequence}
+    public func getAuditEntry(sequence: Int64) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                                         path: "audit/entry/\(sequence)",
+                                         body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    // =========================================================================
+    // v3: Privacy / DSR (QDP-0017) — /api/privacy/*
+    // =========================================================================
+
+    /// POST /api/privacy/dsr
+    public func submitDSR(_ request: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "privacy/dsr", body: request)
+    }
+
+    /// GET /api/privacy/dsr/{requestTxId}
+    public func getDSRStatus(requestTxId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                                         path: "privacy/dsr/\(urlEscape(requestTxId))",
+                                         body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// POST /api/privacy/consent/grants
+    public func grantConsent(_ grant: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "privacy/consent/grants", body: grant)
+    }
+
+    /// POST /api/privacy/consent/withdraws
+    public func withdrawConsent(_ withdraw: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "privacy/consent/withdraws", body: withdraw)
+    }
+
+    /// GET /api/privacy/consent/history
+    public func getConsentHistory(
+        limit: Int? = nil, offset: Int? = nil, subjectQuid: String? = nil
+    ) async throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let l = limit { params["limit"] = l }
+        if let o = offset { params["offset"] = o }
+        if let s = subjectQuid { params["subjectQuid"] = s }
+        let path = "privacy/consent/history" + buildQueryString(params)
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    /// POST /api/privacy/restrictions
+    public func createProcessingRestriction(_ restriction: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "privacy/restrictions", body: restriction)
+    }
+
+    /// GET /api/privacy/restrictions/{subjectQuid}
+    public func getProcessingRestrictions(subjectQuid: String) async throws -> [String: Any] {
+        try await requestJSON(method: "GET",
+                              path: "privacy/restrictions/\(urlEscape(subjectQuid))",
+                              body: nil)
+    }
+
+    /// POST /api/privacy/compliance
+    public func submitDSRCompliance(_ compliance: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "privacy/compliance", body: compliance)
+    }
+
+    // =========================================================================
+    // v3: Discovery (QDP-0014) — /api/v2/discovery/*
+    // =========================================================================
+
+    /// GET /api/v2/discovery/domain/{name}
+    public func getDiscoveryDomain(name: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSONV2(method: "GET",
+                                           path: "discovery/domain/\(urlEscape(name))",
+                                           body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/v2/discovery/node/{quid}
+    public func getDiscoveryNode(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSONV2(method: "GET",
+                                           path: "discovery/node/\(urlEscape(quidId))",
+                                           body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/v2/discovery/operator/{quid}
+    public func getDiscoveryOperator(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSONV2(method: "GET",
+                                           path: "discovery/operator/\(urlEscape(quidId))",
+                                           body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// GET /api/v2/discovery/quids
+    public func discoveryQuids(params: [String: Any] = [:]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET",
+                                path: "discovery/quids" + buildQueryString(params),
+                                body: nil)
+    }
+
+    /// GET /api/v2/discovery/trusted-quids
+    public func discoveryTrustedQuids(params: [String: Any] = [:]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET",
+                                path: "discovery/trusted-quids" + buildQueryString(params),
+                                body: nil)
+    }
+
+    // =========================================================================
+    // v3: DNS attestation (QDP-0023) — /api/v2/dns/*
+    // =========================================================================
+
+    /// POST /api/v2/dns/claim
+    public func submitDNSClaim(_ claim: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/claim", body: claim)
+    }
+
+    /// POST /api/v2/dns/challenge
+    public func submitDNSChallenge(_ challenge: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/challenge", body: challenge)
+    }
+
+    /// POST /api/v2/dns/attestation
+    public func submitDNSAttestation(_ attestation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/attestation", body: attestation)
+    }
+
+    /// POST /api/v2/dns/renewal
+    public func submitDNSRenewal(_ renewal: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/renewal", body: renewal)
+    }
+
+    /// POST /api/v2/dns/revocation
+    public func submitDNSRevocation(_ revocation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/revocation", body: revocation)
+    }
+
+    /// POST /api/v2/dns/delegate
+    public func submitDNSDelegate(_ delegate: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/delegate", body: delegate)
+    }
+
+    /// POST /api/v2/dns/delegate-revocation
+    public func submitDNSDelegateRevocation(_ revocation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSONV2(method: "POST", path: "dns/delegate-revocation", body: revocation)
+    }
+
+    /// GET /api/v2/dns/attestations/{domain}
+    public func getDNSAttestations(domain: String) async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET",
+                                path: "dns/attestations/\(urlEscape(domain))",
+                                body: nil)
+    }
+
+    /// GET /api/v2/dns/attestations/{domain}/weighted
+    public func getDNSAttestationsWeighted(domain: String) async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET",
+                                path: "dns/attestations/\(urlEscape(domain))/weighted",
+                                body: nil)
+    }
+
+    /// GET /api/v2/dns/resolve/{domain}/{recordType}
+    public func resolveDNS(domain: String, recordType: String) async throws -> [String: Any] {
+        try await requestJSONV2(method: "GET",
+                                path: "dns/resolve/\(urlEscape(domain))/\(urlEscape(recordType))",
+                                body: nil)
     }
 
     // =========================================================================
     // HTTP plumbing
     // =========================================================================
+
+    /// Convenience wrapper that prefixes `path` with `v2/`, routing the
+    /// call to `/api/v2/<path>`. The Quidnug node mounts guardian,
+    /// gossip, snapshot, fork-block, discovery, and DNS-attestation
+    /// handlers under `/api/v2` only.
+    private func requestJSONV2(
+        method: String, path: String, body: Any?
+    ) async throws -> [String: Any] {
+        let clean = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        return try await requestJSON(method: method, path: "v2/\(clean)", body: body)
+    }
+
+    private func buildQueryString(_ params: [String: Any]) -> String {
+        var parts: [String] = []
+        for (k, v) in params {
+            if v is NSNull { continue }
+            let s: String
+            if let str = v as? String {
+                if str.isEmpty { continue }
+                s = str
+            } else {
+                s = String(describing: v)
+            }
+            parts.append("\(urlEscape(k))=\(urlEscape(s))")
+        }
+        return parts.isEmpty ? "" : "?" + parts.joined(separator: "&")
+    }
 
     private func requestJSON(
         method: String, path: String, body: Any?
