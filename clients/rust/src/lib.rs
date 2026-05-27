@@ -44,7 +44,7 @@ mod types;
 pub mod wire;
 
 pub use canonical::canonical_bytes;
-pub use client::{Client, TrustParams};
+pub use client::{Client, TitleParams, TrustParams};
 pub use crypto::Quid;
 pub use error::{Error, Result};
 pub use merkle::{verify_inclusion_proof, MerkleProofFrame};

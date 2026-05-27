@@ -295,3 +295,103 @@ def test_post_is_not_retried_by_default(session):
     with pytest.raises(NodeError):
         client.grant_trust(q, trustee="x", level=0.5)
     assert len(session.calls) == 1
+
+
+# --- v2 routing fix -------------------------------------------------------
+#
+# The server mounts the v2-only protocol endpoints (guardian, gossip,
+# snapshot, fork-block) under /api/v2/<path>. Earlier SDK releases
+# posted to /api/<path>, which returns 404 against a stock node.
+
+
+def test_get_guardian_set_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"guardians": []}}))
+    client.get_guardian_set("alice")
+    _, url, _ = session.calls[0]
+    assert "/api/v2/guardian/set/alice" in url
+
+
+def test_submit_anchor_gossip_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {}}))
+    client.submit_anchor_gossip({"messageId": "m1"})
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/v2/anchor-gossip")
+
+
+def test_bootstrap_status_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"ready": True}}))
+    client.bootstrap_status()
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/v2/bootstrap/status")
+
+
+def test_fork_block_status_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {}}))
+    client.fork_block_status()
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/v2/fork-block/status")
+
+
+# --- v3 routing -----------------------------------------------------------
+
+
+def test_get_audit_head_routes_to_api(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"sequence": 7}}))
+    head = client.get_audit_head()
+    _, url, _ = session.calls[0]
+    assert url.endswith("/api/audit/head")
+    assert head["sequence"] == 7
+
+
+def test_submit_moderation_action_routes_to_api(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"ok": True}}))
+    client.submit_moderation_action(
+        {"targetType": "review", "targetId": "abc", "action": "hide"}
+    )
+    method, url, kw = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/api/moderation/actions")
+    body = json.loads(kw["data"])
+    assert body["action"] == "hide"
+
+
+def test_get_peers_routes_to_api(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"peers": []}}))
+    client.get_peers(limit=25, offset=0)
+    _, url, kw = session.calls[0]
+    assert url.endswith("/api/peers")
+    assert kw["params"] == {"limit": 25, "offset": 0}
+
+
+def test_get_discovery_domain_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"name": "x"}}))
+    client.get_discovery_domain("contractors.home")
+    _, url, _ = session.calls[0]
+    assert "/api/v2/discovery/domain/contractors.home" in url
+
+
+def test_resolve_dns_uses_v2_path(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"records": []}}))
+    client.resolve_dns("example.org", "A")
+    _, url, _ = session.calls[0]
+    assert "/api/v2/dns/resolve/example.org/A" in url
+
+
+def test_get_peer_returns_none_on_404(session, client):
+    session.queue(
+        _FakeResponse(
+            status_code=404,
+            payload={"success": False, "error": {"code": "NOT_FOUND", "message": "absent"}},
+        )
+    )
+    assert client.get_peer("nope") is None
+
+
+def test_get_dsr_status_returns_none_on_404(session, client):
+    session.queue(
+        _FakeResponse(
+            status_code=404,
+            payload={"success": False, "error": {"code": "NOT_FOUND", "message": "absent"}},
+        )
+    )
+    assert client.get_dsr_status("tx-missing") is None

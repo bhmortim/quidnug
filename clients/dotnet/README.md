@@ -3,7 +3,8 @@
 `Quidnug.Client` — the official .NET client for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
 protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol surface** (QDPs 0001–0010) plus the **v3 extensions**
+(QDPs 0011, 0014, 0015, 0017, 0018, 0023).
 
 Targets .NET 8 (runs under .NET 8/9/10). Uses built-in
 `System.Security.Cryptography.ECDsa`, `System.Net.Http`, and
@@ -78,6 +79,42 @@ shared across request handlers.
 | Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
 | Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+
+> **v2 routing note.** Guardian, gossip, bootstrap, fork-block, discovery,
+> and DNS methods now correctly route to `/api/v2/<path>` on the node,
+> where the v2-only handlers are mounted. (Earlier `2.x` releases routed
+> to `/api/<path>`, which returns 404 against a stock node.)
+
+### v3 extensions (QDPs 0011, 0014, 0015, 0017, 0018, 0023)
+
+The v3 methods return the loose `Task<JsonNode?>` shape and accept
+`object` bodies, mirroring the JavaScript SDK. `Get*Async` lookups that
+can plausibly miss (`GetPeerAsync`, `GetAuditEntryAsync`, `GetDSRStatusAsync`,
+and the three `GetDiscovery*Async` calls) return `null` on `NOT_FOUND`.
+
+```csharp
+// Operator audit log
+var head = await client.GetAuditHeadAsync();
+var page = await client.GetAuditEntriesAsync(
+    since: head!["sequence"]!.GetValue<long>() - 100, limit: 100);
+
+// Network discovery
+var info = await client.GetDiscoveryDomainAsync("contractors.home");
+
+// DNS attestation lookup
+var records = await client.ResolveDNSAsync("example.org", "A");
+```
+
+| Area | Methods | Server path |
+| --- | --- | --- |
+| Peers (QDP-0011) | `GetPeersAsync`, `GetPeerAsync` | `/api/peers`, `/api/peers/{nodeQuid}` |
+| Node advertisements | `SubmitNodeAdvertisementAsync` | `/api/node-advertisements` |
+| Domain registry | `GetTopDomainsAsync`, `GetTentativeBlocksAsync`, `SubmitDomainGossipAsync` | `/api/domains/top`, `/api/blocks/tentative/{domain}`, `/api/gossip/domains` |
+| Moderation (QDP-0015) | `SubmitModerationActionAsync`, `GetModerationActionsAsync` | `/api/moderation/actions[...]` |
+| Audit (QDP-0018) | `GetAuditHeadAsync`, `GetAuditEntriesAsync`, `GetAuditEntryAsync` | `/api/audit/*` |
+| Privacy (QDP-0017) | `SubmitDSRAsync`, `GetDSRStatusAsync`, `GrantConsentAsync`, `WithdrawConsentAsync`, `GetConsentHistoryAsync`, `CreateProcessingRestrictionAsync`, `GetProcessingRestrictionsAsync`, `SubmitDSRComplianceAsync` | `/api/privacy/*` |
+| Discovery (QDP-0014) | `GetDiscoveryDomainAsync`, `GetDiscoveryNodeAsync`, `GetDiscoveryOperatorAsync`, `DiscoveryQuidsAsync`, `DiscoveryTrustedQuidsAsync` | `/api/v2/discovery/*` |
+| DNS attestation (QDP-0023) | `SubmitDNSClaimAsync`, `SubmitDNSChallengeAsync`, `SubmitDNSAttestationAsync`, `SubmitDNSRenewalAsync`, `SubmitDNSRevocationAsync`, `SubmitDNSDelegateAsync`, `SubmitDNSDelegateRevocationAsync`, `GetDNSAttestationsAsync`, `GetDNSAttestationsWeightedAsync`, `ResolveDNSAsync` | `/api/v2/dns/*` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -226,6 +263,7 @@ invocation.
 | SDK | Node | QDPs |
 | --- | --- | --- |
 | 2.x | 2.x | 0001–0010 |
+| 2.1+ | 2.x | 0001–0010, 0011, 0014, 0015, 0017, 0018, 0023 |
 
 ## License
 

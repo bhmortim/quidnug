@@ -1,7 +1,7 @@
 {
   "name": "@quidnug/client",
-  "version": "2.0.0",
-  "description": "Quidnug Client SDK for JavaScript \u2014 full protocol surface (QDPs 0001\u20130010)",
+  "version": "3.0.0",
+  "description": "Quidnug Client SDK for JavaScript \u2014 full protocol surface (QDPs 0001\u20130010, 0014, 0015, 0017, 0018, 0023)",
   "main": "quidnug-client.js",
   "module": "quidnug-client.js",
   "types": "quidnug-client.d.ts",
@@ -18,16 +18,22 @@
       "types": "./quidnug-client-v2.d.ts",
       "default": "./quidnug-client-v2.js"
     },
+    "./v3": {
+      "import": "./quidnug-client-v3.js",
+      "types": "./quidnug-client-v3.d.ts",
+      "default": "./quidnug-client-v3.js"
+    },
     "./v1-wire": {
       "import": "./v1-wire.js",
       "default": "./v1-wire.js"
     }
   },
   "scripts": {
-    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js vectors.test.js",
-    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js vectors.test.js",
+    "test": "node --test quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js quidnug-client-v3.test.js vectors.test.js",
+    "test:watch": "node --test --watch quidnug-client.test.js quidnug-client.retry.test.js quidnug-client-v2.test.js quidnug-client-v3.test.js vectors.test.js",
     "test:retry": "node --test quidnug-client.retry.test.js",
     "test:v2": "node --test quidnug-client-v2.test.js",
+    "test:v3": "node --test quidnug-client-v3.test.js",
     "test:vectors": "node --test vectors.test.js"
   },
   "files": [
@@ -35,6 +41,8 @@
     "quidnug-client.d.ts",
     "quidnug-client-v2.js",
     "quidnug-client-v2.d.ts",
+    "quidnug-client-v3.js",
+    "quidnug-client-v3.d.ts",
     "v1-wire.js"
   ],
   "keywords": [

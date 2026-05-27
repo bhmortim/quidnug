@@ -3,7 +3,8 @@
 iOS 15+ / macOS 12+ client SDK for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
 protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+and v3 protocol surface** (QDPs 0001–0010 plus 0011, 0014, 0015,
+0017, 0018, 0023).
 
 Uses Apple's `CryptoKit` for ECDSA P-256 (no C dependencies, no
 App Store review friction) and `URLSession` for HTTP.
@@ -78,10 +79,44 @@ method uses `async throws`.
 | Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+
+All v2 methods route to `/api/v2/<path>` on the node, where the
+v2-only handlers are mounted. (Earlier `2.x` releases routed to
+`/api/<path>`, which returns 404 against a stock node.)
+
+### v3 surface (QDPs 0011, 0014, 0015, 0017, 0018, 0023)
+
+The v3 methods are mixed into the same `QuidnugClient` — no separate
+import needed. Some routes live under `/api/<path>`, others under
+`/api/v2/<path>` (discovery, DNS attestation); the SDK routes each
+to the correct prefix.
+
+```swift
+// Operator audit log
+let head = try await client.getAuditHead()
+let page = try await client.getAuditEntries(since: 0, limit: 100)
+
+// Network discovery
+let info = try await client.getDiscoveryDomain(name: "contractors.home")
+
+// DNS attestation lookup
+let records = try await client.resolveDNS(domain: "example.org", recordType: "A")
+```
+
+| Area | Methods | Server path |
+| --- | --- | --- |
+| Peers (QDP-0011) | `getPeers`, `getPeer` | `/api/peers`, `/api/peers/{nodeQuid}` |
+| Node advertisements | `submitNodeAdvertisement` | `/api/node-advertisements` |
+| Domain registry | `getTopDomains`, `getTentativeBlocks`, `submitDomainGossip` | `/api/domains/top`, `/api/blocks/tentative/{domain}`, `/api/gossip/domains` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` | `/api/moderation/actions[...]` |
+| Audit (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` | `/api/audit/*` |
+| Privacy (QDP-0017) | `submitDSR`, `getDSRStatus`, `grantConsent`, `withdrawConsent`, `getConsentHistory`, `createProcessingRestriction`, `getProcessingRestrictions`, `submitDSRCompliance` | `/api/privacy/*` |
+| Discovery (QDP-0014) | `getDiscoveryDomain`, `getDiscoveryNode`, `getDiscoveryOperator`, `discoveryQuids`, `discoveryTrustedQuids` | `/api/v2/discovery/*` |
+| DNS attestation (QDP-0023) | `submitDNSClaim`, `submitDNSChallenge`, `submitDNSAttestation`, `submitDNSRenewal`, `submitDNSRevocation`, `submitDNSDelegate`, `submitDNSDelegateRevocation`, `getDNSAttestations`, `getDNSAttestationsWeighted`, `resolveDNS` | `/api/v2/dns/*` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -200,6 +235,7 @@ Tests ship under `Tests/QuidnugTests/`:
 | SDK | Node | QDPs |
 | --- | --- | --- |
 | 2.x | 2.x | 0001–0010 |
+| 3.x | 3.x | 0001–0010, 0011, 0014, 0015, 0017, 0018, 0023 |
 
 ## License
 

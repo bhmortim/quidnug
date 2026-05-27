@@ -1,10 +1,10 @@
 [package]
 name = "quidnug"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2021"
 rust-version = "1.74"
 license = "Apache-2.0"
-description = "Rust client SDK for Quidnug — a decentralized protocol for relational trust"
+description = "Rust client SDK for Quidnug — full protocol coverage (identity, trust, titles, guardian, gossip, bootstrap, fork-block, peers, audit, moderation, privacy, discovery, DNS)"
 repository = "https://github.com/bhmortim/quidnug"
 homepage = "https://github.com/bhmortim/quidnug"
 keywords = ["quidnug", "trust", "identity", "decentralized", "blockchain"]

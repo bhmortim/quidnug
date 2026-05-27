@@ -76,6 +76,45 @@ const ok = await QuidnugClient.verifyInclusionProof(
 | Fork-block | `submitForkBlock`, `getForkBlockStatus` |
 | Static helpers | `QuidnugClient.verifyInclusionProof`, `QuidnugClient.canonicalBytes`, `QuidnugClient.bytesToHex`, `QuidnugClient.hexToBytes` |
 
+All v2 methods route to `/api/v2/<path>` on the node, where the
+v2-only handlers are mounted. (Earlier `2.x` releases routed to
+`/api/<path>`, which returns 404 against a stock node.)
+
+## v3 extensions (QDPs 0014, 0015, 0017, 0018, 0023)
+
+Importing the v3 module installs peer / audit / moderation /
+privacy / discovery / DNS-attestation / node-advertisement methods
+on the `QuidnugClient` prototype.
+
+```js
+import QuidnugClient from "@quidnug/client";
+import "@quidnug/client/v2";
+import "@quidnug/client/v3";
+
+// Operator audit log
+const head = await client.getAuditHead();
+const page = await client.getAuditEntries({ since: head.sequence - 100, limit: 100 });
+
+// Network discovery
+const info = await client.getDiscoveryDomain("contractors.home");
+
+// DNS attestation lookup
+const records = await client.resolveDNS("example.org", "A");
+```
+
+### v3 method list
+
+| Area | Methods | Server path |
+| --- | --- | --- |
+| Peers | `getPeers`, `getPeer` | `/api/peers`, `/api/peers/{nodeQuid}` |
+| Node advertisements | `submitNodeAdvertisement` | `/api/node-advertisements` |
+| Domain registry | `getTopDomains`, `getTentativeBlocks`, `submitDomainGossip` | `/api/domains/top`, `/api/blocks/tentative/{domain}`, `/api/gossip/domains` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` | `/api/moderation/actions[...]` |
+| Audit (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` | `/api/audit/*` |
+| Privacy (QDP-0017) | `submitDSR`, `getDSRStatus`, `grantConsent`, `withdrawConsent`, `getConsentHistory`, `createProcessingRestriction`, `getProcessingRestrictions`, `submitDSRCompliance` | `/api/privacy/*` |
+| Discovery (QDP-0014) | `getDiscoveryDomain`, `getDiscoveryNode`, `getDiscoveryOperator`, `discoveryQuids`, `discoveryTrustedQuids` | `/api/v2/discovery/*` |
+| DNS attestation (QDP-0023) | `submitDNSClaim`, `submitDNSChallenge`, `submitDNSAttestation`, `submitDNSRenewal`, `submitDNSRevocation`, `submitDNSDelegate`, `submitDNSDelegateRevocation`, `getDNSAttestations`, `getDNSAttestationsWeighted`, `resolveDNS` | `/api/v2/dns/*` |
+
 ### Canonicalization
 
 `QuidnugClient.canonicalBytes(obj, excludeFields)` produces the
@@ -90,15 +129,16 @@ for the full specification.
 
 ## TypeScript
 
-Both v1 and v2 ship PR-quality `.d.ts` files. v2 uses module
-augmentation, so importing the v2 side-effect module also expands
+v1, v2, and v3 all ship `.d.ts` files. v2 and v3 use module
+augmentation, so importing each side-effect module also expands
 the TypeScript type surface automatically.
 
 ## Running the tests
 
 ```bash
-npm test           # runs v1 + retry + v2 suites
+npm test           # runs v1 + retry + v2 + v3 + vector suites
 npm run test:v2    # v2 only
+npm run test:v3    # v3 only
 ```
 
 ## License

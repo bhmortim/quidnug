@@ -66,6 +66,44 @@ corresponding typed method.
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
 | Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
 
+All guardian / gossip / bootstrap / fork-block methods route to
+`/api/v2/<path>` on the node, where the v2-only handlers are mounted.
+(Earlier `2.x` releases of this SDK routed to `/api/<path>`, which
+returns 404 against a stock node.)
+
+### v3 extensions (QDPs 0011, 0014, 0015, 0017, 0018, 0023)
+
+The v3 surface adds protocol coverage for endpoints introduced after
+the v2 release. The methods live on `QuidnugClient` (and
+`AsyncQuidnugClient`) directly — no extra import is needed.
+
+```python
+# Operator audit log (QDP-0018)
+head = client.get_audit_head()
+page = client.get_audit_entries(since=head["sequence"] - 100, limit=100)
+
+# Network discovery (QDP-0014)
+info = client.get_discovery_domain("contractors.home")
+
+# DNS attestation lookup (QDP-0023)
+records = client.resolve_dns("example.org", "A")
+```
+
+| Area | Methods | Server path |
+| --- | --- | --- |
+| Peers (QDP-0011) | `get_peers`, `get_peer` | `/api/peers`, `/api/peers/{nodeQuid}` |
+| Node advertisements | `submit_node_advertisement` | `/api/node-advertisements` |
+| Domain registry | `get_top_domains`, `get_tentative_blocks`, `submit_domain_gossip` | `/api/domains/top`, `/api/blocks/tentative/{domain}`, `/api/gossip/domains` |
+| Moderation (QDP-0015) | `submit_moderation_action`, `get_moderation_actions` | `/api/moderation/actions[...]` |
+| Audit (QDP-0018) | `get_audit_head`, `get_audit_entries`, `get_audit_entry` | `/api/audit/*` |
+| Privacy (QDP-0017) | `submit_dsr`, `get_dsr_status`, `grant_consent`, `withdraw_consent`, `get_consent_history`, `create_processing_restriction`, `get_processing_restrictions`, `submit_dsr_compliance` | `/api/privacy/*` |
+| Discovery (QDP-0014) | `get_discovery_domain`, `get_discovery_node`, `get_discovery_operator`, `discovery_quids`, `discovery_trusted_quids` | `/api/v2/discovery/*` |
+| DNS attestation (QDP-0023) | `submit_dns_claim`, `submit_dns_challenge`, `submit_dns_attestation`, `submit_dns_renewal`, `submit_dns_revocation`, `submit_dns_delegate`, `submit_dns_delegate_revocation`, `get_dns_attestations`, `get_dns_attestations_weighted`, `resolve_dns` | `/api/v2/dns/*` |
+
+GET-by-id endpoints that can 404 (`get_peer`, `get_discovery_*`,
+`get_audit_entry`, `get_dsr_status`) return `None` rather than raise,
+matching the existing convention on `get_identity` / `get_title`.
+
 ### `Quid` — cryptographic identity
 
 ```python
