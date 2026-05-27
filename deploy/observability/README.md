@@ -78,6 +78,7 @@ CRD — the top-level `groups:` block is already in the right shape.
 | `quidnug.security` | Nonce replay, missing tx-root, guardian weakening, fork rejections, quarantine overflow. |
 | `quidnug.gossip` | Propagation latency, rate-limiting. |
 | `quidnug.probes` | QDP-0007 home-domain probe failure rate. |
+| `quidnug.scheduler` | Zero-run detection for 24h-cadence scheduled agents. |
 
 Severity conventions:
 
