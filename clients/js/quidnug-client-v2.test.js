@@ -112,7 +112,7 @@ test("canonicalBytes — sorts nested keys", () => {
 
 // --- Guardian method routing (happy path, smoke test) ---------------------
 
-test("submitGuardianSetUpdate — routes to /guardian/set-update", async () => {
+test("submitGuardianSetUpdate — routes to /api/v2/guardian/set-update", async () => {
   let hitUrl, hitBody;
   globalThis.fetch = async (url, init) => {
     hitUrl = url;
@@ -134,7 +134,7 @@ test("submitGuardianSetUpdate — routes to /guardian/set-update", async () => {
     validFrom: 0,
   });
 
-  assert.equal(hitUrl, "http://n.local/api/guardian/set-update");
+  assert.equal(hitUrl, "http://n.local/api/v2/guardian/set-update");
   assert.equal(hitBody.subjectQuid, "abc");
 });
 

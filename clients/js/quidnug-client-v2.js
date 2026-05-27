@@ -28,11 +28,17 @@ import QuidnugClient from "./quidnug-client.js";
 
 // ---------------------------------------------------------------------------
 // Helper: shared POST JSON / GET JSON primitives that hit a healthy node.
+//
+// The v2 protocol surface (guardian, cross-domain gossip, snapshots,
+// fork-block) is mounted under /api/v2 on the server. Earlier
+// releases of this SDK used /api/ paths; those return 404 against
+// any node running stock handlers.go.
 // ---------------------------------------------------------------------------
 
-async function _postJson(client, path, body) {
+async function _postJson(client, path, body, { v2 = true } = {}) {
   const nodeUrl = client._getHealthyNode();
-  const resp = await client._fetchWithRetry(`${nodeUrl}/api/${path}`, {
+  const prefix = v2 ? "api/v2" : "api";
+  const resp = await client._fetchWithRetry(`${nodeUrl}/${prefix}/${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -40,15 +46,16 @@ async function _postJson(client, path, body) {
   return client._parseResponse(resp);
 }
 
-async function _getJson(client, path) {
+async function _getJson(client, path, { v2 = true } = {}) {
   const nodeUrl = client._getHealthyNode();
-  const resp = await client._fetchWithRetry(`${nodeUrl}/api/${path}`);
+  const prefix = v2 ? "api/v2" : "api";
+  const resp = await client._fetchWithRetry(`${nodeUrl}/${prefix}/${path}`);
   return client._parseResponse(resp);
 }
 
-async function _getOrNull(client, path) {
+async function _getOrNull(client, path, opts) {
   try {
-    return await _getJson(client, path);
+    return await _getJson(client, path, opts);
   } catch (err) {
     if (err && err.code === "NOT_FOUND") return null;
     throw err;

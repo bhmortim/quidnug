@@ -2,7 +2,11 @@
 
 React hooks and components for Quidnug — declarative per-observer
 trust in your UI. Layered on top of [`@quidnug/client`](../js/)
-(JS SDK v2).
+(JS SDK v3). Every method exposed by the underlying client —
+including the v2 guardian / gossip surface and the v3 audit /
+privacy / moderation / discovery / DNS surface — is reachable
+via `useQuidnug().client` for low-level work; hooks cover the
+trust + identity + stream queries that most React apps need.
 
 ## Install
 
