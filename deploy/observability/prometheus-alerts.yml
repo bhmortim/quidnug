@@ -188,3 +188,21 @@ groups:
           description: |
             QDP-0007 cross-domain key probes are failing — peers may be
             unreachable or home-domain routing is misconfigured.
+
+  # ENG-163: detect silent agent inactivity for 24h-cadence scheduled agents.
+  - name: quidnug.scheduler
+    interval: 60s
+    rules:
+      - alert: QuidnugSchedulerZeroRun
+        expr: |
+          (time() - quidnug_scheduler_last_success_timestamp_seconds{cadence="24h"}) >= 90000
+        for: 5m
+        labels:
+          severity: warning
+          slack_channel: agent-errors
+        annotations:
+          summary: "Scheduled agent {{ $labels.agent }} silent for >=25h"
+          description: |
+            Agent {{ $labels.agent }} (24h cadence) has not completed a
+            successful run in over 25 hours (90000s). Check scheduler
+            logs and agent health in #agent-errors.
