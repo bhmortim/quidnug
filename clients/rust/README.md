@@ -3,10 +3,13 @@
 `quidnug` — the official Rust crate for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the full protocol surface: identity, trust, titles, event
-streams, anchors, guardian sets, recovery, cross-domain gossip,
-K-of-K bootstrap, fork-block activation, compact Merkle inclusion
-proofs (QDPs 0001–0010).
+Covers the v1.0 core protocol surface — identity, trust, titles —
+plus offline canonical-bytes and compact Merkle inclusion proof
+verification (QDP-0010). Event streams, guardian sets, recovery,
+cross-domain gossip, K-of-K bootstrap, and fork-block activation
+are exposed via the underlying HTTP API but do not yet have typed
+helpers; track [#sdk-rust-coverage](https://github.com/bhmortim/quidnug/issues)
+for the typed surface.
 
 ## Install
 

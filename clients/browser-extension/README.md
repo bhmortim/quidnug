@@ -66,8 +66,9 @@ const quids = await window.quidnug.listQuids();
 // -> [{ alias, id, publicKeyHex }]
 
 // Sign canonical bytes produced by your app with the Quidnug SDK's
-// CanonicalBytes helper. The extension returns a hex-DER signature
-// identical to what any other Quidnug SDK produces.
+// CanonicalBytes helper. The extension returns a 64-byte IEEE-1363
+// raw (r||s) hex signature — the v1.0 canonical form used by every
+// other Quidnug SDK, so signatures verify across languages.
 const sig = await window.quidnug.sign(quids[0].id, canonicalBytesHex);
 
 // Fetch the configured node URL + token (may be empty).

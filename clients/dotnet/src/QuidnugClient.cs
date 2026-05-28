@@ -195,6 +195,31 @@ public sealed class QuidnugClient : IDisposable
                ?? throw new QuidnugNodeException("decode trust result failed", 200, node.ToJsonString());
     }
 
+    /// <summary>
+    /// POST /api/trust/query — structured relational-trust query.
+    ///
+    /// <para>Equivalent to <see cref="GetTrustAsync"/> but accepts the query
+    /// body as JSON, useful for programmatic construction.</para>
+    /// </summary>
+    public async Task<TrustResult> QueryRelationalTrustAsync(
+        string observer, string target, string domain = "default", int maxDepth = 5,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(observer) || string.IsNullOrEmpty(target))
+            throw new QuidnugValidationException("observer and target are required");
+        var body = new Dictionary<string, object?>
+        {
+            ["observer"] = observer,
+            ["target"] = target,
+            ["domain"] = domain,
+            ["maxDepth"] = maxDepth,
+        };
+        var node = await RequestAsync(HttpMethod.Post, "trust/query", body, ct)
+                   ?? throw new QuidnugNodeException("empty response", 200, null);
+        return JsonSerializer.Deserialize<TrustResult>(node.ToJsonString())
+               ?? throw new QuidnugNodeException("decode trust result failed", 200, node.ToJsonString());
+    }
+
     public async Task<List<TrustEdge>> GetTrustEdgesAsync(string quidId, CancellationToken ct = default)
     {
         var node = await RequestAsync(HttpMethod.Get, $"trust/edges/{Uri.EscapeDataString(quidId)}", null, ct);
@@ -377,6 +402,10 @@ public sealed class QuidnugClient : IDisposable
     public Task<JsonNode?> SubmitRecoveryCommitAsync(object commit, CancellationToken ct = default)
         => RequestAsync(HttpMethod.Post, "guardian/recovery/commit", commit, ct);
 
+    /// <summary>POST /api/guardian/resign — guardian voluntarily resigns (QDP-0006).</summary>
+    public Task<JsonNode?> SubmitGuardianResignationAsync(object resignation, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "guardian/resign", resignation, ct);
+
     public async Task<GuardianSet?> GetGuardianSetAsync(string quidId, CancellationToken ct = default)
     {
         try
@@ -424,6 +453,83 @@ public sealed class QuidnugClient : IDisposable
 
     public Task<JsonNode?> BootstrapStatusAsync(CancellationToken ct = default)
         => RequestAsync(HttpMethod.Get, "bootstrap/status", null, ct);
+
+    /// <summary>POST /api/nonce-snapshots — publish K-of-K bootstrap snapshot (QDP-0008).</summary>
+    public Task<JsonNode?> SubmitNonceSnapshotAsync(object snapshot, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "nonce-snapshots", snapshot, ct);
+
+    /// <summary>GET /api/nonce-snapshots/{domain}/latest — latest published snapshot for a domain.</summary>
+    public async Task<JsonNode?> GetLatestNonceSnapshotAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"nonce-snapshots/{Uri.EscapeDataString(domain)}/latest", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    // =====================================================================
+    // Registry (paginated listings)
+    // =====================================================================
+
+    /// <summary>GET /api/registry/trust — paginated trust registry.</summary>
+    public Task<JsonNode?> RegistryTrustAsync(
+        string? truster = null, string? trustee = null,
+        int limit = 50, int offset = 0, CancellationToken ct = default)
+    {
+        var qs = new List<string>();
+        if (truster is not null) qs.Add($"truster={Uri.EscapeDataString(truster)}");
+        if (trustee is not null) qs.Add($"trustee={Uri.EscapeDataString(trustee)}");
+        qs.Add($"limit={limit}");
+        qs.Add($"offset={offset}");
+        return RequestAsync(HttpMethod.Get, "registry/trust?" + string.Join("&", qs), null, ct);
+    }
+
+    // =====================================================================
+    // IPFS pin / retrieval
+    // =====================================================================
+
+    /// <summary>POST /api/ipfs/pin — pin binary content to IPFS, returns CID.</summary>
+    public async Task<string> IpfsPinAsync(byte[] content, CancellationToken ct = default)
+    {
+        if (content is null || content.Length == 0)
+            throw new QuidnugValidationException("content is required");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _apiBase + "/ipfs/pin")
+        {
+            Content = new ByteArrayContent(content),
+        };
+        req.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        req.Headers.Accept.ParseAdd("application/json");
+        using var resp = await _http.SendAsync(req, ct);
+        var node = await ParseEnvelopeAsync(resp, ct);
+        return node?["cid"]?.GetValue<string>()
+               ?? throw new QuidnugNodeException("pin response missing cid", (int)HttpStatusCode.OK, null);
+    }
+
+    /// <summary>GET /api/ipfs/{cid} — fetch raw content by CID.</summary>
+    public async Task<byte[]> IpfsGetAsync(string cid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(cid))
+            throw new QuidnugValidationException("cid is required");
+        using var req = new HttpRequestMessage(HttpMethod.Get,
+            _apiBase + "/ipfs/" + Uri.EscapeDataString(cid));
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            string body = await resp.Content.ReadAsStringAsync(ct);
+            throw new QuidnugNodeException($"ipfs fetch {cid}: HTTP {(int)resp.StatusCode}",
+                (int)resp.StatusCode, body);
+        }
+        return await resp.Content.ReadAsByteArrayAsync(ct);
+    }
 
     // =====================================================================
     // HTTP plumbing

@@ -231,8 +231,13 @@ async function dispatch(msg, sender) {
         case "setNode":
             await chrome.storage.local.set({ [STORAGE_KEYS.NODE_URL]: msg.url });
             return { ok: true };
-        case "getNode":
-            return await chrome.storage.local.get([STORAGE_KEYS.NODE_URL, STORAGE_KEYS.TOKEN]);
+        case "getNode": {
+            const obj = await chrome.storage.local.get([STORAGE_KEYS.NODE_URL, STORAGE_KEYS.TOKEN]);
+            return {
+                url: obj[STORAGE_KEYS.NODE_URL] ?? "",
+                token: obj[STORAGE_KEYS.TOKEN] ?? "",
+            };
+        }
         default:
             throw new Error("unknown message type: " + type);
     }
