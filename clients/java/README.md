@@ -89,13 +89,15 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 | --- | --- |
 | Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
 | Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
-| Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Guardians (QDP-0002 / 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| Gossip (QDP-0003 / 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Registry | `registryTrust` |
+| IPFS | `ipfsPin`, `ipfsGet` |
 
 ### `CanonicalBytes` — signable-bytes encoder
 

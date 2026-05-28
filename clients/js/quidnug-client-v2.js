@@ -251,11 +251,17 @@ QuidnugClient.hexToBytes = _hexToBytes;
 // ---------------------------------------------------------------------------
 
 /**
- * Return the canonical UTF-8 bytes for signing.
+ * Return the canonical UTF-8 bytes for signing — alphabetically
+ * sorted keys at every level, UTF-8 JSON, named top-level fields
+ * (typically "signature", "txId", "publicKey") excluded.
  *
- * Matches Go's json.Marshal → unmarshal(map[string]any) → json.Marshal
- * pattern: the second marshal alphabetizes keys. Excludes named
- * top-level fields (typically "signature", "txId", "publicKey").
+ * Produces the same byte output as Go's
+ * `json.Marshal → unmarshal(map[string]any) → json.Marshal` round-trip
+ * (which alphabetizes via the map re-marshal) and as Python's
+ * `quidnug.canonical_bytes`. Used by the legacy/alphabetical signing
+ * path; the v1.0-conformant path uses typed wire structs with
+ * struct-declaration field order (see the Go reference for the
+ * authoritative form).
  *
  * @param {object} obj
  * @param {string[]} excludeFields

@@ -31,8 +31,8 @@ Then activate in WP admin.
    visitor sees an unweighted average with a "sign in to see
    your personal rating" hint.
 2. Adds two shortcodes:
-   - `[quidnug-reviews product="..." topic="..."]` — full panel
-   - `[quidnug-stars product="..." topic="..."]` — compact
+   - `[quidnug-reviews product="..." topic="..." show-write="0|1"]` — full panel; `show-write="1"` inlines the write-review form (default `0`)
+   - `[quidnug-stars product="..." topic="..." show-count="0|1"]` — compact stars; `show-count="1"` adds the review count beside the stars (default `0`)
 3. Emits Schema.org `AggregateRating` JSON-LD for each product,
    compatible with Google / Bing / DuckDuckGo rich results.
 4. Configurable category-to-topic mapping so
@@ -58,10 +58,10 @@ Full panel, anywhere in a post:
 [quidnug-reviews product="my-product-sku" topic="reviews.public.technology.laptops" show-write="1"]
 ```
 
-Compact stars:
+Compact stars (add `show-count="1"` to print the review count beside the stars):
 
 ```
-[quidnug-stars product="my-product-sku" topic="reviews.public.books"]
+[quidnug-stars product="my-product-sku" topic="reviews.public.books" show-count="1"]
 ```
 
 ## Category → topic mapping

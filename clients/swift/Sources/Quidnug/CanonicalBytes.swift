@@ -1,21 +1,23 @@
 import Foundation
 
-/// Canonical signable-bytes encoder — byte-for-byte compatible with
-/// the Go, Python, Java, .NET, Rust, and JavaScript Quidnug SDKs.
+/// Canonical signable-bytes encoder.
 ///
 /// Two modes ship here:
 ///
-/// - `v1Of`: v1.0-spec-conformant. Top-level keys preserve caller
-///   insertion order (which must mirror Go struct declaration order
-///   for the tx type). Nested `[String: Any]` dictionaries are
-///   recursively sorted alphabetically to match Go's `encoding/json`
-///   default for `map[string]interface{}`. Use this for any
-///   transaction bound for a v1.0 node.
+/// - `v1Of` / `v1OfOrdered`: v1.0-spec-conformant. Top-level keys
+///   preserve caller insertion order (which must mirror Go struct
+///   declaration order for the tx type). Nested `[String: Any]`
+///   dictionaries are recursively sorted alphabetically to match
+///   Go's `encoding/json` default for `map[string]interface{}`.
+///   Byte-for-byte compatible with the Go, Python, Java, .NET, Rust,
+///   and JavaScript Quidnug SDKs. **Use this for any transaction
+///   bound for a v1.0 node.**
 ///
 /// - `of`: **legacy fully-sorted** mode. Sorts every level,
-///   including the top. Does NOT match v1.0 canonical form.
-///   Signatures built via this will not verify against a v1.0 node.
-///   Kept for backward compatibility; deprecated.
+///   including the top. Does NOT match v1.0 canonical form, and is
+///   NOT byte-compatible with the other SDKs. Signatures built via
+///   this will not verify against a v1.0 node. Kept for backward
+///   compatibility; deprecated.
 ///
 /// Because Swift `[String: Any]` literals do not preserve insertion
 /// order, callers targeting `v1Of` must pass an array of

@@ -168,6 +168,28 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * POST /api/trust/query — structured relational-trust query.
+     *
+     * <p>Equivalent to {@link #getTrust} but takes the query as a JSON body,
+     * useful when parameters are constructed programmatically.
+     */
+    public Types.TrustResult queryRelationalTrust(String observer, String target,
+                                                  String domain, int maxDepth) {
+        if (observer == null || observer.isEmpty() || target == null || target.isEmpty())
+            throw new ValidationException("observer and target are required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", domain == null ? "default" : domain);
+        body.put("maxDepth", maxDepth);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust result: " + e.getMessage(), e);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     public List<Types.TrustEdge> getTrustEdges(String quidId) {
         try {
@@ -398,6 +420,78 @@ public final class QuidnugClient {
     }
 
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+
+    // =====================================================================
+    // Registry (paginated listings)
+    // =====================================================================
+
+    /** GET /api/registry/trust — paginated trust registry. */
+    public JsonNode registryTrust(String truster, String trustee, int limit, int offset) {
+        StringBuilder qs = new StringBuilder("registry/trust?");
+        if (truster != null) qs.append("truster=").append(urlencode(truster)).append("&");
+        if (trustee != null) qs.append("trustee=").append(urlencode(trustee)).append("&");
+        qs.append("limit=").append(limit).append("&offset=").append(offset);
+        return doGet(qs.toString());
+    }
+
+    // =====================================================================
+    // IPFS pin / retrieval
+    // =====================================================================
+
+    /**
+     * POST /api/ipfs/pin — pin binary content to IPFS, returns the resulting CID.
+     */
+    public String ipfsPin(byte[] content) {
+        if (content == null || content.length == 0)
+            throw new ValidationException("content is required");
+        try {
+            HttpRequest.Builder rb = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBase + "/ipfs/pin"))
+                    .timeout(timeout)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/octet-stream")
+                    .header("User-Agent", userAgent)
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+            if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+            HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+            JsonNode data = parseEnvelope(resp);
+            JsonNode cid = data.get("cid");
+            if (cid == null || cid.isNull())
+                throw new NodeException("ipfs/pin response missing cid", resp.statusCode(), resp.body());
+            return cid.asText();
+        } catch (QuidnugException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new NodeException("ipfs/pin: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * GET /api/ipfs/{cid} — fetch raw content addressed by CID.
+     */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty())
+            throw new ValidationException("cid is required");
+        try {
+            HttpRequest.Builder rb = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                    .timeout(timeout)
+                    .header("User-Agent", userAgent)
+                    .GET();
+            if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+            HttpResponse<byte[]> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+            int sc = resp.statusCode();
+            if (sc < 200 || sc >= 300) {
+                String body = new String(resp.body(), StandardCharsets.UTF_8);
+                throw new NodeException("ipfs/" + cid + ": HTTP " + sc, sc, body);
+            }
+            return resp.body();
+        } catch (QuidnugException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new NodeException("ipfs/" + cid + ": " + e.getMessage(), e);
+        }
+    }
 
     // =====================================================================
     // Param objects (fluent builders)

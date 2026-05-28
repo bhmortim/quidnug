@@ -10,6 +10,9 @@
     ".": {
       "import": "./src/index.js",
       "types": "./src/index.d.ts"
+    },
+    "./primitives": {
+      "import": "./src/primitives/index.js"
     }
   },
   "scripts": {
