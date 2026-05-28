@@ -3,13 +3,18 @@
 `quidnug` — the official Rust crate for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the v1.0 core protocol surface — identity, trust, titles —
-plus offline canonical-bytes and compact Merkle inclusion proof
-verification (QDP-0010). Event streams, guardian sets, recovery,
-cross-domain gossip, K-of-K bootstrap, and fork-block activation
-are exposed via the underlying HTTP API but do not yet have typed
-helpers; track [#sdk-rust-coverage](https://github.com/bhmortim/quidnug/issues)
-for the typed surface.
+Covers the full v2 protocol surface (QDPs 0001–0010): identity,
+trust, titles, event streams, anchors, guardian sets + recovery,
+cross-domain gossip, K-of-K bootstrap, fork-block activation, and
+compact Merkle inclusion proof verification.
+
+Transaction submission for `TRUST` and `IDENTITY` is fully typed
+and signs v1.0-conformant bytes (cross-verifies against every
+other SDK via the shared test vectors at
+`docs/test-vectors/v1.0/`). `TITLE` and `EVENT` submission, plus
+the guardian / gossip / bootstrap / fork-block POSTs, currently
+take a caller-built `serde_json::Value` envelope — typed helpers
+for those are tracked as a follow-up.
 
 ## Install
 
@@ -68,6 +73,24 @@ Runnable examples live in `examples/`:
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+### `Client` method index
+
+| Area | Methods |
+| --- | --- |
+| Health | `health`, `info`, `nodes`, `blocks` |
+| Identity | `register_identity`, `get_identity` |
+| Trust | `grant_trust`, `get_trust`, `query_relational_trust`, `get_trust_edges` |
+| Title | `get_title` |
+| Events | `get_event_stream`, `get_stream_events` |
+| Domains | `register_domain`, `ensure_domain` |
+| Commit-wait helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
+| Guardians (QDP-0002 / 0006) | `submit_guardian_set_update`, `submit_recovery_init/veto/commit`, `submit_guardian_resignation`, `get_guardian_set` |
+| Gossip (QDP-0003 / 0005) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| Registry | `registry_trust` |
+| IPFS | `ipfs_pin`, `ipfs_get` |
 
 ## Error taxonomy
 

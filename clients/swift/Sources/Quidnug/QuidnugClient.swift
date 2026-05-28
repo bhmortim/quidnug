@@ -61,6 +61,11 @@ public actor QuidnugClient {
         try await requestJSON(method: "GET", path: "nodes", body: nil)
     }
 
+    /// GET /api/blocks — paginated block list.
+    public func blocks() async throws -> [String: Any] {
+        try await requestJSON(method: "GET", path: "blocks", body: nil)
+    }
+
     // =========================================================================
     // Identity
     // =========================================================================
@@ -144,6 +149,27 @@ public actor QuidnugClient {
         let path = "trust/\(urlEscape(observer))/\(urlEscape(target))"
                  + "?domain=\(urlEscape(domain))&maxDepth=\(maxDepth)"
         let raw = try await requestJSON(method: "GET", path: path, body: nil)
+        return try decode(TrustResult.self, from: raw)
+    }
+
+    /// POST /api/trust/query — structured relational-trust query.
+    ///
+    /// Equivalent to ``getTrust(observer:target:domain:maxDepth:)`` but
+    /// takes the query as a JSON body, useful for programmatic
+    /// construction.
+    public func queryRelationalTrust(
+        observer: String, target: String, domain: String = "default", maxDepth: Int = 5
+    ) async throws -> TrustResult {
+        guard !observer.isEmpty, !target.isEmpty else {
+            throw QuidnugError.validation("observer and target are required")
+        }
+        let body: [String: Any] = [
+            "observer": observer,
+            "target": target,
+            "domain": domain,
+            "maxDepth": maxDepth,
+        ]
+        let raw = try await requestJSON(method: "POST", path: "trust/query", body: body)
         return try decode(TrustResult.self, from: raw)
     }
 
@@ -282,6 +308,26 @@ public actor QuidnugClient {
         try await requestJSON(method: "POST", path: "guardian/set-update", body: update)
     }
 
+    /// POST /api/guardian/recovery/init — initiate time-locked recovery.
+    public func submitRecoveryInit(_ init_: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/init", body: init_)
+    }
+
+    /// POST /api/guardian/recovery/veto — veto a pending recovery.
+    public func submitRecoveryVeto(_ veto: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/veto", body: veto)
+    }
+
+    /// POST /api/guardian/recovery/commit — commit recovery after delay.
+    public func submitRecoveryCommit(_ commit: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/commit", body: commit)
+    }
+
+    /// POST /api/guardian/resign — guardian resignation (QDP-0006).
+    public func submitGuardianResignation(_ resignation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/resign", body: resignation)
+    }
+
     public func getGuardianSet(quidId: String) async throws -> GuardianSet? {
         do {
             return try decode(GuardianSet.self,
@@ -291,6 +337,11 @@ public actor QuidnugClient {
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
+    }
+
+    /// POST /api/domain-fingerprints — publish a signed fingerprint (QDP-0003).
+    public func submitDomainFingerprint(_ fingerprint: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "domain-fingerprints", body: fingerprint)
     }
 
     public func getLatestDomainFingerprint(domain: String) async throws -> DomainFingerprint? {
@@ -305,12 +356,103 @@ public actor QuidnugClient {
         }
     }
 
+    /// POST /api/anchor-gossip — deliver a cross-domain anchor message.
+    public func submitAnchorGossip(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "anchor-gossip", body: message)
+    }
+
+    /// POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot (QDP-0008).
+    public func submitNonceSnapshot(_ snapshot: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "nonce-snapshots", body: snapshot)
+    }
+
+    /// GET /api/nonce-snapshots/{domain}/latest — latest snapshot for a domain. Returns nil on 404.
+    public func getLatestNonceSnapshot(domain: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(method: "GET",
+                                         path: "nonce-snapshots/\(urlEscape(domain))/latest",
+                                         body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
     public func bootstrapStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "bootstrap/status", body: nil)
     }
 
+    /// POST /api/fork-block — submit a signed fork-activation block (QDP-0009).
+    public func submitForkBlock(_ forkBlock: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "fork-block", body: forkBlock)
+    }
+
     public func forkBlockStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "fork-block/status", body: nil)
+    }
+
+    // =========================================================================
+    // Registry (paginated listings)
+    // =========================================================================
+
+    /// GET /api/registry/trust — paginated trust registry.
+    public func registryTrust(
+        truster: String? = nil, trustee: String? = nil,
+        limit: Int = 50, offset: Int = 0
+    ) async throws -> [String: Any] {
+        var path = "registry/trust?limit=\(limit)&offset=\(offset)"
+        if let t = truster { path += "&truster=\(urlEscape(t))" }
+        if let t = trustee { path += "&trustee=\(urlEscape(t))" }
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    // =========================================================================
+    // IPFS pin / retrieval
+    // =========================================================================
+
+    /// POST /api/ipfs/pin — pin bytes to the node's IPFS backend. Returns the CID.
+    public func ipfsPin(_ content: Data) async throws -> String {
+        guard !content.isEmpty else { throw QuidnugError.validation("content is required") }
+        let url = apiBase.appendingPathComponent("ipfs/pin")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.httpBody = content
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        let env = try parseEnvelope(data: data, statusCode: http.statusCode)
+        guard let cid = env["cid"] as? String else {
+            throw QuidnugError.node(status: http.statusCode, message: "pin response missing cid")
+        }
+        return cid
+    }
+
+    /// GET /api/ipfs/{cid} — fetch raw content addressed by CID.
+    public func ipfsGet(cid: String) async throws -> Data {
+        guard !cid.isEmpty else { throw QuidnugError.validation("cid is required") }
+        let url = apiBase.appendingPathComponent("ipfs/\(urlEscape(cid))")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "GET"
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        let sc = http.statusCode
+        guard (200..<300).contains(sc) else {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw QuidnugError.node(status: sc, message: "ipfs/\(cid): \(body)")
+        }
+        return data
     }
 
     // =========================================================================

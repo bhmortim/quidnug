@@ -2,7 +2,9 @@
 
 use crate::crypto::Quid;
 use crate::error::{Error, Result};
-use crate::types::{IdentityRecord, Title, TrustEdge, TrustResult};
+use crate::types::{
+    DomainFingerprint, GuardianSet, IdentityRecord, NonceSnapshot, Title, TrustEdge, TrustResult,
+};
 use crate::wire::{IdentityTx, TrustTx};
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::de::DeserializeOwned;
@@ -53,6 +55,17 @@ impl Client {
     /// Info (GET /api/info).
     pub async fn info(&self) -> Result<Value> {
         self.get("info").await
+    }
+
+    /// List known peer nodes (GET /api/nodes). Returns the paginated
+    /// data envelope; callers extract `data` themselves.
+    pub async fn nodes(&self) -> Result<Value> {
+        self.get("nodes").await
+    }
+
+    /// List blocks (GET /api/blocks). Paginated envelope.
+    pub async fn blocks(&self) -> Result<Value> {
+        self.get("blocks").await
     }
 
     /// Register an identity for `signer`, optionally with `name` and `home_domain`.
@@ -158,6 +171,30 @@ impl Client {
             max_depth
         );
         self.get_typed(&path).await
+    }
+
+    /// POST /api/trust/query — structured relational-trust query.
+    ///
+    /// Equivalent to [`get_trust`][Self::get_trust] but takes the
+    /// query as a JSON body, useful when constructing programmatically.
+    pub async fn query_relational_trust(
+        &self,
+        observer: &str,
+        target: &str,
+        domain: &str,
+        max_depth: u32,
+    ) -> Result<TrustResult> {
+        if observer.is_empty() || target.is_empty() {
+            return Err(Error::validation("observer and target are required"));
+        }
+        let body = serde_json::json!({
+            "observer": observer,
+            "target": target,
+            "domain": domain,
+            "maxDepth": max_depth,
+        });
+        let v = self.post("trust/query", &body).await?;
+        serde_json::from_value(v).map_err(Error::from)
     }
 
     /// Fetch a title or `None` on 404.
@@ -315,6 +352,232 @@ impl Client {
         } else {
             Ok(w.data)
         }
+    }
+
+    // --- Event streams (read-only) -------------------------------------
+    //
+    // Event submission requires a v1.0-conformant wire struct (see
+    // [`wire::TrustTx`] for the pattern); the read-side endpoints can
+    // safely be wrapped against `serde_json::Value` here. The typed
+    // `emit_event` helper is on the roadmap.
+
+    /// GET /api/streams/{subject} — event-stream metadata for a subject.
+    /// Returns `None` on 404.
+    pub async fn get_event_stream(
+        &self,
+        subject_id: &str,
+        domain: &str,
+    ) -> Result<Option<Value>> {
+        let mut path = format!("streams/{}", urlencoding(subject_id));
+        if !domain.is_empty() {
+            path.push_str(&format!("?domain={}", urlencoding(domain)));
+        }
+        match self.get(&path).await {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/streams/{subject}/events — paginated events for a stream.
+    pub async fn get_stream_events(
+        &self,
+        subject_id: &str,
+        domain: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Value> {
+        let mut qs = format!("limit={}&offset={}", limit, offset);
+        if !domain.is_empty() {
+            qs.push_str(&format!("&domain={}", urlencoding(domain)));
+        }
+        self.get(&format!(
+            "streams/{}/events?{}",
+            urlencoding(subject_id),
+            qs
+        ))
+        .await
+    }
+
+    // --- Guardians (QDP-0002 / 0006) -----------------------------------
+
+    /// POST /api/guardian/set-update — install or rotate a guardian set.
+    /// `update` must be a fully-signed envelope; build it with
+    /// the offline helpers in the shared spec.
+    pub async fn submit_guardian_set_update(&self, update: &Value) -> Result<Value> {
+        self.post("guardian/set-update", update).await
+    }
+
+    /// POST /api/guardian/recovery/init — start time-locked recovery.
+    pub async fn submit_recovery_init(&self, init: &Value) -> Result<Value> {
+        self.post("guardian/recovery/init", init).await
+    }
+
+    /// POST /api/guardian/recovery/veto — veto pending recovery.
+    pub async fn submit_recovery_veto(&self, veto: &Value) -> Result<Value> {
+        self.post("guardian/recovery/veto", veto).await
+    }
+
+    /// POST /api/guardian/recovery/commit — commit recovery after delay.
+    pub async fn submit_recovery_commit(&self, commit: &Value) -> Result<Value> {
+        self.post("guardian/recovery/commit", commit).await
+    }
+
+    /// POST /api/guardian/resign — guardian resignation (QDP-0006).
+    pub async fn submit_guardian_resignation(&self, resignation: &Value) -> Result<Value> {
+        self.post("guardian/resign", resignation).await
+    }
+
+    /// GET /api/guardian/set/{quid} — current guardian set. Returns `None` on 404.
+    pub async fn get_guardian_set(&self, quid_id: &str) -> Result<Option<GuardianSet>> {
+        let path = format!("guardian/set/{}", urlencoding(quid_id));
+        match self.get_typed::<GuardianSet>(&path).await {
+            Ok(g) => Ok(Some(g)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // --- Gossip (QDP-0003 / QDP-0005) ----------------------------------
+
+    /// POST /api/domain-fingerprints — publish a signed fingerprint.
+    pub async fn submit_domain_fingerprint(&self, fingerprint: &Value) -> Result<Value> {
+        self.post("domain-fingerprints", fingerprint).await
+    }
+
+    /// GET /api/domain-fingerprints/{domain}/latest — latest fingerprint
+    /// for the given domain. Returns `None` on 404.
+    pub async fn get_latest_domain_fingerprint(
+        &self,
+        domain: &str,
+    ) -> Result<Option<DomainFingerprint>> {
+        let path = format!(
+            "domain-fingerprints/{}/latest",
+            urlencoding(domain)
+        );
+        match self.get_typed::<DomainFingerprint>(&path).await {
+            Ok(f) => Ok(Some(f)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// POST /api/anchor-gossip — deliver a cross-domain anchor message.
+    pub async fn submit_anchor_gossip(&self, message: &Value) -> Result<Value> {
+        self.post("anchor-gossip", message).await
+    }
+
+    // --- Bootstrap (QDP-0008) ------------------------------------------
+
+    /// POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot.
+    pub async fn submit_nonce_snapshot(&self, snapshot: &Value) -> Result<Value> {
+        self.post("nonce-snapshots", snapshot).await
+    }
+
+    /// GET /api/nonce-snapshots/{domain}/latest — latest snapshot for
+    /// the given domain. Returns `None` on 404.
+    pub async fn get_latest_nonce_snapshot(
+        &self,
+        domain: &str,
+    ) -> Result<Option<NonceSnapshot>> {
+        let path = format!(
+            "nonce-snapshots/{}/latest",
+            urlencoding(domain)
+        );
+        match self.get_typed::<NonceSnapshot>(&path).await {
+            Ok(s) => Ok(Some(s)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/bootstrap/status — current bootstrap session status.
+    pub async fn bootstrap_status(&self) -> Result<Value> {
+        self.get("bootstrap/status").await
+    }
+
+    // --- Fork-block (QDP-0009) -----------------------------------------
+
+    /// POST /api/fork-block — submit a signed fork-activation block.
+    pub async fn submit_fork_block(&self, fork_block: &Value) -> Result<Value> {
+        self.post("fork-block", fork_block).await
+    }
+
+    /// GET /api/fork-block/status — pending and active feature
+    /// activations.
+    pub async fn fork_block_status(&self) -> Result<Value> {
+        self.get("fork-block/status").await
+    }
+
+    // --- Registry ------------------------------------------------------
+
+    /// GET /api/registry/trust — paginated trust registry. Optional
+    /// `truster` / `trustee` filters narrow the result set.
+    pub async fn registry_trust(
+        &self,
+        truster: Option<&str>,
+        trustee: Option<&str>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Value> {
+        let mut qs = format!("limit={}&offset={}", limit, offset);
+        if let Some(t) = truster {
+            qs.push_str(&format!("&truster={}", urlencoding(t)));
+        }
+        if let Some(t) = trustee {
+            qs.push_str(&format!("&trustee={}", urlencoding(t)));
+        }
+        self.get(&format!("registry/trust?{}", qs)).await
+    }
+
+    // --- IPFS ----------------------------------------------------------
+
+    /// POST /api/ipfs/pin — pin bytes to the node's IPFS backend.
+    /// Returns the resulting CID.
+    pub async fn ipfs_pin(&self, content: &[u8]) -> Result<String> {
+        if content.is_empty() {
+            return Err(Error::validation("content is required"));
+        }
+        let url = format!("{}/{}", self.api_base, "ipfs/pin");
+        let resp = self
+            .http
+            .post(&url)
+            .timeout(self.timeout)
+            .header("Content-Type", "application/octet-stream")
+            .body(content.to_vec())
+            .send()
+            .await?;
+        let env = parse_envelope(resp).await?;
+        env.get("cid")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::Node {
+                status: 200,
+                message: "pin response missing cid".into(),
+            })
+    }
+
+    /// GET /api/ipfs/{cid} — fetch raw content addressed by CID.
+    pub async fn ipfs_get(&self, cid: &str) -> Result<Vec<u8>> {
+        if cid.is_empty() {
+            return Err(Error::validation("cid is required"));
+        }
+        let url = format!("{}/ipfs/{}", self.api_base, urlencoding(cid));
+        let resp = self
+            .http
+            .get(&url)
+            .timeout(self.timeout)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(Error::Node {
+                status: status.as_u16(),
+                message: format!("ipfs/{}: {}", cid, truncate(&body, 200)),
+            });
+        }
+        Ok(resp.bytes().await?.to_vec())
     }
 
     // --- Plumbing ------------------------------------------------------

@@ -73,20 +73,29 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
+| Health | `health`, `info`, `nodes`, `blocks` |
 | Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Guardians (QDP-0002 / 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet` |
+| Gossip (QDP-0003 / 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Registry | `registryTrust` |
+| IPFS | `ipfsPin`, `ipfsGet` |
 
 ### `CanonicalBytes` / `Merkle`
 
 ```swift
-let signable = try CanonicalBytes.of(tx, excludeFields: ["signature", "txId"])
+// v1.0-conformant — top-level struct order, nested keys alphabetized.
+// Pass field-order explicitly so callers don't depend on Swift's
+// non-deterministic `[String: Any]` iteration.
+let signable = try CanonicalBytes.v1Of(
+    tx,
+    fieldOrder: ["id", "type", "trustDomain", "timestamp", "signature",
+                 "publicKey", "truster", "trustee", "trustLevel", "nonce"],
+    excludeFields: ["signature", "txId"])
 let sig = try signer.sign(signable)
 
 let ok = try Merkle.verifyInclusionProof(
@@ -95,8 +104,18 @@ let ok = try Merkle.verifyInclusionProof(
     expectedRootHex: originBlock.transactionsRoot)
 ```
 
-Canonicalization matches every Quidnug SDK byte-for-byte. See
+`CanonicalBytes.v1Of` / `v1OfOrdered` are byte-for-byte compatible
+with every other Quidnug SDK. The legacy `CanonicalBytes.of` is
+fully-sorted at all levels and is **not** v1.0-conformant — kept
+for backward compatibility, deprecated. See
 [`schemas/types/canonicalization.md`](../../schemas/types/canonicalization.md).
+
+> **Heads up:** `QuidnugClient.registerIdentity`, `grantTrust`,
+> `registerTitle`, and `emitEvent` currently sign with the legacy
+> `of` path. Typed wire structs that switch them to `v1Of` are
+> tracked as a follow-up; for cross-SDK signature verification today,
+> build the wire dict yourself and call `v1OfOrdered` before
+> submitting via the lower-level path.
 
 ## Error handling
 
