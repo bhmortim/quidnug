@@ -169,11 +169,28 @@ color-blind accessibility.
 
 ### SSR
 
-Each primitive exposes a pure renderer (`renderAuroraSVG`,
-`renderConstellationSVG`, `renderTraceSVG`) used directly by
-the [`@quidnug/astro-reviews`](../astro-reviews/) adapter for
-server-side rendering. Search engines and feed readers see the
-exact same SVG the interactive element eventually renders.
+Each primitive exposes a pure SVG renderer that you can call from
+any server-side framework — no DOM, no `customElements`. They take
+the same state object the interactive elements compute internally:
+
+```js
+import {
+    renderAuroraSVG,
+    renderConstellationSVG,
+    renderTraceSVG,
+} from "@quidnug/web-components";
+
+const svg = renderAuroraSVG({
+    size: "standard",
+    rating: 4.5, crowd: 4.1, contributors: 7, direct: 5,
+});
+response.write(svg);
+```
+
+The [`@quidnug/astro-reviews`](../astro-reviews/) adapter uses
+these renderers at build / request time, so search engines and feed
+readers see exactly the same SVG the interactive element will
+later hydrate to.
 
 ### Storybook
 

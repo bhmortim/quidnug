@@ -101,12 +101,21 @@ const { mutate, loading, error } = useWriteReview();
 await mutate({ product, topic, rating: 4.5, title, body });
 ```
 
-## Primitives (from `@quidnug/react-reviews/primitives`)
+## Primitives
 
 Thin React wrappers over the zero-dependency SVG visualization
 primitives in `@quidnug/web-components`. Import these when you
 already have rating state computed (for example via
 `useTrustWeightedRating` above) and just want to render.
+
+They're re-exported from the main entry, so either import path
+works:
+
+```jsx
+import { QnAurora } from "@quidnug/react-reviews";
+// or, for tree-shaking-tight bundles:
+import { QnAurora } from "@quidnug/react-reviews/primitives";
+```
 
 ### `<QnAurora />`
 

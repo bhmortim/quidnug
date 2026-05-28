@@ -15,6 +15,12 @@
     ".": {
       "import": "./src/index.js",
       "types": "./src/index.d.ts"
+    },
+    "./context": {
+      "import": "./src/context.js"
+    },
+    "./primitives": {
+      "import": "./src/primitives/index.js"
     }
   },
   "scripts": {
