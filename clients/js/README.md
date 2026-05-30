@@ -19,6 +19,18 @@ titles, event streams, IPFS, and the client-side relational trust BFS.
 These are covered by the existing test suite
 (`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
 
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Identities | `generateQuid`, `importQuid`, `createIdentityTransaction`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `createTrustTransaction`, `getTrustLevel`, `queryRelationalTrust`, `queryTrustRegistry`, `findTrustPath`, `computeTransitiveTrust` |
+| Title | `createTitleTransaction`, `getAssetOwnership`, `queryTitleRegistry` |
+| Events / streams | `createEventTransaction`, `getEventStream`, `getStreamEvents` |
+| Submission | `submitTransaction` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Node management | `addNode`, `getNodes`, `getBlocks`, `getPendingTransactions`, `queryDomain`, `findNodesForDomain` |
+
 ```js
 import QuidnugClient from "@quidnug/client";
 
@@ -40,12 +52,13 @@ const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
 ```
 
-## v2 extensions (QDPs 0002–0010)
+## v2 extensions (QDPs 0002–0018)
 
 Importing the v2 module installs guardian / gossip / bootstrap /
-fork-block / Merkle methods on the `QuidnugClient` prototype. Keep
-your v1 import for the transaction-signing surface, and add v2 when
-you need the newer protocol features.
+fork-block / Merkle / discovery / moderation / audit / privacy / DNS
+methods on the `QuidnugClient` prototype. Keep your v1 import for the
+transaction-signing surface, and add v2 when you need the newer
+protocol features.
 
 ```js
 import QuidnugClient from "@quidnug/client";
@@ -70,10 +83,17 @@ const ok = await QuidnugClient.verifyInclusionProof(
 
 | Area | Methods |
 | --- | --- |
-| Guardians | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
-| Gossip | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
-| Bootstrap | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `getBootstrapStatus` |
-| Fork-block | `submitForkBlock`, `getForkBlockStatus` |
+| Guardians (QDP-0002, 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003, 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint`, `submitGossipDomains` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `getBootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `getForkBlockStatus` |
+| Peers (Phase 4e) | `getPeers`, `getPeer` |
+| Discovery (QDP-0014) | `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` |
+| Audit (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` |
+| Privacy / DSR (QDP-0017) | `submitDSR`, `getDSRStatus`, `submitConsentGrant`, `submitConsentWithdraw`, `getConsentHistory`, `submitProcessingRestriction`, `getRestrictionsForSubject`, `submitDSRCompliance` |
+| DNS attestation (QDP-0016) | `submitDnsClaim`, `submitDnsChallenge`, `submitDnsAttestation`, `submitDnsRenewal`, `submitDnsRevocation`, `submitDnsDelegate`, `submitDnsDelegateRevocation`, `getDnsAttestations`, `getDnsWeightedAttestations`, `resolveDns` |
+| Domains | `getTopDomains`, `queryDomain`, `createQuid`, `submitNodeAdvertisement` |
 | Static helpers | `QuidnugClient.verifyInclusionProof`, `QuidnugClient.canonicalBytes`, `QuidnugClient.bytesToHex`, `QuidnugClient.hexToBytes` |
 
 ### Canonicalization

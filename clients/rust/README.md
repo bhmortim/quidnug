@@ -6,7 +6,9 @@ a decentralized protocol for relational, per-observer trust.
 Covers the full protocol surface: identity, trust, titles, event
 streams, anchors, guardian sets, recovery, cross-domain gossip,
 K-of-K bootstrap, fork-block activation, compact Merkle inclusion
-proofs (QDPs 0001–0010).
+proofs, peer discovery, content moderation, operator audit log,
+data-subject-rights / privacy controls, and DNS attestation
+(QDPs 0001–0018).
 
 ## Install
 
@@ -65,6 +67,30 @@ Runnable examples live in `examples/`:
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+## Client method surface
+
+| Area | Methods |
+| --- | --- |
+| Health / info | `health`, `info`, `nodes` |
+| Identity | `register_identity`, `get_identity`, `query_identity_registry`, `create_quid` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges`, `query_trust_registry` |
+| Title | `get_title`, `query_title_registry` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events`, `submit_node_advertisement` |
+| Storage | `ipfs_pin`, `ipfs_get` |
+| Guardians (QDP-0002, 0006) | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
+| Gossip (QDP-0003, 0005) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint`, `submit_gossip_domains` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_top_domains`, `query_domain`, `get_node_domains`, `update_node_domains` |
+| Peers (Phase 4e) | `get_peers`, `get_peer` |
+| Discovery (QDP-0014) | `discover_domain`, `discover_node`, `discover_operator`, `discover_quids`, `discover_trusted_quids` |
+| Moderation (QDP-0015) | `submit_moderation_action`, `get_moderation_actions` |
+| Audit (QDP-0018) | `get_audit_head`, `get_audit_entries`, `get_audit_entry` |
+| Privacy / DSR (QDP-0017) | `submit_dsr`, `get_dsr_status`, `submit_consent_grant`, `submit_consent_withdraw`, `get_consent_history`, `submit_processing_restriction`, `get_restrictions_for_subject`, `submit_dsr_compliance` |
+| DNS attestation (QDP-0016) | `submit_dns_claim`, `submit_dns_challenge`, `submit_dns_attestation`, `submit_dns_renewal`, `submit_dns_revocation`, `submit_dns_delegate`, `submit_dns_delegate_revocation`, `get_dns_attestations`, `get_dns_weighted_attestations`, `resolve_dns` |
+| Commit-wait helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
 
 ## Error taxonomy
 

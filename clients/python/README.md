@@ -6,7 +6,9 @@ decentralized protocol for relational, per-observer trust.
 Version 2.x of this SDK covers the full protocol surface: identity,
 trust, titles, event streams, anchors, guardian sets, guardian
 recovery, cross-domain gossip, K-of-K bootstrap, fork-block activation,
-and compact Merkle inclusion proofs (QDPs 0001–0010).
+compact Merkle inclusion proofs, peer discovery, content moderation,
+operator audit log, data-subject-rights / privacy controls, and DNS
+attestation (QDPs 0001–0018).
 
 ## Install
 
@@ -54,17 +56,24 @@ corresponding typed method.
 | Area | Methods |
 | --- | --- |
 | Health / info | `health`, `info`, `nodes` |
-| Identity | `register_identity`, `get_identity`, `query_identity_registry` |
+| Identity | `register_identity`, `get_identity`, `query_identity_registry`, `create_quid` |
 | Trust | `grant_trust`, `get_trust`, `query_relational_trust`, `get_trust_edges`, `query_trust_registry` |
 | Title | `register_title`, `get_title`, `query_title_registry` |
-| Events | `emit_event`, `get_event_stream`, `get_stream_events` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events`, `submit_node_advertisement` |
 | Storage | `ipfs_pin`, `ipfs_get` |
-| Guardians | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
-| Gossip | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint` |
-| Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
-| Fork-block | `submit_fork_block`, `fork_block_status` |
+| Guardians (QDP-0002, 0006) | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
+| Gossip (QDP-0003, 0005) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint`, `submit_gossip_domains` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
-| Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_top_domains`, `query_domain`, `get_node_domains`, `update_node_domains` |
+| Peers | `get_peers`, `get_peer` |
+| Discovery (QDP-0014) | `discover_domain`, `discover_node`, `discover_operator`, `discover_quids`, `discover_trusted_quids` |
+| Moderation (QDP-0015) | `submit_moderation_action`, `get_moderation_actions` |
+| Audit (QDP-0018) | `get_audit_head`, `get_audit_entries`, `get_audit_entry` |
+| Privacy / DSR (QDP-0017) | `submit_dsr`, `get_dsr_status`, `submit_consent_grant`, `submit_consent_withdraw`, `get_consent_history`, `submit_processing_restriction`, `get_restrictions_for_subject`, `submit_dsr_compliance` |
+| DNS attestation (QDP-0016) | `submit_dns_claim`, `submit_dns_challenge`, `submit_dns_attestation`, `submit_dns_renewal`, `submit_dns_revocation`, `submit_dns_delegate`, `submit_dns_delegate_revocation`, `get_dns_attestations`, `get_dns_weighted_attestations`, `resolve_dns` |
+| Convenience helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
 
 ### `Quid` — cryptographic identity
 
@@ -189,7 +198,7 @@ pytest -v
 
 | SDK version | Node version | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0018 |
 | 1.x | 1.x | identity, trust, title only |
 
 v2 is **not** wire-compatible with v1. If you have a v1-era node,

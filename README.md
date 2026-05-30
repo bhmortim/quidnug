@@ -629,8 +629,10 @@ See [`docs/integration-guide.md`](docs/integration-guide.md) for:
 ## Integration — SDKs, integrations, tooling
 
 Quidnug ships first-class SDKs covering the **full protocol surface**
-(QDPs 0001–0010) in Python, Go, JavaScript, and Rust, plus scaffolds
-for Java/Kotlin, C#/.NET, Swift, and Android. See
+(QDPs 0001–0018 — identity, trust, titles, events, guardians, gossip,
+bootstrap, fork-block, Merkle proofs, peer scoring, discovery,
+moderation, audit, privacy/DSR, DNS attestation) in Python, Go,
+JavaScript, Rust, Java/Kotlin, C#/.NET, Swift, and Android. See
 [`docs/integration-guide.md`](docs/integration-guide.md) for
 side-by-side examples of the same workflow in every language.
 
@@ -642,14 +644,14 @@ Core protocol SDKs:
 | --- | --- | --- | --- |
 | Python 3.9+ | [`clients/python/`](clients/python/) | **full** — typed dataclasses, ECDSA P-256, Merkle verifier | `pip install quidnug` |
 | Go 1.25+ | [`pkg/client/`](pkg/client/) | **full** — context-aware, typed, OTel hooks | `go get github.com/quidnug/quidnug/pkg/client` |
-| JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin for guardians/gossip/merkle | `npm install @quidnug/client` |
+| JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin (guardians, gossip, discovery, audit, privacy, DNS, Merkle) | `npm install @quidnug/client` |
 | Rust stable | [`clients/rust/`](clients/rust/) | **full** — async reqwest, wiremock-tested | `cargo add quidnug` |
-| Java 17+ / Kotlin | [`clients/java/`](clients/java/) | scaffold — keypair + signing | — |
-| C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | scaffold — keypair + signing | — |
-| Swift iOS/macOS | [`clients/swift/`](clients/swift/) | scaffold — CryptoKit-based | — |
-| Android (Kotlin) | [`clients/android/`](clients/android/) | scaffold — planned Android Keystore integration | — |
-| Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | scaffold | — |
-| ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | scaffold | — |
+| Java 17+ / Kotlin | [`clients/java/`](clients/java/) | **full** — typed wire types, builder API, JDK HttpClient | `com.quidnug:quidnug-client` |
+| C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | **full** — async, zero external deps | `Quidnug.Client` |
+| Swift iOS/macOS | [`clients/swift/`](clients/swift/) | **full** — CryptoKit-based, actor-isolated | SwiftPM |
+| Android (Kotlin) | [`clients/android/`](clients/android/) | **full** — coroutines wrapper + Keystore signer | `com.quidnug:quidnug-android` |
+| Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | full — page-world signer + popup vault | — |
+| ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | scaffold (real code in `integrations/iso20022/`) | — |
 | CLI | [`cmd/quidnug-cli/`](cmd/quidnug-cli/) | **full** — wraps the Go SDK | `go install .../cmd/quidnug-cli@latest` |
 
 Reviews use case (QRP-0001) drop-in packages:

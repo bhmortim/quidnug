@@ -86,6 +86,164 @@ class QuidnugAndroidClient(
         client.getStreamEvents(subjectId, domain, limit, offset)
     }
 
+    // =========================================================================
+    // Suspending pass-throughs for the broader protocol surface.
+    //
+    // The wrapper exposes a Kotlin coroutine-friendly form of every
+    // non-trivial method on the underlying [QuidnugClient]. Each
+    // method is a thin `withContext(Dispatchers.IO) { client.<m>(...) }`
+    // bridge so callers never block the main thread.
+    //
+    // The full Java surface remains available via the public `client`
+    // field for any method not pre-wrapped here.
+    // =========================================================================
+
+    suspend fun health() = withContext(Dispatchers.IO) { client.health() }
+    suspend fun info() = withContext(Dispatchers.IO) { client.info() }
+    suspend fun nodes() = withContext(Dispatchers.IO) { client.nodes() }
+    suspend fun blocks() = withContext(Dispatchers.IO) { client.blocks() }
+    suspend fun pendingTransactions() = withContext(Dispatchers.IO) { client.pendingTransactions() }
+
+    suspend fun getIdentity(quidId: String, domain: String? = null) =
+        withContext(Dispatchers.IO) { client.getIdentity(quidId, domain) }
+    suspend fun getTrustEdges(quidId: String) =
+        withContext(Dispatchers.IO) { client.getTrustEdges(quidId) }
+    suspend fun getTitle(assetId: String, domain: String? = null) =
+        withContext(Dispatchers.IO) { client.getTitle(assetId, domain) }
+    suspend fun getEventStream(subjectId: String, domain: String? = null) =
+        withContext(Dispatchers.IO) { client.getEventStream(subjectId, domain) }
+
+    suspend fun listDomains() = withContext(Dispatchers.IO) { client.listDomains() }
+    suspend fun registerDomain(name: String) = withContext(Dispatchers.IO) { client.registerDomain(name) }
+    suspend fun getTopDomains(limit: Int? = null) =
+        withContext(Dispatchers.IO) { client.getTopDomains(limit) }
+    suspend fun queryDomain(name: String) =
+        withContext(Dispatchers.IO) { client.queryDomain(name) }
+    suspend fun getNodeDomains() = withContext(Dispatchers.IO) { client.getNodeDomains() }
+    suspend fun updateNodeDomains(domains: List<String>) =
+        withContext(Dispatchers.IO) { client.updateNodeDomains(domains) }
+    suspend fun createQuid() = withContext(Dispatchers.IO) { client.createQuid() }
+
+    // Guardians (QDP-0002, 0006)
+    suspend fun submitGuardianSetUpdate(update: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitGuardianSetUpdate(update) }
+    suspend fun submitRecoveryInit(init: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryInit(init) }
+    suspend fun submitRecoveryVeto(veto: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryVeto(veto) }
+    suspend fun submitRecoveryCommit(commit: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryCommit(commit) }
+    suspend fun submitGuardianResignation(resignation: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitGuardianResignation(resignation) }
+    suspend fun getGuardianSet(quidId: String) =
+        withContext(Dispatchers.IO) { client.getGuardianSet(quidId) }
+    suspend fun getPendingRecovery(quidId: String) =
+        withContext(Dispatchers.IO) { client.getPendingRecovery(quidId) }
+    suspend fun getGuardianResignations(quidId: String) =
+        withContext(Dispatchers.IO) { client.getGuardianResignations(quidId) }
+
+    // Gossip / bootstrap / fork-block
+    suspend fun submitDomainFingerprint(fp: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDomainFingerprint(fp) }
+    suspend fun getLatestDomainFingerprint(domain: String) =
+        withContext(Dispatchers.IO) { client.getLatestDomainFingerprint(domain) }
+    suspend fun submitAnchorGossip(msg: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitAnchorGossip(msg) }
+    suspend fun pushAnchor(msg: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.pushAnchor(msg) }
+    suspend fun pushFingerprint(fp: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.pushFingerprint(fp) }
+    suspend fun submitNonceSnapshot(snapshot: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitNonceSnapshot(snapshot) }
+    suspend fun getLatestNonceSnapshot(domain: String) =
+        withContext(Dispatchers.IO) { client.getLatestNonceSnapshot(domain) }
+    suspend fun bootstrapStatus() = withContext(Dispatchers.IO) { client.bootstrapStatus() }
+    suspend fun submitForkBlock(fb: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitForkBlock(fb) }
+    suspend fun forkBlockStatus() = withContext(Dispatchers.IO) { client.forkBlockStatus() }
+
+    // Peers
+    suspend fun getPeers(limit: Int? = null, offset: Int? = null) =
+        withContext(Dispatchers.IO) { client.getPeers(limit, offset) }
+    suspend fun getPeer(nodeQuid: String) =
+        withContext(Dispatchers.IO) { client.getPeer(nodeQuid) }
+
+    // Discovery (QDP-0014)
+    suspend fun discoverDomain(name: String) =
+        withContext(Dispatchers.IO) { client.discoverDomain(name) }
+    suspend fun discoverNode(quid: String) =
+        withContext(Dispatchers.IO) { client.discoverNode(quid) }
+    suspend fun discoverOperator(quid: String) =
+        withContext(Dispatchers.IO) { client.discoverOperator(quid) }
+    suspend fun discoverQuids(
+        domain: String? = null, sort: String? = null,
+        limit: Int? = null, offset: Int? = null,
+    ) = withContext(Dispatchers.IO) { client.discoverQuids(domain, sort, limit, offset) }
+    suspend fun discoverTrustedQuids(
+        domain: String? = null, limit: Int? = null, offset: Int? = null,
+    ) = withContext(Dispatchers.IO) { client.discoverTrustedQuids(domain, limit, offset) }
+
+    // Moderation (QDP-0015)
+    suspend fun submitModerationAction(action: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitModerationAction(action) }
+    suspend fun getModerationActions(
+        targetType: String, targetId: String, limit: Int? = null, offset: Int? = null,
+    ) = withContext(Dispatchers.IO) {
+        client.getModerationActions(targetType, targetId, limit, offset)
+    }
+
+    // Audit (QDP-0018)
+    suspend fun getAuditHead() = withContext(Dispatchers.IO) { client.getAuditHead() }
+    suspend fun getAuditEntries(
+        fromSequence: Long? = null, limit: Int? = null, offset: Int? = null,
+    ) = withContext(Dispatchers.IO) { client.getAuditEntries(fromSequence, limit, offset) }
+    suspend fun getAuditEntry(sequence: Long) =
+        withContext(Dispatchers.IO) { client.getAuditEntry(sequence) }
+
+    // Privacy / DSR (QDP-0017)
+    suspend fun submitDSR(request: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDSR(request) }
+    suspend fun getDSRStatus(requestTxId: String) =
+        withContext(Dispatchers.IO) { client.getDSRStatus(requestTxId) }
+    suspend fun submitConsentGrant(grant: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitConsentGrant(grant) }
+    suspend fun submitConsentWithdraw(withdraw: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitConsentWithdraw(withdraw) }
+    suspend fun getConsentHistory(
+        subjectQuid: String? = null, processorQuid: String? = null,
+        limit: Int? = null, offset: Int? = null,
+    ) = withContext(Dispatchers.IO) {
+        client.getConsentHistory(subjectQuid, processorQuid, limit, offset)
+    }
+    suspend fun submitProcessingRestriction(restriction: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitProcessingRestriction(restriction) }
+    suspend fun getRestrictionsForSubject(subjectQuid: String) =
+        withContext(Dispatchers.IO) { client.getRestrictionsForSubject(subjectQuid) }
+    suspend fun submitDSRCompliance(compliance: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDSRCompliance(compliance) }
+
+    // DNS attestation (QDP-0016)
+    suspend fun submitDnsClaim(claim: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsClaim(claim) }
+    suspend fun submitDnsChallenge(challenge: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsChallenge(challenge) }
+    suspend fun submitDnsAttestation(attestation: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsAttestation(attestation) }
+    suspend fun submitDnsRenewal(renewal: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsRenewal(renewal) }
+    suspend fun submitDnsRevocation(revocation: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsRevocation(revocation) }
+    suspend fun submitDnsDelegate(delegation: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsDelegate(delegation) }
+    suspend fun submitDnsDelegateRevocation(revocation: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitDnsDelegateRevocation(revocation) }
+    suspend fun getDnsAttestations(domain: String) =
+        withContext(Dispatchers.IO) { client.getDnsAttestations(domain) }
+    suspend fun getDnsWeightedAttestations(domain: String) =
+        withContext(Dispatchers.IO) { client.getDnsWeightedAttestations(domain) }
+    suspend fun resolveDns(domain: String, recordType: String) =
+        withContext(Dispatchers.IO) { client.resolveDns(domain, recordType) }
+
     companion object {
         /** Convenience constructor using sane defaults. */
         fun create(nodeUrl: String, authToken: String? = null): QuidnugAndroidClient {

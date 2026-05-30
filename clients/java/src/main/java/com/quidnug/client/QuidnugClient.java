@@ -19,10 +19,12 @@ import static com.quidnug.client.QuidnugException.*;
 /**
  * Strongly-typed HTTP client for a Quidnug node.
  *
- * <p>Covers the full v2 protocol surface (QDPs 0001–0010): identity,
+ * <p>Covers the full v2 protocol surface (QDPs 0001–0018): identity,
  * trust, titles, event streams, anchors, guardian sets + recovery,
- * cross-domain gossip, K-of-K bootstrap, fork-block activation, and
- * compact Merkle inclusion proofs.
+ * cross-domain gossip, K-of-K bootstrap, fork-block activation,
+ * compact Merkle inclusion proofs, peer-quality scoring, discovery,
+ * content moderation, operator audit log, data-subject rights /
+ * privacy controls, and DNS attestation.
  *
  * <p>Thread-safe: one instance may be shared across request-handling
  * threads. The underlying {@link HttpClient} is reused.
@@ -398,6 +400,277 @@ public final class QuidnugClient {
     }
 
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+
+    public JsonNode getGuardianResignations(String quidId) {
+        return doGet("guardian/resignations/" + urlencode(quidId));
+    }
+
+    public JsonNode submitGossipDomains(Map<String, Object> gossip) {
+        return doPost("gossip/domains", gossip);
+    }
+
+    // =====================================================================
+    // Peers (Phase 4e)
+    // =====================================================================
+
+    public JsonNode getPeers(Integer limit, Integer offset) {
+        return doGet("peers" + qs(pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode getPeer(String nodeQuid) {
+        try {
+            return doGet("peers/" + urlencode(nodeQuid));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // Blocks / domains / quids
+    // =====================================================================
+
+    public JsonNode getTentativeBlocks(String domain) {
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    public JsonNode getTopDomains(Integer limit) {
+        return doGet("domains/top" + qs(pair("limit", limit)));
+    }
+
+    public JsonNode queryDomain(String name) {
+        try {
+            return doGet("domains/" + urlencode(name) + "/query");
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    public JsonNode registerDomain(String name) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        return doPost("domains", body);
+    }
+
+    public JsonNode getNodeDomains() { return doGet("node/domains"); }
+
+    public JsonNode updateNodeDomains(List<String> domains) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains);
+        return doPost("node/domains", body);
+    }
+
+    public JsonNode createQuid() {
+        return doPost("quids", Map.of());
+    }
+
+    public JsonNode submitNodeAdvertisement(Map<String, Object> ad) {
+        return doPost("node-advertisements", ad);
+    }
+
+    // =====================================================================
+    // Registry queries
+    // =====================================================================
+
+    public JsonNode queryTrustRegistry(String truster, String trustee, Integer limit, Integer offset) {
+        return doGet("registry/trust" + qs(
+                pair("truster", truster), pair("trustee", trustee),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode queryIdentityRegistry(String quidId, Integer limit, Integer offset) {
+        return doGet("registry/identity" + qs(
+                pair("quid_id", quidId),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode queryTitleRegistry(String assetId, String ownerId, Integer limit, Integer offset) {
+        return doGet("registry/title" + qs(
+                pair("asset_id", assetId), pair("owner_id", ownerId),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    // =====================================================================
+    // Discovery (QDP-0014)
+    // =====================================================================
+
+    public JsonNode discoverDomain(String name) {
+        try {
+            return doGet("discovery/domain/" + urlencode(name));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    public JsonNode discoverNode(String quid) {
+        try {
+            return doGet("discovery/node/" + urlencode(quid));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    public JsonNode discoverOperator(String quid) {
+        return doGet("discovery/operator/" + urlencode(quid));
+    }
+
+    public JsonNode discoverQuids(String domain, String sort, Integer limit, Integer offset) {
+        return doGet("discovery/quids" + qs(
+                pair("domain", domain), pair("sort", sort),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode discoverTrustedQuids(String domain, Integer limit, Integer offset) {
+        return doGet("discovery/trusted-quids" + qs(
+                pair("domain", domain),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    // =====================================================================
+    // Moderation (QDP-0015)
+    // =====================================================================
+
+    public JsonNode submitModerationAction(Map<String, Object> action) {
+        return doPost("moderation/actions", action);
+    }
+
+    public JsonNode getModerationActions(String targetType, String targetId, Integer limit, Integer offset) {
+        return doGet("moderation/actions/" + urlencode(targetType) + "/" + urlencode(targetId)
+                + qs(pair("limit", limit), pair("offset", offset)));
+    }
+
+    // =====================================================================
+    // Audit (QDP-0018)
+    // =====================================================================
+
+    public JsonNode getAuditHead() { return doGet("audit/head"); }
+
+    public JsonNode getAuditEntries(Long fromSequence, Integer limit, Integer offset) {
+        return doGet("audit/entries" + qs(
+                pair("fromSequence", fromSequence),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode getAuditEntry(long sequence) {
+        try {
+            return doGet("audit/entry/" + sequence);
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // Privacy / DSR (QDP-0017)
+    // =====================================================================
+
+    public JsonNode submitDSR(Map<String, Object> request) {
+        return doPost("privacy/dsr", request);
+    }
+
+    public JsonNode getDSRStatus(String requestTxId) {
+        try {
+            return doGet("privacy/dsr/" + urlencode(requestTxId));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return null;
+            throw e;
+        }
+    }
+
+    public JsonNode submitConsentGrant(Map<String, Object> grant) {
+        return doPost("privacy/consent/grants", grant);
+    }
+
+    public JsonNode submitConsentWithdraw(Map<String, Object> withdraw) {
+        return doPost("privacy/consent/withdraws", withdraw);
+    }
+
+    public JsonNode getConsentHistory(
+            String subjectQuid, String processorQuid, Integer limit, Integer offset) {
+        return doGet("privacy/consent/history" + qs(
+                pair("subjectQuid", subjectQuid), pair("processorQuid", processorQuid),
+                pair("limit", limit), pair("offset", offset)));
+    }
+
+    public JsonNode submitProcessingRestriction(Map<String, Object> restriction) {
+        return doPost("privacy/restrictions", restriction);
+    }
+
+    public JsonNode getRestrictionsForSubject(String subjectQuid) {
+        return doGet("privacy/restrictions/" + urlencode(subjectQuid));
+    }
+
+    public JsonNode submitDSRCompliance(Map<String, Object> compliance) {
+        return doPost("privacy/compliance", compliance);
+    }
+
+    // =====================================================================
+    // DNS attestation (QDP-0016)
+    // =====================================================================
+
+    public JsonNode submitDnsClaim(Map<String, Object> claim) {
+        return doPost("dns/claim", claim);
+    }
+
+    public JsonNode submitDnsChallenge(Map<String, Object> challenge) {
+        return doPost("dns/challenge", challenge);
+    }
+
+    public JsonNode submitDnsAttestation(Map<String, Object> attestation) {
+        return doPost("dns/attestation", attestation);
+    }
+
+    public JsonNode submitDnsRenewal(Map<String, Object> renewal) {
+        return doPost("dns/renewal", renewal);
+    }
+
+    public JsonNode submitDnsRevocation(Map<String, Object> revocation) {
+        return doPost("dns/revocation", revocation);
+    }
+
+    public JsonNode submitDnsDelegate(Map<String, Object> delegation) {
+        return doPost("dns/delegate", delegation);
+    }
+
+    public JsonNode submitDnsDelegateRevocation(Map<String, Object> revocation) {
+        return doPost("dns/delegate-revocation", revocation);
+    }
+
+    public JsonNode getDnsAttestations(String domain) {
+        return doGet("dns/attestations/" + urlencode(domain));
+    }
+
+    public JsonNode getDnsWeightedAttestations(String domain) {
+        return doGet("dns/attestations/" + urlencode(domain) + "/weighted");
+    }
+
+    public JsonNode resolveDns(String domain, String recordType) {
+        return doGet("dns/resolve/" + urlencode(domain) + "/" + urlencode(recordType));
+    }
+
+    // =====================================================================
+    // Query string helpers
+    // =====================================================================
+
+    private static Map.Entry<String, Object> pair(String k, Object v) {
+        return new AbstractMap.SimpleEntry<>(k, v);
+    }
+
+    @SafeVarargs
+    private static String qs(Map.Entry<String, Object>... params) {
+        StringJoiner sj = new StringJoiner("&");
+        for (Map.Entry<String, Object> p : params) {
+            Object v = p.getValue();
+            if (v == null) continue;
+            String s = v.toString();
+            if (s.isEmpty()) continue;
+            sj.add(urlencode(p.getKey()) + "=" + urlencode(s));
+        }
+        return sj.length() == 0 ? "" : "?" + sj;
+    }
 
     // =====================================================================
     // Param objects (fluent builders)

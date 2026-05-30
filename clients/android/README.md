@@ -94,9 +94,12 @@ lifecycleScope.launch {
 }
 ```
 
-Full protocol surface is available via `client.client` (the
-underlying Java `QuidnugClient`) — every Java method works
-unchanged.
+Suspending wrappers cover the full v2 protocol surface
+(identity, trust, title, events, blocks, domains, guardians,
+gossip, bootstrap, fork-block, peers, discovery, moderation,
+audit, privacy/DSR, and DNS attestation — QDPs 0001–0018). The
+underlying Java `QuidnugClient` is reachable as `client.client`
+for any method not pre-wrapped or for advanced usage.
 
 ### `QuidVault`
 
@@ -127,7 +130,7 @@ fun TrustBadge(observer: String, target: String, client: QuidnugAndroidClient) {
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0018 |
 
 ## License
 
