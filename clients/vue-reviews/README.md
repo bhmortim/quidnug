@@ -63,6 +63,16 @@ function openDrilldown(detail) {
 </template>
 ```
 
+## Current status
+
+Only the three visualization **primitives** are exported from this
+package today (`QnAurora`, `QnConstellation`, `QnTrace`). The
+data-fetching composables and high-level `<QuidnugReviewPanel>` /
+`<QuidnugStars>` components listed in *Roadmap* below are not yet
+shipped — wire your data through props for now (or render the
+underlying `<quidnug-*>` custom elements from
+[`@quidnug/web-components`](../web-components/) directly).
+
 ## Primitives
 
 | Component | Purpose |

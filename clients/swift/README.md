@@ -3,7 +3,9 @@
 iOS 15+ / macOS 12+ client SDK for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
 protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol surface** (QDPs 0001–0018) — identity, trust, titles,
+events, guardians, gossip, bootstrap, fork-block, peers, discovery,
+moderation, audit, privacy/DSR, and DNS attestation.
 
 Uses Apple's `CryptoKit` for ECDSA P-256 (no C dependencies, no
 App Store review friction) and `URLSession` for HTTP.
@@ -73,15 +75,23 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
-| Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Health / info | `health`, `info`, `nodes` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry`, `createQuid` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
+| Events | `emitEvent`, `getEventStream`, `getStreamEvents`, `submitNodeAdvertisement` |
+| Blocks / transactions | `blocks`, `tentativeBlocks`, `pendingTransactions` |
+| Domains | `listDomains`, `registerDomain`, `getTopDomains`, `queryDomain`, `getNodeDomains`, `updateNodeDomains` |
+| Guardians (QDP-0002, 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003, 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint`, `submitGossipDomains` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Peers (Phase 4e) | `getPeers`, `getPeer` |
+| Discovery (QDP-0014) | `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` |
+| Audit (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` |
+| Privacy / DSR (QDP-0017) | `submitDSR`, `getDSRStatus`, `submitConsentGrant`, `submitConsentWithdraw`, `getConsentHistory`, `submitProcessingRestriction`, `getRestrictionsForSubject`, `submitDSRCompliance` |
+| DNS attestation (QDP-0016) | `submitDnsClaim`, `submitDnsChallenge`, `submitDnsAttestation`, `submitDnsRenewal`, `submitDnsRevocation`, `submitDnsDelegate`, `submitDnsDelegateRevocation`, `getDnsAttestations`, `getDnsWeightedAttestations`, `resolveDns` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -199,7 +209,7 @@ Tests ship under `Tests/QuidnugTests/`:
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0018 |
 
 ## License
 

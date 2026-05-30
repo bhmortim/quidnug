@@ -317,6 +317,603 @@ impl Client {
         }
     }
 
+    // --- Health / info / peers ----------------------------------------
+
+    /// GET /api/nodes — list known peers.
+    pub async fn nodes(&self) -> Result<Value> {
+        self.get("nodes").await
+    }
+
+    /// GET /api/peers — paginated peer list with quality scores.
+    pub async fn get_peers(&self, limit: Option<u32>, offset: Option<u32>) -> Result<Value> {
+        let qs = qs(&[("limit", limit), ("offset", offset)]);
+        self.get(&format!("peers{}", qs)).await
+    }
+
+    /// GET /api/peers/{nodeQuid} — peer metadata + score, or None on 404.
+    pub async fn get_peer(&self, node_quid: &str) -> Result<Option<Value>> {
+        match self.get(&format!("peers/{}", urlencoding(node_quid))).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // --- Blocks + transactions ----------------------------------------
+
+    /// GET /api/blocks — paginated block list.
+    pub async fn get_blocks(&self, limit: Option<u32>, offset: Option<u32>) -> Result<Value> {
+        let qs = qs(&[("limit", limit), ("offset", offset)]);
+        self.get(&format!("blocks{}", qs)).await
+    }
+
+    /// GET /api/blocks/tentative/{domain} — tentative blocks for a domain.
+    pub async fn get_tentative_blocks(&self, domain: &str) -> Result<Value> {
+        self.get(&format!("blocks/tentative/{}", urlencoding(domain)))
+            .await
+    }
+
+    /// GET /api/transactions — pending transaction pool.
+    pub async fn get_pending_transactions(
+        &self,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs(&[("limit", limit), ("offset", offset)]);
+        self.get(&format!("transactions{}", qs)).await
+    }
+
+    // --- Registry queries ---------------------------------------------
+
+    /// GET /api/registry/trust — paginated trust registry.
+    pub async fn query_trust_registry(
+        &self,
+        truster: Option<&str>,
+        trustee: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("truster", truster.map(|s| s.to_string())),
+            ("trustee", trustee.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("registry/trust{}", qs)).await
+    }
+
+    /// GET /api/registry/identity — paginated identity registry.
+    pub async fn query_identity_registry(
+        &self,
+        quid_id: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("quid_id", quid_id.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("registry/identity{}", qs)).await
+    }
+
+    /// GET /api/registry/title — paginated title registry.
+    pub async fn query_title_registry(
+        &self,
+        asset_id: Option<&str>,
+        owner_id: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("asset_id", asset_id.map(|s| s.to_string())),
+            ("owner_id", owner_id.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("registry/title{}", qs)).await
+    }
+
+    // --- Events / streams ---------------------------------------------
+
+    /// POST /api/events — submit a signed event transaction.
+    pub async fn emit_event(&self, tx: &Value) -> Result<Value> {
+        self.post("events", tx).await
+    }
+
+    /// GET /api/streams/{subject} — stream metadata, or None on 404.
+    pub async fn get_event_stream(
+        &self,
+        subject_id: &str,
+        domain: Option<&str>,
+    ) -> Result<Option<Value>> {
+        let mut path = format!("streams/{}", urlencoding(subject_id));
+        if let Some(d) = domain {
+            path.push_str(&format!("?domain={}", urlencoding(d)));
+        }
+        match self.get(&path).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/streams/{subject}/events — paginated stream events.
+    pub async fn get_stream_events(
+        &self,
+        subject_id: &str,
+        domain: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let mut path = format!("streams/{}/events", urlencoding(subject_id));
+        let qs = qs_mixed(&[
+            ("domain", domain.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        path.push_str(&qs);
+        self.get(&path).await
+    }
+
+    /// POST /api/node-advertisements — publish a signed node advertisement.
+    pub async fn submit_node_advertisement(&self, ad: &Value) -> Result<Value> {
+        self.post("node-advertisements", ad).await
+    }
+
+    // --- Domains ------------------------------------------------------
+
+    /// GET /api/domains — list all known domains.
+    pub async fn list_domains(&self) -> Result<Value> {
+        self.get("domains").await
+    }
+
+    /// GET /api/domains/top — domains ranked by recent activity.
+    pub async fn get_top_domains(&self, limit: Option<u32>) -> Result<Value> {
+        let qs = qs(&[("limit", limit)]);
+        self.get(&format!("domains/top{}", qs)).await
+    }
+
+    /// GET /api/domains/{name}/query — resolve a domain by name.
+    pub async fn query_domain(&self, name: &str) -> Result<Option<Value>> {
+        match self.get(&format!("domains/{}/query", urlencoding(name))).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/node/domains — domains advertised by this node.
+    pub async fn get_node_domains(&self) -> Result<Value> {
+        self.get("node/domains").await
+    }
+
+    /// POST /api/node/domains — update the node's advertised domains.
+    pub async fn update_node_domains(&self, domains: &[&str]) -> Result<Value> {
+        self.post("node/domains", &serde_json::json!({ "managedDomains": domains }))
+            .await
+    }
+
+    /// POST /api/quids — server-side Quid creation.
+    pub async fn create_quid(&self) -> Result<Value> {
+        self.post("quids", &serde_json::json!({})).await
+    }
+
+    // --- Guardians (QDP-0002 / QDP-0006) ------------------------------
+
+    /// POST /api/guardian/set-update — install or rotate a guardian set.
+    pub async fn submit_guardian_set_update(&self, update: &Value) -> Result<Value> {
+        self.post("guardian/set-update", update).await
+    }
+
+    /// POST /api/guardian/recovery/init — start the M-of-N recovery delay.
+    pub async fn submit_recovery_init(&self, init: &Value) -> Result<Value> {
+        self.post("guardian/recovery/init", init).await
+    }
+
+    /// POST /api/guardian/recovery/veto — owner or guardian aborts a recovery.
+    pub async fn submit_recovery_veto(&self, veto: &Value) -> Result<Value> {
+        self.post("guardian/recovery/veto", veto).await
+    }
+
+    /// POST /api/guardian/recovery/commit — finalize the delayed recovery.
+    pub async fn submit_recovery_commit(&self, commit: &Value) -> Result<Value> {
+        self.post("guardian/recovery/commit", commit).await
+    }
+
+    /// POST /api/guardian/resign — guardian leaves the set.
+    pub async fn submit_guardian_resignation(&self, resignation: &Value) -> Result<Value> {
+        self.post("guardian/resign", resignation).await
+    }
+
+    /// GET /api/guardian/set/{quid} — current guardian set, or None on 404.
+    pub async fn get_guardian_set(&self, quid: &str) -> Result<Option<Value>> {
+        match self.get(&format!("guardian/set/{}", urlencoding(quid))).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/guardian/pending-recovery/{quid} — pending recovery state.
+    pub async fn get_pending_recovery(&self, quid: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("guardian/pending-recovery/{}", urlencoding(quid)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/guardian/resignations/{quid} — list resignations for a subject.
+    pub async fn get_guardian_resignations(&self, quid: &str) -> Result<Value> {
+        self.get(&format!("guardian/resignations/{}", urlencoding(quid)))
+            .await
+    }
+
+    // --- Cross-domain gossip + fingerprints (QDP-0003 / QDP-0005) -----
+
+    /// POST /api/domain-fingerprints — publish a signed fingerprint.
+    pub async fn submit_domain_fingerprint(&self, fp: &Value) -> Result<Value> {
+        self.post("domain-fingerprints", fp).await
+    }
+
+    /// GET /api/domain-fingerprints/{domain}/latest — latest fingerprint or None.
+    pub async fn get_latest_domain_fingerprint(&self, domain: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!(
+                "domain-fingerprints/{}/latest",
+                urlencoding(domain)
+            ))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// POST /api/anchor-gossip — deliver a cross-domain anchor message.
+    pub async fn submit_anchor_gossip(&self, message: &Value) -> Result<Value> {
+        self.post("anchor-gossip", message).await
+    }
+
+    /// POST /api/gossip/push-anchor — push-gossip variant (QDP-0005).
+    pub async fn push_anchor(&self, message: &Value) -> Result<Value> {
+        self.post("gossip/push-anchor", message).await
+    }
+
+    /// POST /api/gossip/push-fingerprint — push-gossip variant (QDP-0005).
+    pub async fn push_fingerprint(&self, fp: &Value) -> Result<Value> {
+        self.post("gossip/push-fingerprint", fp).await
+    }
+
+    /// POST /api/gossip/domains — cross-node domain gossip.
+    pub async fn submit_gossip_domains(&self, gossip: &Value) -> Result<Value> {
+        self.post("gossip/domains", gossip).await
+    }
+
+    // --- Bootstrap (QDP-0008) -----------------------------------------
+
+    /// POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot.
+    pub async fn submit_nonce_snapshot(&self, snapshot: &Value) -> Result<Value> {
+        self.post("nonce-snapshots", snapshot).await
+    }
+
+    /// GET /api/nonce-snapshots/{domain}/latest — latest snapshot or None.
+    pub async fn get_latest_nonce_snapshot(&self, domain: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("nonce-snapshots/{}/latest", urlencoding(domain)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/bootstrap/status — current bootstrap readiness.
+    pub async fn bootstrap_status(&self) -> Result<Value> {
+        self.get("bootstrap/status").await
+    }
+
+    // --- Fork-block (QDP-0009) ----------------------------------------
+
+    /// POST /api/fork-block — submit a signed fork-activation block.
+    pub async fn submit_fork_block(&self, fb: &Value) -> Result<Value> {
+        self.post("fork-block", fb).await
+    }
+
+    /// GET /api/fork-block/status — fork-activation status across features.
+    pub async fn fork_block_status(&self) -> Result<Value> {
+        self.get("fork-block/status").await
+    }
+
+    // --- IPFS ---------------------------------------------------------
+
+    /// POST /api/ipfs/pin — pin opaque bytes; returns the CID.
+    pub async fn ipfs_pin(&self, content: &[u8]) -> Result<String> {
+        let url = format!("{}/{}", self.api_base, "ipfs/pin");
+        let resp = self
+            .http
+            .post(&url)
+            .header("Content-Type", "application/octet-stream")
+            .timeout(self.timeout)
+            .body(content.to_vec())
+            .send()
+            .await?;
+        let v = parse_envelope(resp).await?;
+        v.get("cid")
+            .and_then(|x| x.as_str())
+            .or_else(|| v.get("value").and_then(|x| x.as_str()))
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::Node {
+                status: 200,
+                message: "IPFS pin response missing cid".to_string(),
+            })
+    }
+
+    /// GET /api/ipfs/{cid} — fetch raw bytes for a pinned CID.
+    pub async fn ipfs_get(&self, cid: &str) -> Result<Vec<u8>> {
+        let url = format!("{}/{}", self.api_base, format!("ipfs/{}", urlencoding(cid)));
+        let resp = self.http.get(&url).timeout(self.timeout).send().await?;
+        if !resp.status().is_success() {
+            return Err(Error::Node {
+                status: resp.status().as_u16(),
+                message: format!("IPFS fetch failed (HTTP {})", resp.status().as_u16()),
+            });
+        }
+        Ok(resp.bytes().await?.to_vec())
+    }
+
+    // --- Discovery (QDP-0014) -----------------------------------------
+
+    /// GET /api/discovery/domain/{name} — domain consortium + endpoints.
+    pub async fn discover_domain(&self, name: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("discovery/domain/{}", urlencoding(name)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/discovery/node/{quid} — raw node advertisement.
+    pub async fn discover_node(&self, quid: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("discovery/node/{}", urlencoding(quid)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// GET /api/discovery/operator/{quid} — all ads from one operator.
+    pub async fn discover_operator(&self, quid: &str) -> Result<Value> {
+        self.get(&format!("discovery/operator/{}", urlencoding(quid)))
+            .await
+    }
+
+    /// GET /api/discovery/quids — per-domain Quid index.
+    pub async fn discover_quids(
+        &self,
+        domain: Option<&str>,
+        sort: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("domain", domain.map(|s| s.to_string())),
+            ("sort", sort.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("discovery/quids{}", qs)).await
+    }
+
+    /// GET /api/discovery/trusted-quids — consortium-trusted Quids.
+    pub async fn discover_trusted_quids(
+        &self,
+        domain: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("domain", domain.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("discovery/trusted-quids{}", qs)).await
+    }
+
+    // --- Moderation (QDP-0015) ----------------------------------------
+
+    /// POST /api/moderation/actions — submit a signed moderation action.
+    pub async fn submit_moderation_action(&self, action: &Value) -> Result<Value> {
+        self.post("moderation/actions", action).await
+    }
+
+    /// GET /api/moderation/actions/{targetType}/{targetId}.
+    pub async fn get_moderation_actions(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let path = format!(
+            "moderation/actions/{}/{}",
+            urlencoding(target_type),
+            urlencoding(target_id)
+        );
+        let qs = qs(&[("limit", limit), ("offset", offset)]);
+        self.get(&format!("{}{}", path, qs)).await
+    }
+
+    // --- Audit log (QDP-0018) -----------------------------------------
+
+    /// GET /api/audit/head — latest committed audit entry.
+    pub async fn get_audit_head(&self) -> Result<Value> {
+        self.get("audit/head").await
+    }
+
+    /// GET /api/audit/entries — paginated audit log.
+    pub async fn get_audit_entries(
+        &self,
+        from_sequence: Option<u64>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("fromSequence", from_sequence.map(|n| n.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("audit/entries{}", qs)).await
+    }
+
+    /// GET /api/audit/entry/{sequence} — fetch a specific audit entry.
+    pub async fn get_audit_entry(&self, sequence: u64) -> Result<Option<Value>> {
+        match self.get(&format!("audit/entry/{}", sequence)).await {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // --- Privacy / DSR (QDP-0017) -------------------------------------
+
+    /// POST /api/privacy/dsr — submit a data-subject rights request.
+    pub async fn submit_dsr(&self, request: &Value) -> Result<Value> {
+        self.post("privacy/dsr", request).await
+    }
+
+    /// GET /api/privacy/dsr/{requestTxId} — DSR status, or None on 404.
+    pub async fn get_dsr_status(&self, request_tx_id: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("privacy/dsr/{}", urlencoding(request_tx_id)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if is_not_found(&e) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// POST /api/privacy/consent/grants — record a processing consent grant.
+    pub async fn submit_consent_grant(&self, grant: &Value) -> Result<Value> {
+        self.post("privacy/consent/grants", grant).await
+    }
+
+    /// POST /api/privacy/consent/withdraws — record a consent withdrawal.
+    pub async fn submit_consent_withdraw(&self, withdraw: &Value) -> Result<Value> {
+        self.post("privacy/consent/withdraws", withdraw).await
+    }
+
+    /// GET /api/privacy/consent/history — paginated consent history.
+    pub async fn get_consent_history(
+        &self,
+        subject_quid: Option<&str>,
+        processor_quid: Option<&str>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> Result<Value> {
+        let qs = qs_mixed(&[
+            ("subjectQuid", subject_quid.map(|s| s.to_string())),
+            ("processorQuid", processor_quid.map(|s| s.to_string())),
+            ("limit", limit.map(|n| n.to_string())),
+            ("offset", offset.map(|n| n.to_string())),
+        ]);
+        self.get(&format!("privacy/consent/history{}", qs)).await
+    }
+
+    /// POST /api/privacy/restrictions — record a processing restriction.
+    pub async fn submit_processing_restriction(&self, restriction: &Value) -> Result<Value> {
+        self.post("privacy/restrictions", restriction).await
+    }
+
+    /// GET /api/privacy/restrictions/{subjectQuid}.
+    pub async fn get_restrictions_for_subject(&self, subject_quid: &str) -> Result<Value> {
+        self.get(&format!(
+            "privacy/restrictions/{}",
+            urlencoding(subject_quid)
+        ))
+        .await
+    }
+
+    /// POST /api/privacy/compliance — controller DSR compliance attestation.
+    pub async fn submit_dsr_compliance(&self, compliance: &Value) -> Result<Value> {
+        self.post("privacy/compliance", compliance).await
+    }
+
+    // --- DNS attestation (QDP-0016) -----------------------------------
+
+    /// POST /api/dns/claim — register intent to attest a DNS record (v2).
+    pub async fn submit_dns_claim(&self, claim: &Value) -> Result<Value> {
+        self.post("dns/claim", claim).await
+    }
+
+    /// POST /api/dns/challenge — submit a DNS-01 challenge response (v2).
+    pub async fn submit_dns_challenge(&self, challenge: &Value) -> Result<Value> {
+        self.post("dns/challenge", challenge).await
+    }
+
+    /// POST /api/dns/attestation — publish a signed DNS attestation (v2).
+    pub async fn submit_dns_attestation(&self, attestation: &Value) -> Result<Value> {
+        self.post("dns/attestation", attestation).await
+    }
+
+    /// POST /api/dns/renewal — extend an existing DNS attestation (v2).
+    pub async fn submit_dns_renewal(&self, renewal: &Value) -> Result<Value> {
+        self.post("dns/renewal", renewal).await
+    }
+
+    /// POST /api/dns/revocation — revoke a published attestation (v2).
+    pub async fn submit_dns_revocation(&self, revocation: &Value) -> Result<Value> {
+        self.post("dns/revocation", revocation).await
+    }
+
+    /// POST /api/dns/delegate — delegate attestation authority (v2).
+    pub async fn submit_dns_delegate(&self, delegation: &Value) -> Result<Value> {
+        self.post("dns/delegate", delegation).await
+    }
+
+    /// POST /api/dns/delegate-revocation — revoke a delegation (v2).
+    pub async fn submit_dns_delegate_revocation(&self, revocation: &Value) -> Result<Value> {
+        self.post("dns/delegate-revocation", revocation).await
+    }
+
+    /// GET /api/dns/attestations/{domain} — all attestations for a domain (v2).
+    pub async fn get_dns_attestations(&self, domain: &str) -> Result<Value> {
+        self.get(&format!("dns/attestations/{}", urlencoding(domain)))
+            .await
+    }
+
+    /// GET /api/dns/attestations/{domain}/weighted — trust-weighted attestations (v2).
+    pub async fn get_dns_weighted_attestations(&self, domain: &str) -> Result<Value> {
+        self.get(&format!(
+            "dns/attestations/{}/weighted",
+            urlencoding(domain)
+        ))
+        .await
+    }
+
+    /// GET /api/dns/resolve/{domain}/{recordType} — trust-weighted record lookup (v2).
+    pub async fn resolve_dns(&self, domain: &str, record_type: &str) -> Result<Value> {
+        self.get(&format!(
+            "dns/resolve/{}/{}",
+            urlencoding(domain),
+            urlencoding(record_type)
+        ))
+        .await
+    }
+
     // --- Plumbing ------------------------------------------------------
 
     async fn get(&self, path: &str) -> Result<Value> {
@@ -444,5 +1041,44 @@ fn truncate(s: &str, n: usize) -> String {
         s.to_string()
     } else {
         format!("{}...", &s[..n])
+    }
+}
+
+/// Build a `?k=v&k=v` query string from numeric params. Omits None entries.
+fn qs(params: &[(&str, Option<u32>)]) -> String {
+    let parts: Vec<String> = params
+        .iter()
+        .filter_map(|(k, v)| v.map(|n| format!("{}={}", k, n)))
+        .collect();
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", parts.join("&"))
+    }
+}
+
+/// Build a `?k=v&k=v` query string from a mix of optional string values.
+fn qs_mixed(params: &[(&str, Option<String>)]) -> String {
+    let parts: Vec<String> = params
+        .iter()
+        .filter_map(|(k, v)| {
+            v.as_ref()
+                .filter(|s| !s.is_empty())
+                .map(|s| format!("{}={}", k, urlencoding(s)))
+        })
+        .collect();
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", parts.join("&"))
+    }
+}
+
+/// True if `err` represents a server-reported NOT_FOUND (used to map to None).
+fn is_not_found(err: &Error) -> bool {
+    match err {
+        Error::Validation(m) => m.contains("NOT_FOUND"),
+        Error::Conflict { code, .. } => code == "NOT_FOUND",
+        _ => false,
     }
 }

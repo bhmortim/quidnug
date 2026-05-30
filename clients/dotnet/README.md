@@ -3,7 +3,9 @@
 `Quidnug.Client` — the official .NET client for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
 protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol surface** (QDPs 0001–0018) — identity, trust, titles,
+events, guardians, gossip, bootstrap, fork-block, peers, discovery,
+moderation, audit, privacy/DSR, and DNS attestation.
 
 Targets .NET 8 (runs under .NET 8/9/10). Uses built-in
 `System.Security.Cryptography.ECDsa`, `System.Net.Http`, and
@@ -69,15 +71,24 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
-| Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Health / info | `HealthAsync`, `InfoAsync`, `NodesAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync`, `CreateQuidAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
+| Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync`, `SubmitNodeAdvertisementAsync` |
+| Storage | `IpfsPinAsync`, `IpfsGetAsync` |
+| Blocks | `BlocksAsync`, `GetTentativeBlocksAsync`, `GetPendingTransactionsAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `GetTopDomainsAsync`, `QueryDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| Guardians (QDP-0002, 0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003, 0005) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync`, `SubmitGossipDomainsAsync` |
+| Bootstrap (QDP-0008) | `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync`, `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Peers (Phase 4e) | `GetPeersAsync`, `GetPeerAsync` |
+| Discovery (QDP-0014) | `DiscoverDomainAsync`, `DiscoverNodeAsync`, `DiscoverOperatorAsync`, `DiscoverQuidsAsync`, `DiscoverTrustedQuidsAsync` |
+| Moderation (QDP-0015) | `SubmitModerationActionAsync`, `GetModerationActionsAsync` |
+| Audit (QDP-0018) | `GetAuditHeadAsync`, `GetAuditEntriesAsync`, `GetAuditEntryAsync` |
+| Privacy / DSR (QDP-0017) | `SubmitDSRAsync`, `GetDSRStatusAsync`, `SubmitConsentGrantAsync`, `SubmitConsentWithdrawAsync`, `GetConsentHistoryAsync`, `SubmitProcessingRestrictionAsync`, `GetRestrictionsForSubjectAsync`, `SubmitDSRComplianceAsync` |
+| DNS attestation (QDP-0016) | `SubmitDnsClaimAsync`, `SubmitDnsChallengeAsync`, `SubmitDnsAttestationAsync`, `SubmitDnsRenewalAsync`, `SubmitDnsRevocationAsync`, `SubmitDnsDelegateAsync`, `SubmitDnsDelegateRevocationAsync`, `GetDnsAttestationsAsync`, `GetDnsWeightedAttestationsAsync`, `ResolveDnsAsync` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -225,7 +236,7 @@ invocation.
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0018 |
 
 ## License
 

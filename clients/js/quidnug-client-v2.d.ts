@@ -188,6 +188,77 @@ declare module "./quidnug-client.js" {
     // Fork-block
     submitForkBlock(fb: ForkBlock): Promise<unknown>;
     getForkBlockStatus(): Promise<unknown>;
+
+    // Peers (Phase 4e)
+    getPeers(opts?: { limit?: number; offset?: number }): Promise<unknown>;
+    getPeer(nodeQuid: string): Promise<unknown | null>;
+
+    // Discovery (QDP-0014)
+    discoverDomain(name: string): Promise<unknown | null>;
+    discoverNode(quid: string): Promise<unknown | null>;
+    discoverOperator(quid: string): Promise<unknown>;
+    discoverQuids(opts?: {
+      domain?: string;
+      sort?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<unknown>;
+    discoverTrustedQuids(opts?: {
+      domain?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<unknown>;
+
+    // Moderation (QDP-0015)
+    submitModerationAction(action: object): Promise<unknown>;
+    getModerationActions(
+      targetType: string,
+      targetId: string,
+      opts?: { limit?: number; offset?: number }
+    ): Promise<unknown>;
+
+    // Audit log (QDP-0018)
+    getAuditHead(): Promise<unknown>;
+    getAuditEntries(opts?: {
+      fromSequence?: number;
+      limit?: number;
+      offset?: number;
+    }): Promise<unknown>;
+    getAuditEntry(sequence: number): Promise<unknown | null>;
+
+    // Privacy + DSR (QDP-0017)
+    submitDSR(request: object): Promise<unknown>;
+    getDSRStatus(requestTxId: string): Promise<unknown | null>;
+    submitConsentGrant(grant: object): Promise<unknown>;
+    submitConsentWithdraw(withdraw: object): Promise<unknown>;
+    getConsentHistory(opts?: {
+      subjectQuid?: string;
+      processorQuid?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<unknown>;
+    submitProcessingRestriction(restriction: object): Promise<unknown>;
+    getRestrictionsForSubject(subjectQuid: string): Promise<unknown>;
+    submitDSRCompliance(compliance: object): Promise<unknown>;
+
+    // Domains + node-advertisements
+    getTopDomains(opts?: { limit?: number }): Promise<unknown>;
+    queryDomain(name: string): Promise<unknown | null>;
+    createQuid(): Promise<unknown>;
+    submitNodeAdvertisement(advertisement: object): Promise<unknown>;
+    submitGossipDomains(gossip: object): Promise<unknown>;
+
+    // DNS attestation (QDP-0016)
+    submitDnsClaim(claim: object): Promise<unknown>;
+    submitDnsChallenge(challenge: object): Promise<unknown>;
+    submitDnsAttestation(attestation: object): Promise<unknown>;
+    submitDnsRenewal(renewal: object): Promise<unknown>;
+    submitDnsRevocation(revocation: object): Promise<unknown>;
+    submitDnsDelegate(delegation: object): Promise<unknown>;
+    submitDnsDelegateRevocation(revocation: object): Promise<unknown>;
+    getDnsAttestations(domain: string): Promise<unknown>;
+    getDnsWeightedAttestations(domain: string): Promise<unknown>;
+    resolveDns(domain: string, recordType: string): Promise<unknown>;
   }
 
   namespace QuidnugClient {

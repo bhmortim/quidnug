@@ -154,6 +154,206 @@ QuidnugClient.prototype.getForkBlockStatus = async function () {
 };
 
 // ---------------------------------------------------------------------------
+// Peers (Phase 4e peer scoring + admit pipeline)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.getPeers = async function ({ limit, offset } = {}) {
+  const qs = _qs({ limit, offset });
+  return _getJson(this, `peers${qs}`);
+};
+
+QuidnugClient.prototype.getPeer = async function (nodeQuid) {
+  if (!nodeQuid) throw new Error("nodeQuid required");
+  return _getOrNull(this, `peers/${encodeURIComponent(nodeQuid)}`);
+};
+
+// ---------------------------------------------------------------------------
+// Discovery (QDP-0014)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.discoverDomain = async function (name) {
+  if (!name) throw new Error("name required");
+  return _getOrNull(this, `discovery/domain/${encodeURIComponent(name)}`);
+};
+
+QuidnugClient.prototype.discoverNode = async function (quid) {
+  if (!quid) throw new Error("quid required");
+  return _getOrNull(this, `discovery/node/${encodeURIComponent(quid)}`);
+};
+
+QuidnugClient.prototype.discoverOperator = async function (quid) {
+  if (!quid) throw new Error("quid required");
+  return _getJson(this, `discovery/operator/${encodeURIComponent(quid)}`);
+};
+
+QuidnugClient.prototype.discoverQuids = async function ({ domain, sort, limit, offset } = {}) {
+  return _getJson(this, `discovery/quids${_qs({ domain, sort, limit, offset })}`);
+};
+
+QuidnugClient.prototype.discoverTrustedQuids = async function ({ domain, limit, offset } = {}) {
+  return _getJson(this, `discovery/trusted-quids${_qs({ domain, limit, offset })}`);
+};
+
+// ---------------------------------------------------------------------------
+// Moderation (QDP-0015)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.submitModerationAction = async function (action) {
+  if (!action || typeof action !== "object") throw new Error("action must be an object");
+  return _postJson(this, "moderation/actions", action);
+};
+
+QuidnugClient.prototype.getModerationActions = async function (targetType, targetId, { limit, offset } = {}) {
+  if (!targetType || !targetId) throw new Error("targetType and targetId required");
+  const path = `moderation/actions/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`;
+  return _getJson(this, `${path}${_qs({ limit, offset })}`);
+};
+
+// ---------------------------------------------------------------------------
+// Audit log (QDP-0018)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.getAuditHead = async function () {
+  return _getJson(this, "audit/head");
+};
+
+QuidnugClient.prototype.getAuditEntries = async function ({ fromSequence, limit, offset } = {}) {
+  return _getJson(this, `audit/entries${_qs({ fromSequence, limit, offset })}`);
+};
+
+QuidnugClient.prototype.getAuditEntry = async function (sequence) {
+  if (sequence === undefined || sequence === null || sequence < 0) {
+    throw new Error("sequence must be a non-negative number");
+  }
+  return _getOrNull(this, `audit/entry/${encodeURIComponent(sequence)}`);
+};
+
+// ---------------------------------------------------------------------------
+// Privacy + DSR (QDP-0017)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.submitDSR = async function (request) {
+  return _postJson(this, "privacy/dsr", request);
+};
+
+QuidnugClient.prototype.getDSRStatus = async function (requestTxId) {
+  if (!requestTxId) throw new Error("requestTxId required");
+  return _getOrNull(this, `privacy/dsr/${encodeURIComponent(requestTxId)}`);
+};
+
+QuidnugClient.prototype.submitConsentGrant = async function (grant) {
+  return _postJson(this, "privacy/consent/grants", grant);
+};
+
+QuidnugClient.prototype.submitConsentWithdraw = async function (withdraw) {
+  return _postJson(this, "privacy/consent/withdraws", withdraw);
+};
+
+QuidnugClient.prototype.getConsentHistory = async function ({ subjectQuid, processorQuid, limit, offset } = {}) {
+  return _getJson(this, `privacy/consent/history${_qs({ subjectQuid, processorQuid, limit, offset })}`);
+};
+
+QuidnugClient.prototype.submitProcessingRestriction = async function (restriction) {
+  return _postJson(this, "privacy/restrictions", restriction);
+};
+
+QuidnugClient.prototype.getRestrictionsForSubject = async function (subjectQuid) {
+  if (!subjectQuid) throw new Error("subjectQuid required");
+  return _getJson(this, `privacy/restrictions/${encodeURIComponent(subjectQuid)}`);
+};
+
+QuidnugClient.prototype.submitDSRCompliance = async function (compliance) {
+  return _postJson(this, "privacy/compliance", compliance);
+};
+
+// ---------------------------------------------------------------------------
+// Domains + node-advertisements
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.getTopDomains = async function ({ limit } = {}) {
+  return _getJson(this, `domains/top${_qs({ limit })}`);
+};
+
+QuidnugClient.prototype.queryDomain = async function (name) {
+  if (!name) throw new Error("name required");
+  return _getOrNull(this, `domains/${encodeURIComponent(name)}/query`);
+};
+
+QuidnugClient.prototype.createQuid = async function () {
+  return _postJson(this, "quids", {});
+};
+
+QuidnugClient.prototype.submitNodeAdvertisement = async function (advertisement) {
+  return _postJson(this, "node-advertisements", advertisement);
+};
+
+QuidnugClient.prototype.submitGossipDomains = async function (gossip) {
+  return _postJson(this, "gossip/domains", gossip);
+};
+
+// ---------------------------------------------------------------------------
+// DNS attestation (QDP-0016)
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.submitDnsClaim = async function (claim) {
+  return _postJson(this, "dns/claim", claim);
+};
+
+QuidnugClient.prototype.submitDnsChallenge = async function (challenge) {
+  return _postJson(this, "dns/challenge", challenge);
+};
+
+QuidnugClient.prototype.submitDnsAttestation = async function (attestation) {
+  return _postJson(this, "dns/attestation", attestation);
+};
+
+QuidnugClient.prototype.submitDnsRenewal = async function (renewal) {
+  return _postJson(this, "dns/renewal", renewal);
+};
+
+QuidnugClient.prototype.submitDnsRevocation = async function (revocation) {
+  return _postJson(this, "dns/revocation", revocation);
+};
+
+QuidnugClient.prototype.submitDnsDelegate = async function (delegation) {
+  return _postJson(this, "dns/delegate", delegation);
+};
+
+QuidnugClient.prototype.submitDnsDelegateRevocation = async function (revocation) {
+  return _postJson(this, "dns/delegate-revocation", revocation);
+};
+
+QuidnugClient.prototype.getDnsAttestations = async function (domain) {
+  if (!domain) throw new Error("domain required");
+  return _getJson(this, `dns/attestations/${encodeURIComponent(domain)}`);
+};
+
+QuidnugClient.prototype.getDnsWeightedAttestations = async function (domain) {
+  if (!domain) throw new Error("domain required");
+  return _getJson(this, `dns/attestations/${encodeURIComponent(domain)}/weighted`);
+};
+
+QuidnugClient.prototype.resolveDns = async function (domain, recordType) {
+  if (!domain || !recordType) throw new Error("domain and recordType required");
+  return _getJson(
+    this,
+    `dns/resolve/${encodeURIComponent(domain)}/${encodeURIComponent(recordType)}`,
+  );
+};
+
+// Query-string helper shared by the v2 surface above.
+function _qs(params) {
+  const entries = Object.entries(params || {}).filter(
+    ([, v]) => v !== undefined && v !== null && v !== "",
+  );
+  if (entries.length === 0) return "";
+  const qs = entries
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+  return `?${qs}`;
+}
+
+// ---------------------------------------------------------------------------
 // Compact Merkle inclusion proofs (QDP-0010)
 // ---------------------------------------------------------------------------
 
