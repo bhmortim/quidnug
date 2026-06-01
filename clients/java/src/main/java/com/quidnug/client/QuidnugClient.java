@@ -400,6 +400,304 @@ public final class QuidnugClient {
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
 
     // =====================================================================
+    // Registry queries (paginated dumps + targeted lookups)
+    // =====================================================================
+
+    /**
+     * GET /api/registry/identity — paginated identity-registry dump.
+     *
+     * @param limit  page size; pass {@code 0} to omit the parameter.
+     * @param offset starting offset; pass {@code 0} to omit.
+     * @param domain optional trust-domain filter; pass {@code null} to omit.
+     */
+    public JsonNode queryIdentityRegistry(int limit, int offset, String domain) {
+        StringBuilder path = new StringBuilder("registry/identity");
+        appendQuery(path, limit, offset, domain);
+        return doGet(path.toString());
+    }
+
+    /**
+     * GET /api/registry/trust — paginated trust-edge listing.
+     */
+    public JsonNode queryTrustRegistry(int limit, int offset, String domain) {
+        StringBuilder path = new StringBuilder("registry/trust");
+        appendQuery(path, limit, offset, domain);
+        return doGet(path.toString());
+    }
+
+    /**
+     * GET /api/registry/title — paginated title listing.
+     */
+    public JsonNode queryTitleRegistry(int limit, int offset, String domain) {
+        StringBuilder path = new StringBuilder("registry/title");
+        appendQuery(path, limit, offset, domain);
+        return doGet(path.toString());
+    }
+
+    /**
+     * POST /api/trust/query — structured relational-trust query.
+     */
+    public Types.TrustResult queryRelationalTrust(String observer, String target, String domain, int maxDepth) {
+        if (observer == null || observer.isEmpty())
+            throw new ValidationException("observer is required");
+        if (target == null || target.isEmpty())
+            throw new ValidationException("target is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", domain == null ? "default" : domain);
+        body.put("maxDepth", maxDepth);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust result: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * GET /api/domains/{name}/query — domain-scoped lookup.
+     *
+     * @param name  domain identifier (required).
+     * @param type  query type (e.g. {@code "identity"}, {@code "trust"}).
+     * @param param free-form filter value forwarded as {@code ?param=...}.
+     */
+    public JsonNode queryDomain(String name, String type, String param) {
+        if (name == null || name.isEmpty())
+            throw new ValidationException("name is required");
+        StringBuilder path = new StringBuilder("domains/").append(urlencode(name)).append("/query");
+        boolean first = true;
+        if (type != null) {
+            path.append('?').append("type=").append(urlencode(type));
+            first = false;
+        }
+        if (param != null) {
+            path.append(first ? '?' : '&').append("param=").append(urlencode(param));
+        }
+        return doGet(path.toString());
+    }
+
+    // =====================================================================
+    // Guardian resignations + tentative blocks + node-domain config
+    // =====================================================================
+
+    /**
+     * GET /api/guardian/resignations/{quidId} — outstanding resignations
+     * for the given subject. Returns an empty list on 404.
+     */
+    public List<JsonNode> getGuardianResignations(String quidId) {
+        if (quidId == null || quidId.isEmpty())
+            throw new ValidationException("quidId is required");
+        JsonNode data;
+        try {
+            data = doGet("guardian/resignations/" + urlencode(quidId));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code"))) return Collections.emptyList();
+            throw e;
+        }
+        JsonNode arr = data.has("data") ? data.get("data")
+                       : data.has("resignations") ? data.get("resignations") : data;
+        List<JsonNode> out = new ArrayList<>();
+        if (arr != null && arr.isArray()) {
+            for (JsonNode n : arr) out.add(n);
+        }
+        return out;
+    }
+
+    /** GET /api/blocks/tentative/{domain} — blocks awaiting commit. */
+    public JsonNode getTentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    /** GET /api/node/domains — domains this node serves. */
+    public JsonNode getNodeDomains() {
+        return doGet("node/domains");
+    }
+
+    /**
+     * POST /api/node/domains — replace the set of managed domains.
+     */
+    public JsonNode updateNodeDomains(List<String> domains) {
+        if (domains == null)
+            throw new ValidationException("domains is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains);
+        return doPost("node/domains", body);
+    }
+
+    // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /**
+     * POST /api/ipfs/pin — pin raw bytes; returns the resulting CID.
+     */
+    public String ipfsPin(byte[] content) {
+        if (content == null)
+            throw new ValidationException("content is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<String> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new NodeException("POST ipfs/pin: " + e.getMessage(), e);
+        }
+        JsonNode data = parseEnvelope(resp);
+        String cid = data.path("cid").asText(null);
+        if (cid == null || cid.isEmpty()) {
+            cid = data.path("value").asText(null);
+        }
+        if (cid == null || cid.isEmpty()) {
+            throw new NodeException("IPFS pin response missing cid",
+                    resp.statusCode(), resp.body());
+        }
+        return cid;
+    }
+
+    /**
+     * GET /api/ipfs/{cid} — fetch raw pinned bytes.
+     *
+     * <p>Bypasses envelope parsing: the node returns the content body
+     * directly with no JSON wrapping.
+     */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty())
+            throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<byte[]> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+        } catch (Exception e) {
+            throw new NodeException("GET ipfs/" + cid + ": " + e.getMessage(), e);
+        }
+        if (resp.statusCode() >= 400) {
+            String text = resp.body() == null ? "" : new String(resp.body(), StandardCharsets.UTF_8);
+            throw new NodeException("IPFS fetch failed (HTTP " + resp.statusCode() + ")",
+                    resp.statusCode(), text);
+        }
+        return resp.body();
+    }
+
+    // =====================================================================
+    // Domain registration
+    // =====================================================================
+
+    /** POST /api/domains — register a new trust domain. */
+    public JsonNode registerDomain(String name) {
+        if (name == null || name.isEmpty())
+            throw new ValidationException("name is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        return doPost("domains", body);
+    }
+
+    /**
+     * Idempotent variant of {@link #registerDomain(String)}: returns a
+     * synthetic success envelope when the node reports the domain
+     * already exists, otherwise propagates.
+     */
+    public JsonNode ensureDomain(String name) {
+        try {
+            return registerDomain(name);
+        } catch (ValidationException | ConflictException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+            if (msg.contains("already exists")) {
+                com.fasterxml.jackson.databind.node.ObjectNode out = MAPPER.createObjectNode();
+                out.put("status", "success");
+                out.put("domain", name);
+                out.put("message", "trust domain already exists");
+                return out;
+            }
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // Commit-wait helpers
+    // =====================================================================
+
+    /**
+     * Block until the identity is visible in the committed registry, or
+     * throw {@link QuidnugException.NodeException} on timeout.
+     *
+     * <p>A just-submitted identity transaction lives in the pending pool
+     * until the next block is sealed. Code that immediately emits events
+     * or title transactions referencing the new quid must wait for commit
+     * first.
+     */
+    public Types.IdentityRecord waitForIdentity(
+            String quidId, String domain, Duration timeout, Duration pollInterval) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        long pollMs = Math.max(1, pollInterval.toMillis());
+        while (System.nanoTime() < deadline) {
+            Types.IdentityRecord rec = getIdentity(quidId, domain);
+            if (rec != null) return rec;
+            try { Thread.sleep(pollMs); }
+            catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new NodeException("interrupted waiting for identity " + quidId, ie);
+            }
+        }
+        throw new NodeException(
+                "identity " + quidId + " did not commit within " + timeout.toMillis() + "ms",
+                0, "");
+    }
+
+    /**
+     * Block until every quid in the list is visible in the committed
+     * registry. Shares one deadline across all ids.
+     */
+    public void waitForIdentities(
+            List<String> quidIds, String domain, Duration timeout, Duration pollInterval) {
+        if (quidIds == null) throw new ValidationException("quidIds is required");
+        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        for (String qid : quidIds) {
+            long remaining = deadlineNanos - System.nanoTime();
+            if (remaining <= 0) {
+                throw new NodeException(
+                        "identities not all committed within " + timeout.toMillis()
+                                + "ms (blocked on " + qid + ")", 0, "");
+            }
+            waitForIdentity(qid, domain, Duration.ofNanos(remaining), pollInterval);
+        }
+    }
+
+    /**
+     * Block until the title is visible in the committed registry, or
+     * throw on timeout.
+     */
+    public Types.Title waitForTitle(
+            String assetId, String domain, Duration timeout, Duration pollInterval) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        long pollMs = Math.max(1, pollInterval.toMillis());
+        while (System.nanoTime() < deadline) {
+            Types.Title rec = getTitle(assetId, domain);
+            if (rec != null) return rec;
+            try { Thread.sleep(pollMs); }
+            catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new NodeException("interrupted waiting for title " + assetId, ie);
+            }
+        }
+        throw new NodeException(
+                "title " + assetId + " did not commit within " + timeout.toMillis() + "ms",
+                0, "");
+    }
+
+    // =====================================================================
     // Param objects (fluent builders)
     // =====================================================================
 
@@ -618,5 +916,21 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /** Append {@code ?limit=&offset=&domain=} to a URL builder, omitting unset params. */
+    private static void appendQuery(StringBuilder path, int limit, int offset, String domain) {
+        boolean first = true;
+        if (limit > 0) {
+            path.append('?').append("limit=").append(limit);
+            first = false;
+        }
+        if (offset > 0) {
+            path.append(first ? '?' : '&').append("offset=").append(offset);
+            first = false;
+        }
+        if (domain != null && !domain.isEmpty()) {
+            path.append(first ? '?' : '&').append("domain=").append(urlencode(domain));
+        }
     }
 }

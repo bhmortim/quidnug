@@ -66,6 +66,115 @@ Runnable examples live in `examples/`:
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
 
+## Client API
+
+The Rust client is at full parity with the Python reference. All
+methods are `async` and return `Result<T, quidnug::Error>`.
+
+### Health, info, nodes
+
+| Method | Endpoint |
+| --- | --- |
+| `health()` | `GET /api/health` |
+| `info()` | `GET /api/info` |
+| `nodes(limit, offset)` | `GET /api/nodes` |
+
+### Identity
+
+| Method | Endpoint |
+| --- | --- |
+| `register_identity(signer, name, home_domain)` | `POST /api/transactions/identity` |
+| `get_identity(quid_id, domain)` | `GET /api/identity/{quid}` |
+| `query_identity_registry(limit, offset, quid_id)` | `GET /api/registry/identity` |
+| `wait_for_identity(quid_id, domain, timeout, poll)` | polls `get_identity` |
+| `wait_for_identities(quid_ids, domain, timeout, poll)` | polls `get_identity` |
+
+### Trust
+
+| Method | Endpoint |
+| --- | --- |
+| `grant_trust(signer, params)` | `POST /api/transactions/trust` |
+| `get_trust(observer, target, domain, max_depth)` | `GET /api/trust/{observer}/{target}` |
+| `query_relational_trust(observer, target, domain, max_depth)` | `POST /api/trust/query` |
+| `get_trust_edges(quid_id)` | `GET /api/trust/edges/{quid}` |
+| `query_trust_registry(limit, offset, truster, trustee)` | `GET /api/registry/trust` |
+
+### Title / ownership
+
+| Method | Endpoint |
+| --- | --- |
+| `register_title(signer, params)` | `POST /api/transactions/title` |
+| `get_title(asset_id, domain)` | `GET /api/title/{asset}` |
+| `query_title_registry(limit, offset, asset_id, owner_id)` | `GET /api/registry/title` |
+| `wait_for_title(asset_id, domain, timeout, poll)` | polls `get_title` |
+
+### Events
+
+| Method | Endpoint |
+| --- | --- |
+| `emit_event(signer, params)` | `POST /api/events` |
+| `get_event_stream(subject_id, domain)` | `GET /api/streams/{subject}` |
+| `get_stream_events(subject_id, domain, limit, offset)` | `GET /api/streams/{subject}/events` |
+
+### IPFS
+
+| Method | Endpoint |
+| --- | --- |
+| `ipfs_pin(content)` | `POST /api/ipfs/pin` |
+| `ipfs_get(cid)` | `GET /api/ipfs/{cid}` |
+
+### Guardians + recovery (QDP-0002 / QDP-0006)
+
+| Method | Endpoint |
+| --- | --- |
+| `submit_guardian_set_update(update)` | `POST /api/guardian/set-update` |
+| `submit_recovery_init(init)` | `POST /api/guardian/recovery/init` |
+| `submit_recovery_veto(veto)` | `POST /api/guardian/recovery/veto` |
+| `submit_recovery_commit(commit)` | `POST /api/guardian/recovery/commit` |
+| `submit_guardian_resignation(resignation)` | `POST /api/guardian/resign` |
+| `get_guardian_set(quid_id)` | `GET /api/guardian/set/{quid}` |
+| `get_pending_recovery(quid_id)` | `GET /api/guardian/pending-recovery/{quid}` |
+| `get_guardian_resignations(quid_id)` | `GET /api/guardian/resignations/{quid}` |
+
+### Cross-domain gossip + fingerprints (QDP-0003 / QDP-0005)
+
+| Method | Endpoint |
+| --- | --- |
+| `submit_domain_fingerprint(fp)` | `POST /api/domain-fingerprints` |
+| `get_latest_domain_fingerprint(domain)` | `GET /api/domain-fingerprints/{domain}/latest` |
+| `submit_anchor_gossip(message)` | `POST /api/anchor-gossip` |
+| `push_anchor(message)` | `POST /api/gossip/push-anchor` |
+| `push_fingerprint(fp)` | `POST /api/gossip/push-fingerprint` |
+
+### Bootstrap (QDP-0008)
+
+| Method | Endpoint |
+| --- | --- |
+| `submit_nonce_snapshot(snapshot)` | `POST /api/nonce-snapshots` |
+| `get_latest_nonce_snapshot(domain)` | `GET /api/nonce-snapshots/{domain}/latest` |
+| `bootstrap_status()` | `GET /api/bootstrap/status` |
+
+### Fork-block (QDP-0009)
+
+| Method | Endpoint |
+| --- | --- |
+| `submit_fork_block(fb)` | `POST /api/fork-block` |
+| `fork_block_status()` | `GET /api/fork-block/status` |
+
+### Blocks + transactions + domains
+
+| Method | Endpoint |
+| --- | --- |
+| `get_blocks(limit, offset)` | `GET /api/blocks` |
+| `get_tentative_blocks(domain)` | `GET /api/blocks/tentative/{domain}` |
+| `get_pending_transactions(limit, offset)` | `GET /api/transactions` |
+| `list_domains()` | `GET /api/domains` |
+| `register_domain(domain)` | `POST /api/domains` |
+| `ensure_domain(domain)` | idempotent register |
+| `get_node_domains()` | `GET /api/node/domains` |
+| `update_node_domains(domains)` | `POST /api/node/domains` |
+| `query_domain(domain, type, param)` | `GET /api/domains/{name}/query` |
+
 ## Error taxonomy
 
 ```rust

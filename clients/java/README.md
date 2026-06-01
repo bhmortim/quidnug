@@ -87,12 +87,15 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health | `health`, `info`, `nodes`, `blocks`, `getTentativeBlocks`, `pendingTransactions` |
+| Identity | `registerIdentity`, `getIdentity`, `waitForIdentity`, `waitForIdentities` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryRelationalTrust` |
+| Title | `registerTitle`, `getTitle`, `waitForTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| Registry queries | `queryIdentityRegistry`, `queryTrustRegistry`, `queryTitleRegistry`, `queryDomain` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain`, `getNodeDomains`, `updateNodeDomains` |
+| IPFS | `ipfsPin`, `ipfsGet` |
+| Guardians (QDP-0002/6) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
@@ -174,16 +177,19 @@ mvn package
 
 ## Verifying tests
 
-The SDK ships 20 unit tests covering keypair generation, signing,
+The SDK ships 57 unit tests covering keypair generation, signing,
 canonicalization, Merkle proof verification, HTTP envelope parsing,
-error taxonomy, and retry behavior:
+error taxonomy, retry behavior, registry queries, IPFS round-trip,
+commit-wait polling, and domain registration:
 
 ```
-Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
-  CanonicalBytesTest: 3/3
-  MerkleTest:         5/5
-  QuidnugClientTest:  7/7
-  QuidTest:           5/5
+Tests run: 57, Failures: 0, Errors: 0, Skipped: 0
+  CanonicalBytesTest:        6/6
+  MerkleTest:                5/5
+  QuidnugClientTest:         7/7
+  QuidnugClientExtraTest:   22/22
+  QuidTest:                  5/5
+  VectorsTest:              12/12
 ```
 
 The client tests use the built-in `jdk.httpserver` to stub responses

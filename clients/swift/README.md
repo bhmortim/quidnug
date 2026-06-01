@@ -73,15 +73,19 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health / peers | `health`, `info`, `nodes` |
+| Blocks / mempool | `blocks`, `tentativeBlocks`, `pendingTransactions` |
+| Domains | `listDomains`, `getNodeDomains`, `updateNodeDomains`, `registerDomain`, `ensureDomain`, `queryDomain` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryTrustRegistry`, `queryRelationalTrust` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| IPFS | `ipfsPin`, `ipfsGet` |
+| Guardians (QDP-0002 / QDP-0006) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003 / QDP-0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Bootstrap (QDP-0008) | `bootstrapStatus`, `submitNonceSnapshot`, `getLatestNonceSnapshot` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Commit-wait helpers | `waitForIdentity`, `waitForIdentities`, `waitForTitle` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -194,6 +198,9 @@ Tests ship under `Tests/QuidnugTests/`:
 - `QuidTests` — 5 tests
 - `CanonicalBytesTests` — 3 tests
 - `MerkleTests` — 5 tests
+- `QuidnugClientTests` — HTTP envelope, path-shape, pagination, 404→nil
+  and error-mapping coverage via a private `URLProtocol` stub
+- `VectorsTests` — cross-SDK v1.0 conformance vectors
 
 ## Protocol version compatibility
 

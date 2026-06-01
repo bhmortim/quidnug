@@ -439,6 +439,52 @@ export interface TitleRegistryQueryOptions extends PaginationOptions {
   ownerId?: string;
 }
 
+/**
+ * A direct outbound trust edge anchored at a quid.
+ */
+export interface TrustEdge {
+  /** Quid ID of the truster (edge source) */
+  truster: string;
+  /** Quid ID of the trustee (edge target) */
+  trustee: string;
+  /** Trust level (0.0 to 1.0) */
+  trustLevel: number;
+  /** Trust domain the edge applies to */
+  domain?: string;
+  /** Monotonic nonce for replay protection */
+  nonce?: number;
+  /** Base64-encoded ECDSA signature */
+  signature?: string;
+  /** Optional Unix timestamp when trust expires */
+  validUntil?: number;
+  /** Optional human-readable description */
+  description?: string;
+  /** Additional edge attributes */
+  attributes?: Record<string, unknown>;
+}
+
+/**
+ * Options shared by the commit-wait helpers.
+ */
+export interface WaitOptions {
+  /** Optional specific trust domain to query */
+  domain?: string;
+  /** Total timeout in milliseconds (default: 30000) */
+  timeoutMs?: number;
+  /** Poll interval in milliseconds (default: 500) */
+  pollIntervalMs?: number;
+}
+
+/**
+ * Idempotent ensure-domain receipt synthesized when the domain
+ * pre-existed at the node.
+ */
+export interface EnsureDomainResult {
+  status: 'success';
+  domain: string;
+  message: string;
+}
+
 // ============================================================================
 // Internal Types (for reference)
 // ============================================================================
@@ -699,6 +745,108 @@ declare class QuidnugClient {
    * @returns List of nodes managing the domain
    */
   findNodesForDomain(domain: string): Promise<Node[]>;
+
+  // ==========================================================================
+  // Node-level reads
+  // ==========================================================================
+
+  /**
+   * Check node health.
+   * @returns The node's health payload (typically `{ status, quidId, ... }`).
+   */
+  health(): Promise<Record<string, unknown>>;
+
+  /**
+   * Get node info (identity, version, features, managed domains).
+   * @returns The node's info payload.
+   */
+  info(): Promise<Record<string, unknown>>;
+
+  /**
+   * Get tentative (unsealed) blocks for a domain.
+   * @param domain - Trust domain
+   * @returns Tentative-blocks payload
+   */
+  getTentativeBlocks(domain: string): Promise<Record<string, unknown>>;
+
+  /**
+   * Get direct outbound trust edges for a quid.
+   * Tolerates `{ edges }` and `{ data }` envelope shapes.
+   * @param quidId - Subject quid ID
+   * @returns Array of trust edges (possibly empty)
+   */
+  getTrustEdges(quidId: string): Promise<TrustEdge[]>;
+
+  // ==========================================================================
+  // Domain management
+  // ==========================================================================
+
+  /**
+   * List all trust domains known to the node.
+   * @returns Domain listing
+   */
+  listDomains(): Promise<Record<string, unknown>>;
+
+  /**
+   * Register a new trust domain on the node.
+   * Throws if the domain already exists; use `ensureDomain` for
+   * idempotent semantics.
+   * @param name - Domain name
+   * @returns Server receipt
+   */
+  registerDomain(name: string): Promise<Record<string, unknown>>;
+
+  /**
+   * Idempotently ensure a trust domain exists.
+   * Returns a synthetic success envelope when the domain pre-existed.
+   * @param name - Domain name
+   * @returns Server receipt or synthetic pre-existed envelope
+   */
+  ensureDomain(name: string): Promise<Record<string, unknown> | EnsureDomainResult>;
+
+  /**
+   * Get the list of domains this node currently manages.
+   * @returns Node-domain payload (typically `{ managedDomains: [...] }`)
+   */
+  getNodeDomains(): Promise<Record<string, unknown>>;
+
+  /**
+   * Replace the node's managed-domain list.
+   * @param domains - Replacement list
+   * @returns Server receipt
+   */
+  updateNodeDomains(domains: string[]): Promise<Record<string, unknown>>;
+
+  // ==========================================================================
+  // Commit-wait helpers
+  // ==========================================================================
+
+  /**
+   * Block until an identity is visible in the committed registry.
+   * @param quidId - Quid ID to wait for
+   * @param options - Optional wait parameters
+   * @returns The committed identity record
+   * @throws Error if the identity is not visible before `timeoutMs`
+   */
+  waitForIdentity(quidId: string, options?: WaitOptions): Promise<IdentityTransaction>;
+
+  /**
+   * Block until every quid in the list is committed.
+   * Shares a single deadline across the batch.
+   * @param quidIds - Quid IDs to wait for
+   * @param options - Optional wait parameters
+   * @throws Error if any quid is not visible before the shared deadline
+   */
+  waitForIdentities(quidIds: string[], options?: WaitOptions): Promise<void>;
+
+  /**
+   * Block until an asset's title is visible in the committed registry.
+   * @param assetId - Asset ID to wait for
+   * @param options - Optional wait parameters
+   * @returns The committed title record
+   * @throws Error if the title is not visible before `timeoutMs`
+   */
+  waitForTitle(assetId: string, options?: WaitOptions): Promise<TitleTransaction>;
 }
 
 // ============================================================================

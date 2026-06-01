@@ -15,9 +15,11 @@ npm install @quidnug/client
 ## v1 surface
 
 The default import provides the v1 surface — identities, trust,
-titles, event streams, IPFS, and the client-side relational trust BFS.
-These are covered by the existing test suite
-(`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
+titles, event streams, IPFS, the client-side relational trust BFS,
+node-level reads (`health`, `info`), domain management, and
+commit-wait helpers. These are covered by the existing test suite
+(`quidnug-client.test.js`, `quidnug-client.retry.test.js`,
+`quidnug-client.v1-parity.test.js`).
 
 ```js
 import QuidnugClient from "@quidnug/client";
@@ -38,6 +40,38 @@ await client.submitTransaction(tx);
 
 const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
+```
+
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Node | `health`, `info`, `getNodes`, `getBlocks`, `getTentativeBlocks`, `getPendingTransactions` |
+| Quids | `generateQuid`, `importQuid` |
+| Identity | `createIdentityTransaction`, `getIdentity`, `queryIdentityRegistry`, `waitForIdentity`, `waitForIdentities` |
+| Trust | `createTrustTransaction`, `getTrustLevel`, `findTrustPath`, `queryRelationalTrust`, `computeTransitiveTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Titles | `createTitleTransaction`, `getAssetOwnership`, `queryTitleRegistry`, `waitForTitle` |
+| Events | `createEventTransaction`, `getEventStream`, `getStreamEvents` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain`, `getNodeDomains`, `updateNodeDomains`, `queryDomain`, `findNodesForDomain` |
+| Submission | `submitTransaction`, `addNode` |
+
+### Commit-wait helpers
+
+Just-submitted transactions live in the pending pool until the
+next block is sealed. Code that immediately references a new quid
+or title must wait for commit first; demos and bootstrap scripts
+use these to avoid racing the block producer.
+
+```js
+await client.submitTransaction(identityTx);
+await client.waitForIdentity(alice.id, { timeoutMs: 30000 });
+
+await client.submitTransaction(titleTx);
+await client.waitForTitle("asset-1", { timeoutMs: 30000 });
+
+// Batch — single shared deadline across the list.
+await client.waitForIdentities([alice.id, bob.id], { timeoutMs: 30000 });
 ```
 
 ## v2 extensions (QDPs 0002–0010)
