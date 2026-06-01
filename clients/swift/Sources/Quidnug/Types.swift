@@ -88,3 +88,49 @@ public struct DomainFingerprint: Codable, Sendable {
     public let producerQuid: String
     public let timestamp: Int64
 }
+
+/// One row in a nonce snapshot — the highest committed nonce
+/// observed for a (quid, epoch) pair at snapshot time.
+public struct NonceSnapshotEntry: Codable, Sendable {
+    public let quid: String
+    public let epoch: Int
+    public let maxNonce: Int64
+
+    public init(quid: String, epoch: Int, maxNonce: Int64) {
+        self.quid = quid
+        self.epoch = epoch
+        self.maxNonce = maxNonce
+    }
+}
+
+/// K-of-K bootstrap snapshot of in-flight nonces (QDP-0008).
+public struct NonceSnapshot: Codable, Sendable {
+    public let blockHeight: Int64
+    public let blockHash: String
+    public let timestamp: Int64
+    public let trustDomain: String
+    public let entries: [NonceSnapshotEntry]
+    public let producerQuid: String
+    public let signature: String?
+    public let schemaVersion: Int?
+
+    public init(
+        blockHeight: Int64,
+        blockHash: String,
+        timestamp: Int64,
+        trustDomain: String,
+        entries: [NonceSnapshotEntry],
+        producerQuid: String,
+        signature: String? = nil,
+        schemaVersion: Int? = 1
+    ) {
+        self.blockHeight = blockHeight
+        self.blockHash = blockHash
+        self.timestamp = timestamp
+        self.trustDomain = trustDomain
+        self.entries = entries
+        self.producerQuid = producerQuid
+        self.signature = signature
+        self.schemaVersion = schemaVersion
+    }
+}

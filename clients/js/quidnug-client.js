@@ -1514,6 +1514,356 @@ class QuidnugClient {
       throw new Error(`IPFS retrieval failed: ${error.message}`);
     }
   }
+
+  // ==========================================================================
+  // Node-level reads (parity with Python health/info/getTentativeBlocks/...)
+  // ==========================================================================
+
+  /**
+   * Check node health.
+   *
+   * GET /api/health — returns whatever the node publishes (typically
+   * { status, quidId, version, ... }). Surfacing the raw envelope data
+   * mirrors the Python SDK so callers can introspect any new fields
+   * without an SDK upgrade.
+   *
+   * @returns {Promise<Object>} Health payload from the node
+   */
+  async health() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/health`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Health query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get node info (identity, version, features, managed domains).
+   *
+   * GET /api/info — payload shape evolves with the protocol, so the
+   * raw envelope data is returned untouched.
+   *
+   * @returns {Promise<Object>} Info payload from the node
+   */
+  async info() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/info`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Info query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get tentative (unsealed) blocks for a specific domain.
+   *
+   * GET /api/blocks/tentative/{domain} — useful for observing the
+   * block producer's in-flight ordering before a block is sealed.
+   *
+   * @param {string} domain - Trust domain
+   * @returns {Promise<Object>} Tentative-blocks payload from the node
+   */
+  async getTentativeBlocks(domain) {
+    if (!domain) {
+      throw new Error('Missing required parameter: domain');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const url = `${nodeUrl}/api/blocks/tentative/${encodeURIComponent(domain)}`;
+      const response = await this._fetchWithRetry(url);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Tentative blocks query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get direct outbound trust edges for a quid.
+   *
+   * GET /api/trust/edges/{quidId} — returns the raw trust edges
+   * anchored at the subject. The node may envelope the array either
+   * under `edges` or `data`; both shapes are tolerated for forward
+   * compatibility with intermediate node releases (matches the
+   * Python / Rust / Swift SDKs).
+   *
+   * @param {string} quidId - Subject quid ID
+   * @returns {Promise<Array<Object>>} Array of trust edges (possibly empty)
+   */
+  async getTrustEdges(quidId) {
+    if (!quidId) {
+      throw new Error('Missing required parameter: quidId');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const url = `${nodeUrl}/api/trust/edges/${encodeURIComponent(quidId)}`;
+      const response = await this._fetchWithRetry(url);
+      const data = await this._parseResponse(response);
+      const raw = (data && (data.edges || data.data)) || [];
+      return Array.isArray(raw) ? raw : [];
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Trust edges query failed: ${error.message}`);
+    }
+  }
+
+  // ==========================================================================
+  // Domain management
+  // ==========================================================================
+
+  /**
+   * List all trust domains known to the node.
+   *
+   * GET /api/domains — the response envelope shape matches the
+   * Python SDK (e.g. `{ domains: [...] }` or `{ data: [...] }`),
+   * returned as-is so newer fields are passed through.
+   *
+   * @returns {Promise<Object>} Domain listing
+   */
+  async listDomains() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`List domains query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Register a new trust domain on the node.
+   *
+   * POST /api/domains — body `{ name }`. May fail with an
+   * "already exists" error; callers that want idempotent semantics
+   * should use {@link QuidnugClient#ensureDomain} instead.
+   *
+   * @param {string} name - Domain name
+   * @returns {Promise<Object>} Server receipt
+   */
+  async registerDomain(name) {
+    if (!name) {
+      throw new Error('Missing required parameter: name');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Register domain failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Idempotently ensure a trust domain exists.
+   *
+   * Wraps {@link QuidnugClient#registerDomain}; if the node reports
+   * the domain already exists (by message or by ALREADY_EXISTS/
+   * DUPLICATE error code), returns a synthetic success envelope so
+   * demos / bootstrap scripts don't need to special-case that path.
+   *
+   * @param {string} name - Domain name
+   * @returns {Promise<Object>} Server receipt, or synthetic
+   *   `{ status, domain, message }` when the domain pre-existed
+   */
+  async ensureDomain(name) {
+    if (!name) {
+      throw new Error('Missing required parameter: name');
+    }
+    try {
+      return await this.registerDomain(name);
+    } catch (error) {
+      const msg = String(error && error.message ? error.message : '').toLowerCase();
+      const code = error && error.code;
+      const preExisted =
+        msg.includes('already exists') ||
+        code === 'ALREADY_EXISTS' ||
+        code === 'DUPLICATE';
+      if (preExisted) {
+        return {
+          status: 'success',
+          domain: name,
+          message: 'trust domain already exists',
+        };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get the list of domains this node currently manages.
+   *
+   * GET /api/node/domains — typically returns `{ managedDomains: [...] }`.
+   *
+   * @returns {Promise<Object>} Node-domain payload
+   */
+  async getNodeDomains() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Get node domains query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Replace the node's managed-domain list.
+   *
+   * POST /api/node/domains — body `{ managedDomains }`. The Python
+   * reference uses `managedDomains` as the body key; that's mirrored
+   * here so the wire shape is consistent across SDKs.
+   *
+   * @param {string[]} domains - Replacement list of managed domains
+   * @returns {Promise<Object>} Server receipt
+   */
+  async updateNodeDomains(domains) {
+    if (!Array.isArray(domains)) {
+      throw new Error('domains must be an array');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ managedDomains: domains }),
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Update node domains failed: ${error.message}`);
+    }
+  }
+
+  // ==========================================================================
+  // Commit-wait helpers
+  //
+  // Just-submitted transactions live in the pending pool until the
+  // next block is sealed. Code that immediately references a new
+  // quid/title (e.g. emits events, transfers ownership) must wait
+  // for commit first; demos and bootstrap scripts use these to
+  // avoid racing the block producer.
+  // ==========================================================================
+
+  /**
+   * Internal: sleep for `ms` milliseconds.
+   * @private
+   */
+  _delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Block until an identity is visible in the committed registry.
+   *
+   * Polls {@link QuidnugClient#getIdentity} every `pollIntervalMs`
+   * until it returns a non-null record, or throws once the
+   * `timeoutMs` deadline elapses.
+   *
+   * @param {string} quidId - Quid ID to wait for
+   * @param {Object} [options]
+   * @param {string} [options.domain] - Optional specific domain
+   * @param {number} [options.timeoutMs=30000] - Total timeout (ms)
+   * @param {number} [options.pollIntervalMs=500] - Poll interval (ms)
+   * @returns {Promise<Object>} The committed identity record
+   * @throws {Error} If the identity is not visible before `timeoutMs`
+   */
+  async waitForIdentity(quidId, options = {}) {
+    if (!quidId) {
+      throw new Error('Missing required parameter: quidId');
+    }
+    const { domain, timeoutMs = 30000, pollIntervalMs = 500 } = options;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rec = await this.getIdentity(quidId, domain);
+      if (rec !== null && rec !== undefined) {
+        return rec;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await this._delay(Math.min(pollIntervalMs, Math.max(0, remaining)));
+    }
+    throw new Error(`identity ${quidId} did not commit within ${timeoutMs}ms`);
+  }
+
+  /**
+   * Block until every quid in the list is committed.
+   *
+   * Shares a single deadline across the batch — slow commits earlier
+   * in the list reduce the budget available to later ones, matching
+   * the Python `wait_for_identities` semantics.
+   *
+   * @param {string[]} quidIds - Quid IDs to wait for
+   * @param {Object} [options]
+   * @param {string} [options.domain] - Optional specific domain
+   * @param {number} [options.timeoutMs=30000] - Shared deadline (ms)
+   * @param {number} [options.pollIntervalMs=500] - Poll interval (ms)
+   * @throws {Error} If any quid is not visible before the shared deadline
+   */
+  async waitForIdentities(quidIds, options = {}) {
+    if (!Array.isArray(quidIds)) {
+      throw new Error('quidIds must be an array');
+    }
+    const { domain, timeoutMs = 30000, pollIntervalMs = 500 } = options;
+    const deadline = Date.now() + timeoutMs;
+    for (const qid of quidIds) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new Error(
+          `identities not all committed within ${timeoutMs}ms (blocked on ${qid})`
+        );
+      }
+      await this.waitForIdentity(qid, {
+        domain,
+        timeoutMs: remaining,
+        pollIntervalMs,
+      });
+    }
+  }
+
+  /**
+   * Block until an asset's title is visible in the committed registry.
+   *
+   * Polls {@link QuidnugClient#getAssetOwnership} every
+   * `pollIntervalMs` until it returns a non-null record, or throws
+   * once the `timeoutMs` deadline elapses.
+   *
+   * @param {string} assetId - Asset ID to wait for
+   * @param {Object} [options]
+   * @param {string} [options.domain] - Optional specific domain
+   * @param {number} [options.timeoutMs=30000] - Total timeout (ms)
+   * @param {number} [options.pollIntervalMs=500] - Poll interval (ms)
+   * @returns {Promise<Object>} The committed title record
+   * @throws {Error} If the title is not visible before `timeoutMs`
+   */
+  async waitForTitle(assetId, options = {}) {
+    if (!assetId) {
+      throw new Error('Missing required parameter: assetId');
+    }
+    const { domain, timeoutMs = 30000, pollIntervalMs = 500 } = options;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rec = await this.getAssetOwnership(assetId, domain);
+      if (rec !== null && rec !== undefined) {
+        return rec;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await this._delay(Math.min(pollIntervalMs, Math.max(0, remaining)));
+    }
+    throw new Error(`title ${assetId} did not commit within ${timeoutMs}ms`);
+  }
 }
 
 // Example usage in a browser environment

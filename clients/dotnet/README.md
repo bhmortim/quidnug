@@ -69,15 +69,19 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Health | `HealthAsync`, `InfoAsync`, `NodesAsync` |
+| Blocks / pool | `BlocksAsync`, `GetTentativeBlocksAsync`, `GetPendingTransactionsAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync`, `QueryRelationalTrustAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Guardians (QDP-0002 / 0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInitAsync`, `SubmitRecoveryVetoAsync`, `SubmitRecoveryCommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003 / 0005) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `BootstrapStatusAsync`, `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `EnsureDomainAsync`, `QueryDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| IPFS | `IpfsPinAsync`, `IpfsGetAsync` |
+| Commit-wait | `WaitForIdentityAsync`, `WaitForIdentitiesAsync`, `WaitForTitleAsync` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -183,14 +187,13 @@ dotnet test           # in tests/
 
 ## Verifying tests
 
-The SDK ships 24 unit tests:
+The SDK ships unit tests covering envelope parsing, retry policy,
+endpoint routing, validation guards, IPFS bytes round-trips, and
+the commit-wait helpers:
 
 ```
-Passed!  - Failed: 0, Passed: 24, Skipped: 0, Total: 24
-  QuidTests:             5
-  CanonicalBytesTests:   3
-  MerkleTests:           5
-  QuidnugClientTests:   11
+QuidTests, CanonicalBytesTests, MerkleTests, VectorsTests,
+QuidnugClientTests, QuidnugClientParityTests
 ```
 
 Tests use a custom `HttpMessageHandler` stub — no MockHttp or

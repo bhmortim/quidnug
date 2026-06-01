@@ -44,11 +44,13 @@ mod types;
 pub mod wire;
 
 pub use canonical::canonical_bytes;
-pub use client::{Client, TrustParams};
+pub use client::{Client, EventParams, TitleParams, TrustParams};
 pub use crypto::Quid;
 pub use error::{Error, Result};
 pub use merkle::{verify_inclusion_proof, MerkleProofFrame};
 pub use types::{
-    DomainFingerprint, Event, ForkBlock, GuardianRef, GuardianSet, IdentityRecord,
-    NonceSnapshot, OwnershipStake, Title, TrustEdge, TrustResult,
+    AnchorGossipMessage, DomainFingerprint, Event, ForkBlock, ForkSig, GuardianRecoveryCommit,
+    GuardianRecoveryInit, GuardianRecoveryVeto, GuardianRef, GuardianResignation, GuardianSet,
+    GuardianSetUpdate, GuardianSignature, IdentityRecord, MerkleProofFrameWire, NonceSnapshot,
+    NonceSnapshotEntry, OwnershipStake, PrimarySignature, Title, TrustEdge, TrustResult,
 };
