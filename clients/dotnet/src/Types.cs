@@ -73,3 +73,60 @@ public sealed record DomainFingerprint(
     [property: JsonPropertyName("blockHash")]    string BlockHash,
     [property: JsonPropertyName("producerQuid")] string ProducerQuid,
     [property: JsonPropertyName("timestamp")]    long Timestamp);
+
+/// <summary>Endpoint advertised by a node (QDP-0014).</summary>
+public sealed class NodeAdvertEndpoint
+{
+    [JsonPropertyName("url")]                       public string Url { get; set; } = "";
+    [JsonPropertyName("protocol")]                  public string? Protocol { get; set; }
+    [JsonPropertyName("region")]                    public string? Region { get; set; }
+    [JsonPropertyName("priority")]                  public int Priority { get; set; }
+    [JsonPropertyName("weight")]                    public int Weight { get; set; }
+}
+
+/// <summary>Capabilities a node advertises (QDP-0014).</summary>
+public sealed class NodeAdvertCapabilities
+{
+    [JsonPropertyName("validator")]                 public bool Validator { get; set; }
+    [JsonPropertyName("cache")]                     public bool Cache { get; set; }
+    [JsonPropertyName("archive")]                   public bool Archive { get; set; }
+    [JsonPropertyName("bootstrap")]                 public bool Bootstrap { get; set; }
+    [JsonPropertyName("gossipSink")]                public bool GossipSink { get; set; }
+    [JsonPropertyName("ipfsGateway")]               public bool IpfsGateway { get; set; }
+    [JsonPropertyName("maxBodyBytes")]              public int MaxBodyBytes { get; set; }
+    [JsonPropertyName("minPeerProtocol")]           public string? MinPeerProtocol { get; set; }
+}
+
+/// <summary>Writable parameters for <c>PublishNodeAdvertisementAsync</c> (QDP-0014).</summary>
+public sealed class NodeAdvertisementParams
+{
+    public string OperatorQuid { get; set; } = "";
+    public string Domain { get; set; } = "";
+    public List<NodeAdvertEndpoint> Endpoints { get; set; } = new();
+    public List<string>? SupportedDomains { get; set; }
+    public NodeAdvertCapabilities Capabilities { get; set; } = new();
+    public string ProtocolVersion { get; set; } = "";
+    /// <summary>TTL for the advertisement; defaults to 6h, max 7d.</summary>
+    public TimeSpan Ttl { get; set; } = TimeSpan.Zero;
+    /// <summary>Strictly monotonic per-NodeQuid nonce; must be &gt; 0.</summary>
+    public long AdvertisementNonce { get; set; }
+}
+
+/// <summary>Arguments for <c>DiscoverQuidsAsync</c> (QDP-0014).</summary>
+public sealed class DiscoverQuidsParams
+{
+    /// <summary>Required.</summary>
+    public string Domain { get; set; } = "";
+    /// <summary>UnixNano lower bound.</summary>
+    public long Since { get; set; }
+    /// <summary>"activity" | "last-seen" | "first-seen" | "trust-weight".</summary>
+    public string? Sort { get; set; }
+    /// <summary>Observer quid; enables trust-weight sort and trustWeight column.</summary>
+    public string? Observer { get; set; }
+    public string? EventType { get; set; }
+    public double MinTrustWeight { get; set; }
+    public List<string>? ExcludeQuids { get; set; }
+    /// <summary>Default 50; max 500.</summary>
+    public int Limit { get; set; }
+    public int Offset { get; set; }
+}

@@ -56,6 +56,389 @@ async function _getOrNull(client, path) {
 }
 
 // ---------------------------------------------------------------------------
+// Health / info / raw
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/health — node reachability and liveness probe.
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.health = async function () {
+  return _getJson(this, "health");
+};
+
+/**
+ * GET /api/info — node identity, version, features, and managed domains.
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.info = async function () {
+  return _getJson(this, "info");
+};
+
+/**
+ * GET an arbitrary node path (relative to /api) and return the raw
+ * response body as a string. The leading slash is optional. Used for
+ * ad-hoc endpoints that do not yet have a typed wrapper.
+ *
+ * The returned bytes are the full envelope; callers parse it themselves.
+ * A non-2xx response throws an error whose `httpStatus` and `body`
+ * properties carry the server reply.
+ *
+ * @param {string} path
+ * @returns {Promise<string>}
+ */
+QuidnugClient.prototype.rawGet = async function (path) {
+  if (typeof path !== "string" || path === "") {
+    throw new Error("path required");
+  }
+  const nodeUrl = this._getHealthyNode();
+  const trimmed = path.replace(/^\/+/, "");
+  const resp = await this._fetchWithRetry(`${nodeUrl}/api/${trimmed}`);
+  const text = await resp.text();
+  if (!resp.ok) {
+    const err = new Error(`status ${resp.status}`);
+    err.httpStatus = resp.status;
+    err.body = text;
+    throw err;
+  }
+  return text;
+};
+
+// ---------------------------------------------------------------------------
+// QDP-0014: Discovery queries
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/v2/discovery/domain/{domain} — current consortium, endpoint
+ * hints, and block tip for a domain.
+ * @param {string} domain
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.discoverDomain = async function (domain) {
+  if (!domain) throw new Error("domain is required");
+  return _getJson(this, `v2/discovery/domain/${encodeURIComponent(domain)}`);
+};
+
+/**
+ * GET /api/v2/discovery/node/{quid} — raw signed advertisement for a quid.
+ * @param {string} quid
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.discoverNode = async function (quid) {
+  if (!quid) throw new Error("quid is required");
+  return _getJson(this, `v2/discovery/node/${encodeURIComponent(quid)}`);
+};
+
+/**
+ * GET /api/v2/discovery/operator/{quid} — list all advertisements for
+ * a given operator quid.
+ * @param {string} operatorQuid
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.discoverOperator = async function (operatorQuid) {
+  if (!operatorQuid) throw new Error("operatorQuid is required");
+  return _getJson(
+    this,
+    `v2/discovery/operator/${encodeURIComponent(operatorQuid)}`,
+  );
+};
+
+/**
+ * GET /api/v2/discovery/quids — per-domain quid index.
+ *
+ * @param {Object} params
+ * @param {string} params.domain - required
+ * @param {number} [params.since] - UnixNano lower bound
+ * @param {string} [params.sort] - "activity" | "last-seen" | "first-seen" | "trust-weight"
+ * @param {string} [params.observer] - enables trust-weight sort
+ * @param {string} [params.eventType]
+ * @param {number} [params.minTrustWeight]
+ * @param {string[]} [params.excludeQuids]
+ * @param {number} [params.limit] - default 50, max 500
+ * @param {number} [params.offset]
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.discoverQuids = async function (params = {}) {
+  const {
+    domain,
+    since,
+    sort,
+    observer,
+    eventType,
+    minTrustWeight,
+    excludeQuids,
+    limit,
+    offset,
+  } = params;
+  if (!domain) throw new Error("domain is required");
+  const q = new URLSearchParams();
+  q.set("domain", domain);
+  if (since && since > 0) q.set("since", String(since));
+  if (sort) q.set("sort", sort);
+  if (observer) q.set("observer", observer);
+  if (eventType) q.set("eventType", eventType);
+  if (typeof minTrustWeight === "number" && minTrustWeight > 0) {
+    q.set("min-trust-weight", String(minTrustWeight));
+  }
+  if (Array.isArray(excludeQuids) && excludeQuids.length > 0) {
+    q.set("excludeQuid", excludeQuids.join(","));
+  }
+  if (limit && limit > 0) q.set("limit", String(limit));
+  if (offset && offset > 0) q.set("offset", String(offset));
+  return _getJson(this, `v2/discovery/quids?${q.toString()}`);
+};
+
+/**
+ * GET /api/v2/discovery/trusted-quids — quids directly TRUSTed by the
+ * consortium above a threshold.
+ *
+ * @param {string} domain - required
+ * @param {number} [minTrust]
+ * @param {number} [limit]
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.discoverTrustedQuids = async function (
+  domain,
+  minTrust,
+  limit,
+) {
+  if (!domain) throw new Error("domain is required");
+  const q = new URLSearchParams();
+  q.set("domain", domain);
+  if (typeof minTrust === "number" && minTrust > 0) {
+    q.set("min-trust", String(minTrust));
+  }
+  if (typeof limit === "number" && limit > 0) {
+    q.set("limit", String(limit));
+  }
+  return _getJson(this, `v2/discovery/trusted-quids?${q.toString()}`);
+};
+
+// ---------------------------------------------------------------------------
+// Domain registry
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/domains — list all known trust domains.
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.listDomains = async function () {
+  return _getJson(this, "domains");
+};
+
+/**
+ * POST /api/domains — register a new trust domain.
+ *
+ * Fails with an "already exists" error if the domain is already
+ * registered; see ensureDomain for an idempotent variant. Extra
+ * attributes beyond the name are merged into the POST body alongside
+ * `{ name: domain }`.
+ *
+ * @param {string} domain
+ * @param {Object} [attrs]
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.registerDomain = async function (domain, attrs) {
+  if (!domain) throw new Error("domain is required");
+  const body = { name: domain };
+  if (attrs && typeof attrs === "object") {
+    for (const k of Object.keys(attrs)) body[k] = attrs[k];
+  }
+  return _postJson(this, "domains", body);
+};
+
+/**
+ * Idempotent wrapper around registerDomain: registers the domain if it
+ * does not already exist, otherwise returns a success envelope. Safe to
+ * call from demo and bootstrap scripts.
+ *
+ * @param {string} domain
+ * @param {Object} [attrs]
+ * @returns {Promise<Object>}
+ */
+QuidnugClient.prototype.ensureDomain = async function (domain, attrs) {
+  try {
+    return await this.registerDomain(domain, attrs);
+  } catch (err) {
+    const msg = String((err && err.message) || "").toLowerCase();
+    if (msg.includes("already exists")) {
+      return {
+        status: "success",
+        domain,
+        message: "trust domain already exists",
+      };
+    }
+    throw err;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Polling helpers — wait for commit
+// ---------------------------------------------------------------------------
+
+const DEFAULT_WAIT_TIMEOUT_MS = 30000;
+const DEFAULT_WAIT_POLL_INTERVAL_MS = 500;
+
+function _sleepAbortable(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) {
+      reject(signal.reason || new Error("aborted"));
+      return;
+    }
+    let timer;
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason || new Error("aborted"));
+    };
+    timer = setTimeout(() => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function _pollUntil(fetcher, opts = {}) {
+  const timeoutMs =
+    typeof opts.timeoutMs === "number" && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : DEFAULT_WAIT_TIMEOUT_MS;
+  const pollIntervalMs =
+    typeof opts.pollIntervalMs === "number" && opts.pollIntervalMs > 0
+      ? opts.pollIntervalMs
+      : DEFAULT_WAIT_POLL_INTERVAL_MS;
+  const signal = opts.signal;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (signal && signal.aborted) {
+      throw signal.reason || new Error("aborted");
+    }
+    const rec = await fetcher();
+    if (rec) return rec;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      const err = new Error("wait timeout exceeded");
+      err.code = "TIMEOUT";
+      throw err;
+    }
+    const wait = Math.min(pollIntervalMs, remaining);
+    await _sleepAbortable(wait, signal);
+  }
+}
+
+/**
+ * Block until the identity for `quidId` is visible in the committed
+ * registry, or reject on timeout / abort.
+ *
+ * Just-submitted identity transactions live in the pending pool until
+ * the next block is sealed; callers that immediately reference the
+ * subject must await commit first.
+ *
+ * @param {string} quidId
+ * @param {string} [domain]
+ * @param {Object} [opts]
+ * @param {number} [opts.timeoutMs=30000]
+ * @param {number} [opts.pollIntervalMs=500]
+ * @param {AbortSignal} [opts.signal]
+ * @returns {Promise<Object>} The identity record.
+ */
+QuidnugClient.prototype.waitForIdentity = async function (
+  quidId,
+  domain,
+  opts,
+) {
+  if (!quidId) throw new Error("quidId required");
+  return _pollUntil(() => this.getIdentity(quidId, domain), opts);
+};
+
+/**
+ * Block until every listed quid is committed. Shares one timeout
+ * across all ids.
+ *
+ * @param {string[]} quidIds
+ * @param {string} [domain]
+ * @param {Object} [opts]
+ * @returns {Promise<void>}
+ */
+QuidnugClient.prototype.waitForIdentities = async function (
+  quidIds,
+  domain,
+  opts,
+) {
+  if (!Array.isArray(quidIds)) throw new Error("quidIds must be an array");
+  const timeoutMs =
+    opts && typeof opts.timeoutMs === "number" && opts.timeoutMs > 0
+      ? opts.timeoutMs
+      : DEFAULT_WAIT_TIMEOUT_MS;
+  const pollIntervalMs =
+    opts && typeof opts.pollIntervalMs === "number" && opts.pollIntervalMs > 0
+      ? opts.pollIntervalMs
+      : DEFAULT_WAIT_POLL_INTERVAL_MS;
+  const signal = opts && opts.signal;
+  const deadline = Date.now() + timeoutMs;
+  for (const id of quidIds) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      const err = new Error(`wait for identity ${id}: wait timeout exceeded`);
+      err.code = "TIMEOUT";
+      throw err;
+    }
+    try {
+      await this.waitForIdentity(id, domain, {
+        timeoutMs: remaining,
+        pollIntervalMs,
+        signal,
+      });
+    } catch (err) {
+      throw new Error(`wait for identity ${id}: ${err.message}`);
+    }
+  }
+};
+
+/**
+ * Block until the title with the given asset ID is visible in the
+ * committed registry. Same rationale as waitForIdentity.
+ *
+ * @param {string} assetId
+ * @param {string} [domain]
+ * @param {Object} [opts]
+ * @returns {Promise<Object>} The title record.
+ */
+QuidnugClient.prototype.waitForTitle = async function (assetId, domain, opts) {
+  if (!assetId) throw new Error("assetId required");
+  return _pollUntil(() => this.getAssetOwnership(assetId, domain), opts);
+};
+
+// ---------------------------------------------------------------------------
+// QDP-0014: Node advertisement (signed) -- TODO
+// ---------------------------------------------------------------------------
+
+/**
+ * Build, sign, and submit a QDP-0014 NodeAdvertisementTransaction.
+ *
+ * Not yet implemented in the JS SDK. Use the Go SDK
+ * (Client.PublishNodeAdvertisement) until the corresponding signing
+ * path is wired up here. Tracking the canonical wire format and the
+ * derived ID assignment to match the Go reference byte-for-byte.
+ *
+ * @param {Object} quid - signer with a private key
+ * @param {Object} params - NodeAdvertisementParams
+ */
+QuidnugClient.prototype.publishNodeAdvertisement = async function (
+  // eslint-disable-next-line no-unused-vars
+  quid,
+  // eslint-disable-next-line no-unused-vars
+  params,
+) {
+  const err = new Error(
+    "publishNodeAdvertisement not yet implemented in the JS SDK; " +
+      "use the Go SDK until the signing path is ported.",
+  );
+  err.code = "NOT_IMPLEMENTED";
+  throw err;
+};
+
+// ---------------------------------------------------------------------------
 // Guardian sets (QDP-0002, QDP-0006)
 // ---------------------------------------------------------------------------
 

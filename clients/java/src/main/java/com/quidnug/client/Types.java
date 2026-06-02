@@ -202,6 +202,107 @@ public final class Types {
         }
     }
 
+    /** Standard pagination envelope. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static final class Pagination {
+        public final int limit;
+        public final int offset;
+        public final int total;
+
+        @JsonCreator
+        public Pagination(
+                @JsonProperty("limit") int limit,
+                @JsonProperty("offset") int offset,
+                @JsonProperty("total") int total) {
+            this.limit  = limit;
+            this.offset = offset;
+            this.total  = total;
+        }
+    }
+
+    /**
+     * Query params for {@link QuidnugClient#discoverQuids}. All fields
+     * optional except {@code domain}.
+     */
+    public static final class DiscoverQuidsParams {
+        public String domain;
+        /** Lower bound on stream activity timestamp (UnixNano). */
+        public long since;
+        /** {@code "activity" | "last-seen" | "first-seen" | "trust-weight"}. */
+        public String sort;
+        /** Enables {@code trust-weight} sort and populates {@code trustWeight} per row. */
+        public String observer;
+        public String eventType;
+        public double minTrustWeight;
+        public List<String> excludeQuids;
+        /** Default 50, max 500. */
+        public int limit;
+        public int offset;
+
+        public static DiscoverQuidsParams of(String domain) {
+            DiscoverQuidsParams p = new DiscoverQuidsParams();
+            p.domain = domain;
+            return p;
+        }
+        public DiscoverQuidsParams since(long s)            { this.since = s; return this; }
+        public DiscoverQuidsParams sort(String s)           { this.sort = s; return this; }
+        public DiscoverQuidsParams observer(String o)       { this.observer = o; return this; }
+        public DiscoverQuidsParams eventType(String e)      { this.eventType = e; return this; }
+        public DiscoverQuidsParams minTrustWeight(double m) { this.minTrustWeight = m; return this; }
+        public DiscoverQuidsParams excludeQuids(List<String> q) { this.excludeQuids = q; return this; }
+        public DiscoverQuidsParams limit(int n)             { this.limit = n; return this; }
+        public DiscoverQuidsParams offset(int n)            { this.offset = n; return this; }
+    }
+
+    /**
+     * Params for {@link QuidnugClient#publishNodeAdvertisement} (QDP-0014).
+     * Signer is the node's own keypair (NodeQuid = signer.id()).
+     */
+    public static final class NodeAdvertisementParams {
+        public String operatorQuid;
+        /** trustDomain; typically your operator meta-domain. */
+        public String domain;
+        public List<NodeAdvertEndpoint> endpoints;
+        public List<String> supportedDomains;
+        public NodeAdvertCapabilities capabilities;
+        /** e.g. {@code "1.0"}. Defaults to {@code "1.0"} on submit. */
+        public String protocolVersion;
+        /** {@code <= 7d}; defaults to 6h on submit. */
+        public java.time.Duration ttl;
+        /** Strictly monotonic per NodeQuid. Required (must be {@code > 0}). */
+        public long advertisementNonce;
+    }
+
+    /** Mirror of {@code core.NodeEndpoint}. */
+    public static final class NodeAdvertEndpoint {
+        @JsonProperty("url")      public String url;
+        @JsonProperty("protocol") public String protocol;
+        @JsonProperty("region")   public String region;
+        @JsonProperty("priority") public int priority;
+        @JsonProperty("weight")   public int weight;
+
+        public NodeAdvertEndpoint() {}
+        public NodeAdvertEndpoint(String url, String protocol, String region, int priority, int weight) {
+            this.url      = url;
+            this.protocol = protocol;
+            this.region   = region;
+            this.priority = priority;
+            this.weight   = weight;
+        }
+    }
+
+    /** Mirror of {@code core.NodeCapabilities}. */
+    public static final class NodeAdvertCapabilities {
+        @JsonProperty("validator")       public boolean validator;
+        @JsonProperty("cache")           public boolean cache;
+        @JsonProperty("archive")         public boolean archive;
+        @JsonProperty("bootstrap")       public boolean bootstrap;
+        @JsonProperty("gossipSink")      public boolean gossipSink;
+        @JsonProperty("ipfsGateway")     public boolean ipfsGateway;
+        @JsonProperty("maxBodyBytes")    public int maxBodyBytes;
+        @JsonProperty("minPeerProtocol") public String minPeerProtocol;
+    }
+
     /** Domain fingerprint (QDP-0003). */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static final class DomainFingerprint {

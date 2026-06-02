@@ -3,10 +3,13 @@
 Java 17+ client SDK for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the **full v2 protocol surface** (QDPs 0001–0010): identity,
-trust, titles, event streams, anchors, guardian sets + recovery,
-cross-domain gossip, K-of-K bootstrap, fork-block activation, and
-compact Merkle inclusion proofs.
+Covers QDPs 0001–0010 plus QDP-0014 node discovery and sharding:
+identity, trust, titles, event streams, anchors, guardian sets +
+recovery, cross-domain gossip, K-of-K bootstrap, fork-block activation,
+compact Merkle inclusion proofs, and node advertisements / discovery
+queries.
+
+API parity with the canonical Go SDK (`pkg/client`).
 
 ## Install
 
@@ -87,15 +90,17 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
-| Identity | `registerIdentity`, `getIdentity` |
+| Health | `health`, `info`, `nodes` (+ paginated overload), `blocks` / `getBlocks`, `pendingTransactions` / `getPendingTransactions`, `listDomains`, `rawGet` |
+| Identity | `registerIdentity`, `getIdentity`, `waitForIdentity`, `waitForIdentities` |
 | Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Title | `registerTitle`, `getTitle`, `waitForTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain` |
 | Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Discovery / sharding (QDP-0014) | `publishNodeAdvertisement`, `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
 
 ### `CanonicalBytes` — signable-bytes encoder
 
@@ -174,16 +179,17 @@ mvn package
 
 ## Verifying tests
 
-The SDK ships 20 unit tests covering keypair generation, signing,
+The SDK ships 35 unit tests covering keypair generation, signing,
 canonicalization, Merkle proof verification, HTTP envelope parsing,
-error taxonomy, and retry behavior:
+error taxonomy, retry behavior, and cross-SDK test vectors:
 
 ```
-Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
-  CanonicalBytesTest: 3/3
+Tests run: 35, Failures: 0, Errors: 0, Skipped: 0
+  CanonicalBytesTest: 6/6
   MerkleTest:         5/5
   QuidnugClientTest:  7/7
   QuidTest:           5/5
+  VectorsTest:        12/12
 ```
 
 The client tests use the built-in `jdk.httpserver` to stub responses
@@ -227,7 +233,7 @@ roadmap.
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0010, 0014 |
 
 ## Contributing
 

@@ -54,9 +54,9 @@ corresponding typed method.
 | Area | Methods |
 | --- | --- |
 | Health / info | `health`, `info`, `nodes` |
-| Identity | `register_identity`, `get_identity`, `query_identity_registry` |
+| Identity | `register_identity`, `get_identity`, `query_identity_registry`, `wait_for_identity`, `wait_for_identities` |
 | Trust | `grant_trust`, `get_trust`, `query_relational_trust`, `get_trust_edges`, `query_trust_registry` |
-| Title | `register_title`, `get_title`, `query_title_registry` |
+| Title | `register_title`, `get_title`, `query_title_registry`, `wait_for_title` |
 | Events | `emit_event`, `get_event_stream`, `get_stream_events` |
 | Storage | `ipfs_pin`, `ipfs_get` |
 | Guardians | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
@@ -64,7 +64,44 @@ corresponding typed method.
 | Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
 | Fork-block | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
-| Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_node_domains`, `update_node_domains` |
+| Node advertisement (QDP-0014) | `publish_node_advertisement` (stub — see note) |
+| Discovery (QDP-0014) | `discover_domain`, `discover_node`, `discover_operator`, `discover_quids`, `discover_trusted_quids` |
+| Escape hatch | `raw_get` |
+
+> **Note on `publish_node_advertisement`**: the signing path for QDP-0014
+> ``NodeAdvertisementTransaction`` is not yet implemented in the Python
+> SDK. Calling the method raises ``NotImplementedError``. Use the Go SDK
+> if you need to publish a signed advertisement today; reads via the
+> ``discover_*`` methods are fully supported.
+
+### Discovery (QDP-0014)
+
+```python
+# All consortium endpoints + block tip for a domain
+info = client.discover_domain("contractors.home")
+
+# Raw signed advertisement for one node
+ad = client.discover_node(node_quid)
+
+# Per-domain quid index, filtered + sorted
+hits = client.discover_quids(
+    domain="contractors.home",
+    sort="trust-weight",
+    observer=alice.id,
+    min_trust_weight=0.5,
+    limit=100,
+)
+```
+
+### `AsyncQuidnugClient`
+
+An asyncio-compatible mirror of `QuidnugClient` lives at
+`quidnug.async_client.AsyncQuidnugClient` (also exported as
+`quidnug.AsyncClient`). It exposes the same method names with
+`await` semantics and ships every endpoint the sync client has,
+including discovery and the wait helpers. Install with
+`pip install 'quidnug[async]'`.
 
 ### `Quid` — cryptographic identity
 

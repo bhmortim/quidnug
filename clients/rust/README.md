@@ -3,10 +3,28 @@
 `quidnug` — the official Rust crate for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the full protocol surface: identity, trust, titles, event
-streams, anchors, guardian sets, recovery, cross-domain gossip,
-K-of-K bootstrap, fork-block activation, compact Merkle inclusion
-proofs (QDPs 0001–0010).
+API parity with the canonical Go SDK in `pkg/client`. Covers
+identity, trust, titles, event streams, anchors, guardian sets,
+recovery, cross-domain gossip, K-of-K bootstrap, fork-block
+activation, node-advertisement discovery (QDP-0014), and compact
+Merkle inclusion proofs (QDPs 0001–0014).
+
+## API surface
+
+| Group | Methods |
+| --- | --- |
+| Node / info | `health`, `info`, `nodes`, `raw_get`, `list_domains`, `bootstrap_status` |
+| Domains | `register_domain`, `ensure_domain` |
+| Identity | `register_identity`, `get_identity`, `wait_for_identity`, `wait_for_identities` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges` |
+| Titles | `register_title`, `get_title`, `wait_for_title` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events` |
+| Discovery (QDP-0014) | `publish_node_advertisement`, `discover_domain`, `discover_node`, `discover_operator`, `discover_quids`, `discover_trusted_quids` |
+| Guardians (QDP-0002/0006) | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery` |
+| Gossip (QDP-0003/0005) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| Ledger | `get_blocks`, `get_pending_transactions` |
 
 ## Install
 
@@ -63,7 +81,8 @@ Runnable examples live in `examples/`:
 | `quidnug::canonical_bytes` | Canonical signable bytes (matches Go / Python byte-for-byte). |
 | `quidnug::verify_inclusion_proof` | QDP-0010 Merkle proof verifier. |
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
-| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
+| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, GuardianSet, DomainFingerprint, NonceSnapshot, ForkBlock, AnchorGossipMessage, ...}` | Wire types. |
+| `quidnug::{TitleParams, EventParams, NodeAdvertisementParams, DiscoverQuidsParams, ...}` | Method argument structs. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
 
 ## Error taxonomy

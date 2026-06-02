@@ -69,15 +69,57 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
+| Health / node | `HealthAsync`, `InfoAsync`, `NodesAsync` (+ paginated overload), `RawGetAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `WaitForIdentityAsync`, `WaitForIdentitiesAsync` |
 | Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `WaitForTitleAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync` |
+| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `BootstrapStatusAsync`, `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+| Blocks / txs | `BlocksAsync`, `GetBlocksAsync`, `GetPendingTransactionsAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `EnsureDomainAsync` |
+| Discovery (QDP-0014) | `PublishNodeAdvertisementAsync`, `DiscoverDomainAsync`, `DiscoverNodeAsync`, `DiscoverOperatorAsync`, `DiscoverQuidsAsync`, `DiscoverTrustedQuidsAsync` |
+
+### Discovery & domain management (QDP-0014)
+
+```csharp
+// Register a domain before issuing identities or titles against it.
+await client.EnsureDomainAsync("contractors.home");
+
+// Operator-side: publish a signed advertisement for this node.
+using var nodeKey = Quid.Generate();
+await client.PublishNodeAdvertisementAsync(nodeKey, new NodeAdvertisementParams
+{
+    OperatorQuid       = operatorKey.Id,
+    Domain             = "operators.network.example",
+    Endpoints          = new() { new() { Url = "https://node.example.com", Priority = 1, Weight = 100 } },
+    Capabilities       = new() { Validator = true, Archive = true },
+    AdvertisementNonce = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+});
+
+// Client-side: discover peers serving a domain.
+var domainInfo = await client.DiscoverDomainAsync("contractors.home");
+var trusted    = await client.DiscoverTrustedQuidsAsync("contractors.home", minTrust: 0.5);
+var quids      = await client.DiscoverQuidsAsync(new DiscoverQuidsParams {
+    Domain   = "contractors.home",
+    Sort     = "trust-weight",
+    Observer = me.Id,
+    Limit    = 100,
+});
+```
+
+### Waiting for commit
+
+A just-submitted transaction lives in the pending pool until the next block
+is sealed. Use the `WaitFor*` helpers before referencing the new state:
+
+```csharp
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+await client.RegisterIdentityAsync(alice, name: "Alice");
+var record = await client.WaitForIdentityAsync(alice.Id, pollInterval: TimeSpan.FromMilliseconds(250), ct: cts.Token);
+```
 
 ### `CanonicalBytes` / `Merkle`
 

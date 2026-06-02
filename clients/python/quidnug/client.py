@@ -63,6 +63,9 @@ from quidnug.types import (
     GuardianSet,
     GuardianSetUpdate,
     IdentityRecord,
+    NodeAdvertCapabilities,
+    NodeAdvertEndpoint,
+    NodeAdvertisementParams,
     NonceSnapshot,
     OwnershipStake,
     Title,
@@ -862,6 +865,153 @@ class QuidnugClient:
 
     def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
         return self._request("POST", "node/domains", body={"managedDomains": domains})
+
+    # --- Raw passthrough ---------------------------------------------------
+
+    def raw_get(self, path: str) -> bytes:
+        """GET ``path`` (without ``/api`` prefix; the client adds it)
+        and return the raw response body bytes.
+
+        Useful for ad-hoc CLI commands that don't yet have a typed
+        wrapper. The returned bytes are the full JSON envelope —
+        callers parse it themselves. Mirrors ``Client.RawGet`` in
+        the Go SDK.
+        """
+        url = urljoin(self.api_base + "/", path.lstrip("/"))
+        headers = {"Accept": "application/json"}
+        if self._auth_header:
+            headers["Authorization"] = f"Bearer {self._auth_header}"
+        resp = self._session.get(url, headers=headers, timeout=self.timeout)
+        body = resp.content
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise NodeError(
+                f"raw_get {path}: HTTP {resp.status_code}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return body
+
+    # --- QDP-0014: Node advertisement + discovery --------------------------
+
+    def publish_node_advertisement(
+        self, signer: Quid, params: NodeAdvertisementParams,
+    ) -> Dict[str, Any]:
+        """POST /api/node-advertisements — publish a QDP-0014
+        NodeAdvertisementTransaction signed by the node's own keypair.
+
+        The signer's quid becomes ``nodeQuid``; ``operator_quid`` must
+        have a current direct TRUST edge (weight >= 0.5) to the node
+        in a domain of the form ``operators.network.<your-domain>``,
+        otherwise the node rejects the submission.
+
+        .. note::
+
+           This method is currently a stub. The Go SDK builds a typed
+           ``nodeAdvertisementWire`` struct, signs the canonical bytes
+           via IEEE-1363, and submits. Shipping a partial implementation
+           that produces invalid signatures would be worse than
+           explicitly raising; once the wire dataclass and signing path
+           land in ``quidnug.wire`` this will be filled in.
+        """
+        # TODO(QDP-0014): build NodeAdvertisementTx wire dataclass in
+        # quidnug/wire.py mirroring nodeAdvertisementWire in client.go;
+        # derive a random 16-byte hex tx id; sign canonical bytes via
+        # signer.sign(); POST to "node-advertisements".
+        raise NotImplementedError(
+            "publish_node_advertisement is not yet implemented in the "
+            "Python SDK; requires the QDP-0014 wire struct + signing "
+            "path to land in quidnug.wire. Track parity with the Go "
+            "SDK's Client.PublishNodeAdvertisement."
+        )
+
+    def discover_domain(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/domain/{domain} — current
+        consortium, endpoint hints, and block tip for a domain.
+        """
+        if not domain:
+            raise ValidationError("domain is required")
+        return self._request(
+            "GET", f"v2/discovery/domain/{quote(domain, safe='')}",
+        )
+
+    def discover_node(self, quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/node/{quid} — raw signed
+        advertisement for a quid.
+        """
+        if not quid:
+            raise ValidationError("quid is required")
+        return self._request(
+            "GET", f"v2/discovery/node/{quote(quid, safe='')}",
+        )
+
+    def discover_operator(self, operator_quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/operator/{operator_quid} — all
+        advertisements for a given operator quid.
+        """
+        if not operator_quid:
+            raise ValidationError("operator_quid is required")
+        return self._request(
+            "GET", f"v2/discovery/operator/{quote(operator_quid, safe='')}",
+        )
+
+    def discover_quids(
+        self,
+        *,
+        domain: str,
+        since: Optional[int] = None,
+        sort: Optional[str] = None,
+        observer: Optional[str] = None,
+        event_type: Optional[str] = None,
+        min_trust_weight: Optional[float] = None,
+        exclude_quids: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/v2/discovery/quids — per-domain quid index.
+
+        ``sort`` accepts ``activity`` | ``last-seen`` | ``first-seen`` |
+        ``trust-weight``. ``observer`` enables trust-weight sort and
+        populates per-row trust weights. ``since`` is a UnixNano cutoff.
+        """
+        if not domain:
+            raise ValidationError("domain is required")
+        params: Dict[str, Any] = {"domain": domain}
+        if since is not None and since > 0:
+            params["since"] = since
+        if sort:
+            params["sort"] = sort
+        if observer:
+            params["observer"] = observer
+        if event_type:
+            params["eventType"] = event_type
+        if min_trust_weight is not None and min_trust_weight > 0:
+            params["min-trust-weight"] = min_trust_weight
+        if exclude_quids:
+            params["excludeQuid"] = ",".join(exclude_quids)
+        if limit is not None and limit > 0:
+            params["limit"] = limit
+        if offset is not None and offset > 0:
+            params["offset"] = offset
+        return self._request("GET", "v2/discovery/quids", params=params)
+
+    def discover_trusted_quids(
+        self,
+        domain: str,
+        *,
+        min_trust: Optional[float] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/v2/discovery/trusted-quids — quids the consortium
+        members have directly TRUSTed above ``min_trust``.
+        """
+        if not domain:
+            raise ValidationError("domain is required")
+        params: Dict[str, Any] = {"domain": domain}
+        if min_trust is not None and min_trust > 0:
+            params["min-trust"] = min_trust
+        if limit is not None and limit > 0:
+            params["limit"] = limit
+        return self._request("GET", "v2/discovery/trusted-quids", params=params)
 
 
 # --- Wire -> dataclass decoders -------------------------------------------

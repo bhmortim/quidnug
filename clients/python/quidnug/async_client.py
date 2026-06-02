@@ -91,6 +91,7 @@ from quidnug.types import (
     GuardianSet,
     GuardianSetUpdate,
     IdentityRecord,
+    NodeAdvertisementParams,
     NonceSnapshot,
     OwnershipStake,
     Title,
@@ -501,6 +502,18 @@ class AsyncQuidnugClient:
     async def submit_guardian_set_update(self, update: GuardianSetUpdate) -> Dict[str, Any]:
         return await self._request("POST", "guardian/set-update", body=_dc(update))
 
+    async def submit_recovery_init(self, init: GuardianRecoveryInit) -> Dict[str, Any]:
+        return await self._request("POST", "guardian/recovery/init", body=_dc(init))
+
+    async def submit_recovery_veto(self, veto: GuardianRecoveryVeto) -> Dict[str, Any]:
+        return await self._request("POST", "guardian/recovery/veto", body=_dc(veto))
+
+    async def submit_recovery_commit(self, commit: GuardianRecoveryCommit) -> Dict[str, Any]:
+        return await self._request("POST", "guardian/recovery/commit", body=_dc(commit))
+
+    async def submit_guardian_resignation(self, resignation: GuardianResignation) -> Dict[str, Any]:
+        return await self._request("POST", "guardian/resign", body=_dc(resignation))
+
     async def get_guardian_set(self, quid: str) -> Optional[GuardianSet]:
         try:
             data = await self._request("GET", f"guardian/set/{quote(quid, safe='')}")
@@ -510,8 +523,36 @@ class AsyncQuidnugClient:
             raise
         return _guardian_set_from_wire(data)
 
+    async def get_pending_recovery(self, quid: str) -> Optional[Dict[str, Any]]:
+        try:
+            return await self._request(
+                "GET", f"guardian/pending-recovery/{quote(quid, safe='')}",
+            )
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    async def get_guardian_resignations(self, quid: str) -> List[Dict[str, Any]]:
+        data = await self._request(
+            "GET", f"guardian/resignations/{quote(quid, safe='')}",
+        )
+        raw = data.get("data") or data.get("resignations") or []
+        return raw if isinstance(raw, list) else []
+
+    # --- Cross-domain gossip + fingerprints ------------------------------
+
+    async def submit_domain_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        return await self._request("POST", "domain-fingerprints", body=_dc(fp))
+
     async def submit_anchor_gossip(self, message: AnchorGossipMessage) -> Dict[str, Any]:
         return await self._request("POST", "anchor-gossip", body=_dc(message))
+
+    async def push_anchor(self, message: AnchorGossipMessage) -> Dict[str, Any]:
+        return await self._request("POST", "gossip/push-anchor", body=_dc(message))
+
+    async def push_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        return await self._request("POST", "gossip/push-fingerprint", body=_dc(fp))
 
     async def get_latest_domain_fingerprint(self, domain: str) -> Optional[DomainFingerprint]:
         try:
@@ -522,14 +563,268 @@ class AsyncQuidnugClient:
             raise
         return _domain_fingerprint_from_wire(data)
 
+    # --- Bootstrap + nonce snapshots -------------------------------------
+
+    async def submit_nonce_snapshot(self, snapshot: NonceSnapshot) -> Dict[str, Any]:
+        return await self._request("POST", "nonce-snapshots", body=_dc(snapshot))
+
+    async def get_latest_nonce_snapshot(self, domain: str) -> Optional[NonceSnapshot]:
+        try:
+            data = await self._request(
+                "GET", f"nonce-snapshots/{quote(domain, safe='')}/latest",
+            )
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+        return _nonce_snapshot_from_wire(data)
+
+    async def bootstrap_status(self) -> Dict[str, Any]:
+        return await self._request("GET", "bootstrap/status")
+
+    # --- Fork-block ------------------------------------------------------
+
     async def submit_fork_block(self, fb: ForkBlock) -> Dict[str, Any]:
         return await self._request("POST", "fork-block", body=_dc(fb))
 
     async def fork_block_status(self) -> Dict[str, Any]:
         return await self._request("GET", "fork-block/status")
 
-    async def bootstrap_status(self) -> Dict[str, Any]:
-        return await self._request("GET", "bootstrap/status")
+    # --- Blocks + pending transactions -----------------------------------
+
+    async def get_blocks(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return await self._request(
+            "GET", "blocks", params=_strip_none({"limit": limit, "offset": offset}),
+        )
+
+    async def get_pending_transactions(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        return await self._request(
+            "GET", "transactions", params=_strip_none({"limit": limit, "offset": offset}),
+        )
+
+    # --- Domains ---------------------------------------------------------
+
+    async def list_domains(self) -> Dict[str, Any]:
+        return await self._request("GET", "domains")
+
+    async def register_domain(self, domain: str, **attrs: Any) -> Dict[str, Any]:
+        body = {"name": domain, **attrs}
+        return await self._request("POST", "domains", body=body)
+
+    async def ensure_domain(self, domain: str, **attrs: Any) -> Dict[str, Any]:
+        """Register the domain if it doesn't already exist. Idempotent."""
+        try:
+            return await self.register_domain(domain, **attrs)
+        except ValidationError as e:
+            if "already exists" in str(e).lower():
+                return {
+                    "status": "success",
+                    "domain": domain,
+                    "message": "trust domain already exists",
+                }
+            raise
+
+    # --- Wait helpers ----------------------------------------------------
+
+    async def wait_for_identity(
+        self,
+        quid_id: str,
+        *,
+        domain: Optional[str] = None,
+        timeout: float = 30.0,
+        poll: float = 0.5,
+    ) -> IdentityRecord:
+        """Block until ``quid_id`` is visible in the committed
+        identity registry, or raise ``TimeoutError``.
+
+        Identity transactions live in the pending pool until the
+        next block is sealed; code that immediately emits events
+        referencing the new quid must wait for commit first.
+        """
+        import time as _time
+
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            rec = await self.get_identity(quid_id, domain=domain)
+            if rec is not None:
+                return rec
+            await asyncio.sleep(poll)
+        raise TimeoutError(
+            f"identity {quid_id} did not commit within {timeout}s",
+        )
+
+    async def wait_for_identities(
+        self,
+        quid_ids: List[str],
+        *,
+        domain: Optional[str] = None,
+        timeout: float = 30.0,
+        poll: float = 0.5,
+    ) -> None:
+        """Block until every quid_id in the list is committed.
+        Shares a single deadline across all ids."""
+        import time as _time
+
+        deadline = _time.monotonic() + timeout
+        for qid in quid_ids:
+            remaining = max(0.0, deadline - _time.monotonic())
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"identities not all committed within {timeout}s "
+                    f"(blocked on {qid})",
+                )
+            await self.wait_for_identity(
+                qid, domain=domain, timeout=remaining, poll=poll,
+            )
+
+    async def wait_for_title(
+        self,
+        asset_id: str,
+        *,
+        domain: Optional[str] = None,
+        timeout: float = 30.0,
+        poll: float = 0.5,
+    ) -> Title:
+        """Block until ``asset_id`` is visible in the committed
+        title registry, or raise ``TimeoutError``."""
+        import time as _time
+
+        deadline = _time.monotonic() + timeout
+        while _time.monotonic() < deadline:
+            rec = await self.get_title(asset_id, domain=domain)
+            if rec is not None:
+                return rec
+            await asyncio.sleep(poll)
+        raise TimeoutError(
+            f"title {asset_id} did not commit within {timeout}s",
+        )
+
+    # --- Raw passthrough -------------------------------------------------
+
+    async def raw_get(self, path: str) -> bytes:
+        """GET ``path`` (without ``/api`` prefix; the client adds it)
+        and return the raw response body bytes. Mirrors the sync
+        ``QuidnugClient.raw_get``."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._owns_client = True
+        url = urljoin(self.api_base + "/", path.lstrip("/"))
+        headers = {"Accept": "application/json"}
+        if self._auth_header:
+            headers["Authorization"] = f"Bearer {self._auth_header}"
+        resp = await self._client.get(url, headers=headers)
+        body = resp.content
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise NodeError(
+                f"raw_get {path}: HTTP {resp.status_code}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return body
+
+    # --- QDP-0014: Node advertisement + discovery ------------------------
+
+    async def publish_node_advertisement(
+        self, signer: Quid, params: NodeAdvertisementParams,
+    ) -> Dict[str, Any]:
+        """POST /api/node-advertisements — async counterpart to
+        ``QuidnugClient.publish_node_advertisement``.
+
+        .. note::
+
+           Stub: requires the QDP-0014 wire dataclass + signing path
+           to land in ``quidnug.wire``. See the sync method's docstring.
+        """
+        # TODO(QDP-0014): mirror sync implementation once
+        # quidnug.wire.NodeAdvertisementTx lands.
+        raise NotImplementedError(
+            "publish_node_advertisement is not yet implemented in the "
+            "Python SDK; requires the QDP-0014 wire struct + signing "
+            "path to land in quidnug.wire. Track parity with the Go "
+            "SDK's Client.PublishNodeAdvertisement."
+        )
+
+    async def discover_domain(self, domain: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/domain/{domain}."""
+        if not domain:
+            raise ValidationError("domain is required")
+        return await self._request(
+            "GET", f"v2/discovery/domain/{quote(domain, safe='')}",
+        )
+
+    async def discover_node(self, quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/node/{quid}."""
+        if not quid:
+            raise ValidationError("quid is required")
+        return await self._request(
+            "GET", f"v2/discovery/node/{quote(quid, safe='')}",
+        )
+
+    async def discover_operator(self, operator_quid: str) -> Dict[str, Any]:
+        """GET /api/v2/discovery/operator/{operator_quid}."""
+        if not operator_quid:
+            raise ValidationError("operator_quid is required")
+        return await self._request(
+            "GET", f"v2/discovery/operator/{quote(operator_quid, safe='')}",
+        )
+
+    async def discover_quids(
+        self,
+        *,
+        domain: str,
+        since: Optional[int] = None,
+        sort: Optional[str] = None,
+        observer: Optional[str] = None,
+        event_type: Optional[str] = None,
+        min_trust_weight: Optional[float] = None,
+        exclude_quids: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/v2/discovery/quids — per-domain quid index."""
+        if not domain:
+            raise ValidationError("domain is required")
+        params: Dict[str, Any] = {"domain": domain}
+        if since is not None and since > 0:
+            params["since"] = since
+        if sort:
+            params["sort"] = sort
+        if observer:
+            params["observer"] = observer
+        if event_type:
+            params["eventType"] = event_type
+        if min_trust_weight is not None and min_trust_weight > 0:
+            params["min-trust-weight"] = min_trust_weight
+        if exclude_quids:
+            params["excludeQuid"] = ",".join(exclude_quids)
+        if limit is not None and limit > 0:
+            params["limit"] = limit
+        if offset is not None and offset > 0:
+            params["offset"] = offset
+        return await self._request("GET", "v2/discovery/quids", params=params)
+
+    async def discover_trusted_quids(
+        self,
+        domain: str,
+        *,
+        min_trust: Optional[float] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/v2/discovery/trusted-quids."""
+        if not domain:
+            raise ValidationError("domain is required")
+        params: Dict[str, Any] = {"domain": domain}
+        if min_trust is not None and min_trust > 0:
+            params["min-trust"] = min_trust
+        if limit is not None and limit > 0:
+            params["limit"] = limit
+        return await self._request(
+            "GET", "v2/discovery/trusted-quids", params=params,
+        )
 
 
 def _json_fallback(obj: Any) -> Any:
