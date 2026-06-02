@@ -10,9 +10,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.TimeoutException;
 
 import static com.quidnug.client.QuidnugException.*;
 
@@ -91,6 +93,54 @@ public final class QuidnugClient {
     public JsonNode blocks()       { return doGet("blocks"); }
     public JsonNode pendingTransactions() { return doGet("transactions"); }
     public JsonNode listDomains()  { return doGet("domains"); }
+
+    /**
+     * Lists known peers with pagination. {@code null} arguments mean
+     * "server default".
+     */
+    public JsonNode nodes(Integer limit, Integer offset) {
+        return doGet(appendPagination("nodes", limit, offset));
+    }
+
+    /** Paginated overload of {@link #blocks()}. */
+    public JsonNode getBlocks(Integer limit, Integer offset) {
+        return doGet(appendPagination("blocks", limit, offset));
+    }
+
+    /** Paginated overload of {@link #pendingTransactions()}. */
+    public JsonNode getPendingTransactions(Integer limit, Integer offset) {
+        return doGet(appendPagination("transactions", limit, offset));
+    }
+
+    /**
+     * Performs a GET against an ad-hoc path (no {@code /api} prefix; the
+     * client adds it) and returns the raw response body bytes. Useful
+     * for CLI tools and endpoints that don't yet have a typed wrapper.
+     * The returned bytes are the full JSON envelope — callers parse it
+     * themselves.
+     */
+    public byte[] rawGet(String path) {
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/" + path.replaceFirst("^/+", "")))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        try {
+            HttpResponse<byte[]> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+            int sc = resp.statusCode();
+            if (sc < 200 || sc >= 300) {
+                throw new NodeException("rawGet " + path + ": status " + sc, sc,
+                        new String(resp.body(), StandardCharsets.UTF_8));
+            }
+            return resp.body();
+        } catch (QuidnugException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new NodeException("rawGet " + path + ": " + e.getMessage(), e);
+        }
+    }
 
     // =====================================================================
     // Identity
@@ -400,6 +450,262 @@ public final class QuidnugClient {
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
 
     // =====================================================================
+    // Domain management
+    // =====================================================================
+
+    /**
+     * Submits a new trust domain to the node. Fails with an
+     * "already exists" conflict if the domain is already known;
+     * see {@link #ensureDomain} for an idempotent variant. The
+     * {@code attrs} map is merged into the POST body alongside
+     * {@code {"name": domain}}.
+     */
+    public JsonNode registerDomain(String domain, Map<String, Object> attrs) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", domain);
+        if (attrs != null) body.putAll(attrs);
+        return doPost("domains", body);
+    }
+
+    /**
+     * Registers a trust domain if it does not already exist. Idempotent —
+     * calling it twice is cheap and does not error.
+     *
+     * <p>This is the recommended way for demo code and bootstrap scripts
+     * to guarantee a domain is registered before issuing identity, trust,
+     * title, or event transactions against it. Every non-default domain
+     * must be registered first; the node rejects any tx whose
+     * trust-domain is unknown.
+     */
+    public JsonNode ensureDomain(String domain, Map<String, Object> attrs) {
+        try {
+            return registerDomain(domain, attrs);
+        } catch (ConflictException | ValidationException e) {
+            String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
+            if (msg.contains("already exists")) {
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("status", "success");
+                out.put("domain", domain);
+                out.put("message", "trust domain already exists");
+                return MAPPER.valueToTree(out);
+            }
+            throw e;
+        }
+    }
+
+    // =====================================================================
+    // QDP-0014: Discovery
+    // =====================================================================
+
+    /** Returns the current consortium, endpoint hints, and block tip for a domain. */
+    public JsonNode discoverDomain(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("v2/discovery/domain/" + urlencode(domain));
+    }
+
+    /** Returns the raw signed advertisement for a quid. */
+    public JsonNode discoverNode(String quid) {
+        if (quid == null || quid.isEmpty())
+            throw new ValidationException("quid is required");
+        return doGet("v2/discovery/node/" + urlencode(quid));
+    }
+
+    /** Lists all advertisements for a given operator quid. */
+    public JsonNode discoverOperator(String operatorQuid) {
+        if (operatorQuid == null || operatorQuid.isEmpty())
+            throw new ValidationException("operatorQuid is required");
+        return doGet("v2/discovery/operator/" + urlencode(operatorQuid));
+    }
+
+    /** Queries the per-domain quid index. */
+    public JsonNode discoverQuids(Types.DiscoverQuidsParams p) {
+        if (p == null || p.domain == null || p.domain.isEmpty())
+            throw new ValidationException("domain is required");
+        StringBuilder q = new StringBuilder("v2/discovery/quids?domain=").append(urlencode(p.domain));
+        if (p.since > 0)            q.append("&since=").append(p.since);
+        if (p.sort != null)         q.append("&sort=").append(urlencode(p.sort));
+        if (p.observer != null)     q.append("&observer=").append(urlencode(p.observer));
+        if (p.eventType != null)    q.append("&eventType=").append(urlencode(p.eventType));
+        if (p.minTrustWeight > 0)   q.append("&min-trust-weight=").append(p.minTrustWeight);
+        if (p.excludeQuids != null && !p.excludeQuids.isEmpty())
+            q.append("&excludeQuid=").append(urlencode(String.join(",", p.excludeQuids)));
+        if (p.limit > 0)            q.append("&limit=").append(p.limit);
+        if (p.offset > 0)           q.append("&offset=").append(p.offset);
+        return doGet(q.toString());
+    }
+
+    /**
+     * Returns quids the consortium members have directly TRUSTed above
+     * the given threshold. {@code minTrust} of 0 and {@code limit} of 0
+     * mean "server default".
+     */
+    public JsonNode discoverTrustedQuids(String domain, Double minTrust, Integer limit) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        StringBuilder q = new StringBuilder("v2/discovery/trusted-quids?domain=").append(urlencode(domain));
+        if (minTrust != null && minTrust > 0)
+            q.append("&min-trust=").append(minTrust);
+        if (limit != null && limit > 0)
+            q.append("&limit=").append(limit);
+        return doGet(q.toString());
+    }
+
+    // =====================================================================
+    // QDP-0014: Node advertisement
+    // =====================================================================
+
+    /**
+     * Builds, signs, and submits a QDP-0014 NODE_ADVERTISEMENT transaction.
+     * The signer's keypair is the node's own; {@code NodeQuid} is derived
+     * from {@code signer.id()}. The OperatorQuid must have a current direct
+     * TRUST edge (weight ≥ 0.5) to the node, otherwise the node rejects
+     * the submission.
+     *
+     * <p>Signing follows the typed-struct convention: a {@code LinkedHashMap}
+     * preserves the field order required to match the server's struct so
+     * the JSON bytes are byte-identical for signature verification.
+     */
+    public JsonNode publishNodeAdvertisement(Quid signer, Types.NodeAdvertisementParams p) {
+        requireSigner(signer);
+        if (p == null)
+            throw new ValidationException("params are required");
+        if (p.operatorQuid == null || p.operatorQuid.isEmpty())
+            throw new ValidationException("operatorQuid is required");
+        if (p.endpoints == null || p.endpoints.isEmpty())
+            throw new ValidationException("at least one endpoint is required");
+        if (p.advertisementNonce <= 0)
+            throw new ValidationException("advertisementNonce must be positive");
+        if (p.domain == null || p.domain.isEmpty())
+            throw new ValidationException("domain is required (typically operators.network.<your-domain>)");
+        Duration ttl = p.ttl != null ? p.ttl : Duration.ofHours(6);
+        if (ttl.compareTo(Duration.ofDays(7)) > 0)
+            throw new ValidationException("ttl must be <= 7 days");
+        String protoVer = (p.protocolVersion == null || p.protocolVersion.isEmpty())
+                ? "1.0" : p.protocolVersion;
+
+        Instant now = Instant.now();
+        long nowUnix = now.getEpochSecond();
+        Instant exp = now.plus(ttl);
+        // Match Go's time.UnixNano(): seconds*1e9 + nanos within second.
+        long expiresNanos = exp.getEpochSecond() * 1_000_000_000L + exp.getNano();
+
+        byte[] idRaw = new byte[16];
+        new SecureRandom().nextBytes(idRaw);
+        String idHex = Hex.encode(idRaw);
+
+        // Field order MUST match nodeAdvertisementWire in pkg/client/client.go.
+        // signature is initially empty for canonical signing bytes.
+        Map<String, Object> tx = new LinkedHashMap<>();
+        tx.put("id",                 idHex);
+        tx.put("type",               "NODE_ADVERTISEMENT");
+        tx.put("trustDomain",        p.domain);
+        tx.put("timestamp",          nowUnix);
+        tx.put("signature",          "");
+        tx.put("publicKey",          signer.publicKeyHex());
+        tx.put("nodeQuid",           signer.id());
+        tx.put("operatorQuid",       p.operatorQuid);
+        tx.put("endpoints",          p.endpoints);
+        if (p.supportedDomains != null && !p.supportedDomains.isEmpty())
+            tx.put("supportedDomains", p.supportedDomains);
+        tx.put("capabilities",       p.capabilities != null ? p.capabilities : new Types.NodeAdvertCapabilities());
+        tx.put("protocolVersion",    protoVer);
+        tx.put("expiresAt",          expiresNanos);
+        tx.put("advertisementNonce", p.advertisementNonce);
+
+        // Sign the JSON bytes of the typed struct (Signature field cleared).
+        // The server verifies via json.Marshal on its typed struct, so we
+        // serialize via Jackson with default field order = insertion order.
+        byte[] signable;
+        try {
+            signable = MAPPER.writeValueAsBytes(tx);
+        } catch (Exception e) {
+            throw new ValidationException("marshal node advertisement: " + e.getMessage());
+        }
+        try {
+            tx.put("signature", signer.sign(signable));
+        } catch (GeneralSecurityException e) {
+            throw new CryptoException("sign: " + e.getMessage());
+        }
+        return doPost("node-advertisements", tx);
+    }
+
+    // =====================================================================
+    // Wait helpers
+    // =====================================================================
+
+    /**
+     * Blocks until the identity with the given quid ID is visible in the
+     * committed registry, or throws {@link TimeoutException} on timeout.
+     * Defaults: {@code pollInterval = 500ms}, {@code timeout = 30s}.
+     */
+    public Types.IdentityRecord waitForIdentity(String quidId, String domain,
+                                                Duration pollInterval, Duration timeout)
+            throws TimeoutException {
+        Duration interval = pollInterval != null ? pollInterval : Duration.ofMillis(500);
+        Duration deadline = timeout != null ? timeout : Duration.ofSeconds(30);
+        long start = System.nanoTime();
+        long deadlineNanos = deadline.toNanos();
+        while (true) {
+            Types.IdentityRecord rec = getIdentity(quidId, domain);
+            if (rec != null) return rec;
+            if (System.nanoTime() - start >= deadlineNanos)
+                throw new TimeoutException("waitForIdentity " + quidId + ": deadline exceeded");
+            try {
+                Thread.sleep(interval.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TimeoutException("waitForIdentity " + quidId + ": interrupted");
+            }
+        }
+    }
+
+    /**
+     * Blocks until every listed quid ID is committed, sharing one deadline
+     * across all ids.
+     */
+    public void waitForIdentities(List<String> quidIds, String domain,
+                                  Duration pollInterval, Duration timeout)
+            throws TimeoutException {
+        Duration interval = pollInterval != null ? pollInterval : Duration.ofMillis(500);
+        Duration overall  = timeout != null ? timeout : Duration.ofSeconds(30);
+        long start = System.nanoTime();
+        long deadlineNanos = overall.toNanos();
+        for (String id : quidIds) {
+            long remaining = deadlineNanos - (System.nanoTime() - start);
+            if (remaining <= 0)
+                throw new TimeoutException("waitForIdentities: deadline exceeded before " + id);
+            waitForIdentity(id, domain, interval, Duration.ofNanos(remaining));
+        }
+    }
+
+    /**
+     * Blocks until the title with the given asset ID is visible in the
+     * committed registry, or throws {@link TimeoutException} on timeout.
+     * Defaults: {@code pollInterval = 500ms}, {@code timeout = 30s}.
+     */
+    public Types.Title waitForTitle(String assetId, String domain,
+                                    Duration pollInterval, Duration timeout)
+            throws TimeoutException {
+        Duration interval = pollInterval != null ? pollInterval : Duration.ofMillis(500);
+        Duration deadline = timeout != null ? timeout : Duration.ofSeconds(30);
+        long start = System.nanoTime();
+        long deadlineNanos = deadline.toNanos();
+        while (true) {
+            Types.Title t = getTitle(assetId, domain);
+            if (t != null) return t;
+            if (System.nanoTime() - start >= deadlineNanos)
+                throw new TimeoutException("waitForTitle " + assetId + ": deadline exceeded");
+            try {
+                Thread.sleep(interval.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TimeoutException("waitForTitle " + assetId + ": interrupted");
+            }
+        }
+    }
+
+    // =====================================================================
     // Param objects (fluent builders)
     // =====================================================================
 
@@ -618,5 +924,19 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static String appendPagination(String path, Integer limit, Integer offset) {
+        boolean hasLimit  = limit  != null && limit  > 0;
+        boolean hasOffset = offset != null && offset > 0;
+        if (!hasLimit && !hasOffset) return path;
+        StringBuilder sb = new StringBuilder(path);
+        sb.append(path.indexOf('?') >= 0 ? '&' : '?');
+        if (hasLimit) {
+            sb.append("limit=").append(limit);
+            if (hasOffset) sb.append('&');
+        }
+        if (hasOffset) sb.append("offset=").append(offset);
+        return sb.toString();
     }
 }

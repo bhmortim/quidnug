@@ -1,11 +1,11 @@
 //! # Quidnug Rust SDK
 //!
 //! The official Rust client for [Quidnug], a decentralized protocol
-//! for relational, per-observer trust. Covers the full protocol
-//! surface (QDPs 0001–0010): identity, trust, titles, event streams,
+//! for relational, per-observer trust. API parity with the canonical
+//! Go SDK in `pkg/client`: identity, trust, titles, event streams,
 //! anchors, guardian sets + recovery, cross-domain gossip, K-of-K
-//! bootstrap, fork-block activation, and compact Merkle inclusion
-//! proofs.
+//! bootstrap, fork-block activation, node-advertisement discovery
+//! (QDP-0014), and compact Merkle inclusion proofs.
 //!
 //! ## Thirty-second example
 //!
@@ -49,6 +49,10 @@ pub use crypto::Quid;
 pub use error::{Error, Result};
 pub use merkle::{verify_inclusion_proof, MerkleProofFrame};
 pub use types::{
-    DomainFingerprint, Event, ForkBlock, GuardianRef, GuardianSet, IdentityRecord,
-    NonceSnapshot, OwnershipStake, Title, TrustEdge, TrustResult,
+    AnchorGossipMessage, DiscoverQuidsParams, DomainFingerprint, Event, EventParams, ForkBlock,
+    ForkSig, GuardianRecoveryCommit, GuardianRecoveryInit, GuardianRecoveryVeto,
+    GuardianRef, GuardianResignation, GuardianSet, GuardianSetUpdate, GuardianSignature,
+    IdentityRecord, MerkleProofFrameWire, NodeAdvertCapabilities, NodeAdvertEndpoint,
+    NodeAdvertisementParams, NonceSnapshot, NonceSnapshotEntry, OwnershipStake, Pagination,
+    PrimarySignature, Title, TitleParams, TrustEdge, TrustResult,
 };

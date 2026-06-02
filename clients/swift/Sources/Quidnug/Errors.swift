@@ -23,6 +23,9 @@ public enum QuidnugError: Error, CustomStringConvertible, Sendable {
     /// Invalid hex encoding — used during CanonicalBytes / Merkle paths.
     case badHex
 
+    /// Method not yet implemented in this SDK build.
+    case unsupported(String)
+
     public var description: String {
         switch self {
         case .validation(let m): return "validation: \(m)"
@@ -32,6 +35,7 @@ public enum QuidnugError: Error, CustomStringConvertible, Sendable {
         case .crypto(let m): return "crypto: \(m)"
         case .readOnly: return "quid is read-only"
         case .badHex: return "invalid hex string"
+        case .unsupported(let m): return "unsupported: \(m)"
         }
     }
 }

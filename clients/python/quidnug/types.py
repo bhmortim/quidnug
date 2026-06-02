@@ -300,6 +300,67 @@ class TrustResult:
     domain: str
 
 
+# --- QDP-0014: Node advertisement -----------------------------------------
+
+
+@dataclass
+class NodeAdvertEndpoint:
+    """One reachable URL for a node, with routing hints.
+
+    Mirrors ``core.NodeEndpoint``. ``url`` must be https://.
+    ``priority`` is 0..100 (lower = preferred); ``weight`` is
+    0..10000 (equal-priority round-robin).
+    """
+
+    url: str
+    priority: int = 0
+    weight: int = 0
+    protocol: Optional[str] = None  # "http/1.1" | "http/2" | "http/3" | "grpc"
+    region: Optional[str] = None    # free-form; suggested "iad" | "lhr" | "sin"
+
+
+@dataclass
+class NodeAdvertCapabilities:
+    """What a node is willing to do for clients.
+
+    Mirrors ``core.NodeCapabilities``. ``validator=True`` is only
+    honored if the node is also in some domain's validators map.
+    """
+
+    validator: bool = False
+    cache: bool = False
+    archive: bool = False
+    bootstrap: bool = False
+    gossip_sink: bool = False
+    ipfs_gateway: bool = False
+    max_body_bytes: int = 0
+    min_peer_protocol: str = ""
+
+
+@dataclass
+class NodeAdvertisementParams:
+    """Caller-supplied arguments for ``publish_node_advertisement``.
+
+    ``domain`` is the trust domain the advertisement is emitted
+    in — typically ``operators.network.<your-domain>``. ``ttl``
+    is the time until the advertisement expires (in seconds);
+    capped at 7 days server-side.
+
+    ``advertisement_nonce`` must be strictly positive and
+    monotonically increasing per node quid; the node rejects
+    replays.
+    """
+
+    operator_quid: str
+    endpoints: List[NodeAdvertEndpoint]
+    capabilities: NodeAdvertCapabilities
+    advertisement_nonce: int
+    domain: str
+    supported_domains: List[str] = field(default_factory=list)
+    protocol_version: str = "1.0"
+    ttl_seconds: int = 0  # 0 -> default 6h; max 7 days
+
+
 __all__ = [
     "TrustEdge",
     "IdentityRecord",
@@ -325,4 +386,7 @@ __all__ = [
     "ForkSig",
     "ForkBlock",
     "TrustResult",
+    "NodeAdvertEndpoint",
+    "NodeAdvertCapabilities",
+    "NodeAdvertisementParams",
 ]

@@ -70,10 +70,15 @@ const ok = await QuidnugClient.verifyInclusionProof(
 
 | Area | Methods |
 | --- | --- |
+| Node | `health`, `info`, `rawGet` |
+| Discovery (QDP-0014) | `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain` |
+| Wait helpers | `waitForIdentity`, `waitForIdentities`, `waitForTitle` |
 | Guardians | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
 | Gossip | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `getBootstrapStatus` |
 | Fork-block | `submitForkBlock`, `getForkBlockStatus` |
+| Node advertisement | `publishNodeAdvertisement` (signed; not yet implemented in JS — use Go SDK) |
 | Static helpers | `QuidnugClient.verifyInclusionProof`, `QuidnugClient.canonicalBytes`, `QuidnugClient.bytesToHex`, `QuidnugClient.hexToBytes` |
 
 ### Canonicalization

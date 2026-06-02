@@ -46,16 +46,43 @@ from quidnug.types import (
     Block,
     DomainFingerprint,
     AnchorGossipMessage,
+    NodeAdvertCapabilities,
+    NodeAdvertEndpoint,
+    NodeAdvertisementParams,
     NonceSnapshot,
     ForkBlock,
     MerkleProofFrame,
 )
 from quidnug.merkle import verify_inclusion_proof
 
+# Short-form aliases. The Go SDK names its type ``Client``; we
+# preserve ``QuidnugClient`` for backward compatibility but
+# expose ``Client`` / ``AsyncClient`` as the canonical names.
+Client = QuidnugClient
+
+
+def __getattr__(name: str):  # pragma: no cover - import-time shim
+    """Lazy re-export of ``AsyncClient`` / ``AsyncQuidnugClient``.
+
+    The async client depends on ``httpx``, which is optional
+    (installed via the ``async`` extra). We import lazily so that
+    plain ``import quidnug`` keeps working when httpx is absent —
+    the import error only fires when the caller actually touches
+    the async surface.
+    """
+    if name in ("AsyncClient", "AsyncQuidnugClient"):
+        from quidnug.async_client import AsyncQuidnugClient as _AC
+        return _AC
+    raise AttributeError(f"module 'quidnug' has no attribute {name!r}")
+
+
 __version__ = "2.0.0"
 __all__ = [
     "__version__",
+    "Client",
+    "AsyncClient",
     "QuidnugClient",
+    "AsyncQuidnugClient",
     "Quid",
     "canonical_bytes",
     "sign_bytes",
@@ -79,6 +106,9 @@ __all__ = [
     "Block",
     "DomainFingerprint",
     "AnchorGossipMessage",
+    "NodeAdvertCapabilities",
+    "NodeAdvertEndpoint",
+    "NodeAdvertisementParams",
     "NonceSnapshot",
     "ForkBlock",
     "MerkleProofFrame",

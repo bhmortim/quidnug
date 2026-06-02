@@ -158,11 +158,94 @@ export interface ForkBlock {
 }
 
 // ============================================================================
+// Discovery + wait helpers
+// ============================================================================
+
+export interface DiscoverQuidsParams {
+  domain: string;
+  since?: number;
+  sort?: "activity" | "last-seen" | "first-seen" | "trust-weight";
+  observer?: string;
+  eventType?: string;
+  minTrustWeight?: number;
+  excludeQuids?: string[];
+  limit?: number;
+  offset?: number;
+}
+
+export interface WaitForOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  signal?: AbortSignal;
+}
+
+export interface NodeAdvertisementParams {
+  domain: string;
+  operatorQuid: string;
+  endpoints: string[];
+  supportedDomains?: string[];
+  capabilities?: Record<string, unknown>;
+  protocolVersion?: string;
+  ttl?: number;
+  advertisementNonce: number;
+}
+
+// ============================================================================
 // Client method augmentations
 // ============================================================================
 
 declare module "./quidnug-client.js" {
   interface QuidnugClient {
+    // Health / info / raw
+    health(): Promise<Record<string, unknown>>;
+    info(): Promise<Record<string, unknown>>;
+    rawGet(path: string): Promise<string>;
+
+    // Discovery (QDP-0014)
+    discoverDomain(domain: string): Promise<Record<string, unknown>>;
+    discoverNode(quid: string): Promise<Record<string, unknown>>;
+    discoverOperator(operatorQuid: string): Promise<Record<string, unknown>>;
+    discoverQuids(params: DiscoverQuidsParams): Promise<Record<string, unknown>>;
+    discoverTrustedQuids(
+      domain: string,
+      minTrust?: number,
+      limit?: number,
+    ): Promise<Record<string, unknown>>;
+
+    // Domain registry
+    listDomains(): Promise<Record<string, unknown>>;
+    registerDomain(
+      domain: string,
+      attrs?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>>;
+    ensureDomain(
+      domain: string,
+      attrs?: Record<string, unknown>,
+    ): Promise<Record<string, unknown>>;
+
+    // Wait helpers
+    waitForIdentity(
+      quidId: string,
+      domain?: string,
+      opts?: WaitForOptions,
+    ): Promise<Record<string, unknown>>;
+    waitForIdentities(
+      quidIds: string[],
+      domain?: string,
+      opts?: WaitForOptions,
+    ): Promise<void>;
+    waitForTitle(
+      assetId: string,
+      domain?: string,
+      opts?: WaitForOptions,
+    ): Promise<Record<string, unknown>>;
+
+    // Node advertisement (signed; QDP-0014) -- not yet implemented
+    publishNodeAdvertisement(
+      quid: unknown,
+      params: NodeAdvertisementParams,
+    ): Promise<Record<string, unknown>>;
+
     // Guardians
     submitGuardianSetUpdate(update: GuardianSetUpdate): Promise<unknown>;
     submitRecoveryInit(init: GuardianRecoveryInit): Promise<unknown>;

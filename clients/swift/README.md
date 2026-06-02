@@ -2,8 +2,11 @@
 
 iOS 15+ / macOS 12+ client SDK for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust. Covers the v2 protocol
+surface (QDPs 0001–0010, plus QDP-0014 discovery queries). One
+QDP-0014 write — `publishNodeAdvertisement` — is currently stubbed
+pending a field-order-deterministic JSON encoder; all read paths
+work today.
 
 Uses Apple's `CryptoKit` for ECDSA P-256 (no C dependencies, no
 App Store review friction) and `URLSession` for HTTP.
@@ -73,15 +76,19 @@ method uses `async throws`.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
+| Health | `health`, `info`, `nodes(limit:offset:)`, `rawGet` |
+| Identity | `registerIdentity`, `getIdentity`, `waitForIdentity`, `waitForIdentities` |
 | Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Title | `registerTitle`, `getTitle`, `waitForTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
 | Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Guardian recovery (QDP-0006) | `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getPendingRecovery` |
+| Gossip (QDP-0003, QDP-0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Discovery (QDP-0014) | `discoverDomain`, `discoverNode`, `discoverOperator`, `discoverQuids`, `discoverTrustedQuids` |
+| Node advertisement (QDP-0014) | `publishNodeAdvertisement` (stub — throws `QuidnugError.unsupported`; pending field-order-deterministic encoder) |
+| Blocks / domains / txs | `getBlocks`, `getPendingTransactions`, `listDomains`, `registerDomain`, `ensureDomain` |
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -199,7 +206,7 @@ Tests ship under `Tests/QuidnugTests/`:
 
 | SDK | Node | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0010, 0014 (read paths) |
 
 ## License
 
