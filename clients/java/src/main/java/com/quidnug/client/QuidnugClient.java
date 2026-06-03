@@ -92,6 +92,69 @@ public final class QuidnugClient {
     public JsonNode pendingTransactions() { return doGet("transactions"); }
     public JsonNode listDomains()  { return doGet("domains"); }
 
+    /**
+     * GET /api/blocks/tentative/{domain} — list blocks proposed but not
+     * yet finalized for the given domain.
+     */
+    public JsonNode tentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    // =====================================================================
+    // Domain management
+    // =====================================================================
+
+    /**
+     * GET /api/node/domains — domains this node currently manages.
+     */
+    public JsonNode nodeDomains() {
+        return doGet("node/domains");
+    }
+
+    /**
+     * POST /api/node/domains — replace the set of domains managed by
+     * this node.
+     */
+    public JsonNode updateNodeDomains(java.util.List<String> domains) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("managedDomains", domains == null ? Collections.emptyList() : domains);
+        return doPost("node/domains", body);
+    }
+
+    /**
+     * POST /api/domains — register a new trust domain by name.
+     */
+    public JsonNode registerDomain(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", domain);
+        return doPost("domains", body);
+    }
+
+    /**
+     * Idempotent wrapper around {@link #registerDomain(String)}. If the
+     * server reports the domain already exists, returns a synthetic
+     * success node rather than throwing.
+     */
+    public JsonNode ensureDomain(String domain) {
+        try {
+            return registerDomain(domain);
+        } catch (QuidnugException e) {
+            String msg = e.getMessage();
+            if (msg != null && msg.toLowerCase(Locale.ROOT).contains("already exists")) {
+                com.fasterxml.jackson.databind.node.ObjectNode n = MAPPER.createObjectNode();
+                n.put("status", "success");
+                n.put("domain", domain);
+                n.put("message", "trust domain already exists");
+                return n;
+            }
+            throw e;
+        }
+    }
+
     // =====================================================================
     // Identity
     // =====================================================================
@@ -133,6 +196,18 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * GET /api/registry/identity — paginated registry dump. Any parameter
+     * may be {@code null} to omit it.
+     */
+    public JsonNode queryIdentityRegistry(String quidId, Integer limit, Integer offset) {
+        StringBuilder q = new StringBuilder();
+        appendQueryParam(q, "quid_id", quidId);
+        appendQueryParam(q, "limit", limit);
+        appendQueryParam(q, "offset", offset);
+        return doGet("registry/identity" + q);
+    }
+
     // =====================================================================
     // Trust
     // =====================================================================
@@ -166,6 +241,41 @@ public final class QuidnugClient {
         } catch (Exception e) {
             throw new NodeException("decode trust result: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * POST /api/trust/query — structured relational trust query. Returns
+     * the same shape as {@link #getTrust(String, String, String, int)}
+     * but uses a JSON body rather than path-encoded params.
+     */
+    public Types.TrustResult queryRelationalTrust(String observer, String target,
+                                                  String domain, int maxDepth) {
+        if (observer == null || observer.isEmpty() || target == null || target.isEmpty())
+            throw new ValidationException("observer and target are required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", domain == null ? "default" : domain);
+        body.put("maxDepth", maxDepth);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust result: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * GET /api/registry/trust — paginated trust-edge listing. Any
+     * parameter may be {@code null} to omit it.
+     */
+    public JsonNode queryTrustRegistry(String truster, String trustee,
+                                       Integer limit, Integer offset) {
+        StringBuilder q = new StringBuilder();
+        appendQueryParam(q, "truster", truster);
+        appendQueryParam(q, "trustee", trustee);
+        appendQueryParam(q, "limit", limit);
+        appendQueryParam(q, "offset", offset);
+        return doGet("registry/trust" + q);
     }
 
     @SuppressWarnings("unchecked")
@@ -226,6 +336,20 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * GET /api/registry/title — paginated title-registry listing. Any
+     * parameter may be {@code null} to omit it.
+     */
+    public JsonNode queryTitleRegistry(String assetId, String ownerId,
+                                       Integer limit, Integer offset) {
+        StringBuilder q = new StringBuilder();
+        appendQueryParam(q, "asset_id", assetId);
+        appendQueryParam(q, "owner_id", ownerId);
+        appendQueryParam(q, "limit", limit);
+        appendQueryParam(q, "offset", offset);
+        return doGet("registry/title" + q);
+    }
+
     // =====================================================================
     // Events + streams
     // =====================================================================
@@ -283,11 +407,7 @@ public final class QuidnugClient {
     }
 
     public List<Types.Event> getStreamEvents(String subjectId, String domain, int limit, int offset) {
-        StringBuilder path = new StringBuilder("streams/").append(urlencode(subjectId)).append("/events?");
-        if (domain != null) path.append("domain=").append(urlencode(domain)).append("&");
-        if (limit > 0) path.append("limit=").append(limit).append("&");
-        if (offset > 0) path.append("offset=").append(offset);
-        JsonNode j = doGet(path.toString());
+        JsonNode j = getStreamEventsRaw(subjectId, domain, limit, offset);
         JsonNode arr = j.has("data") ? j.get("data") : j.get("events");
         if (arr == null || !arr.isArray()) return Collections.emptyList();
         List<Types.Event> out = new ArrayList<>(arr.size());
@@ -297,6 +417,80 @@ public final class QuidnugClient {
             throw new NodeException("decode events: " + e.getMessage(), e);
         }
         return out;
+    }
+
+    /**
+     * GET /api/streams/{subjectId}/events — raw envelope-unwrapped JSON,
+     * preserving the {@code pagination} block for callers that need it.
+     */
+    public JsonNode getStreamEventsRaw(String subjectId, String domain, int limit, int offset) {
+        StringBuilder path = new StringBuilder("streams/").append(urlencode(subjectId)).append("/events");
+        StringBuilder q = new StringBuilder();
+        if (domain != null) appendQueryParam(q, "domain", domain);
+        if (limit > 0) appendQueryParam(q, "limit", limit);
+        if (offset > 0) appendQueryParam(q, "offset", offset);
+        path.append(q);
+        return doGet(path.toString());
+    }
+
+    // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /**
+     * POST /api/ipfs/pin — pin raw bytes to IPFS and return the CID.
+     * Bypasses the JSON {@link #doPost} helper to send the body as
+     * {@code application/octet-stream}.
+     */
+    public String ipfsPin(byte[] content) {
+        if (content == null) throw new ValidationException("content is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+
+        HttpResponse<String> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new NodeException("POST ipfs/pin: " + e.getMessage(), e);
+        }
+        JsonNode data = parseEnvelope(resp);
+        String cid = data.path("cid").asText(null);
+        if (cid == null || cid.isEmpty()) cid = data.path("value").asText(null);
+        if (cid == null || cid.isEmpty())
+            throw new NodeException("IPFS pin response missing cid", resp.statusCode(), resp.body());
+        return cid;
+    }
+
+    /**
+     * GET /api/ipfs/{cid} — fetch raw bytes from IPFS.
+     */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty()) throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+
+        HttpResponse<byte[]> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+        } catch (Exception e) {
+            throw new NodeException("GET ipfs/" + cid + ": " + e.getMessage(), e);
+        }
+        int sc = resp.statusCode();
+        if (sc >= 400) {
+            String body = resp.body() == null ? "" : new String(resp.body(), StandardCharsets.UTF_8);
+            throw new NodeException("IPFS fetch failed (HTTP " + sc + ")", sc, body);
+        }
+        return resp.body();
     }
 
     // =====================================================================
@@ -343,6 +537,31 @@ public final class QuidnugClient {
             if ("NOT_FOUND".equals(e.details().get("code"))) return null;
             throw e;
         }
+    }
+
+    /**
+     * GET /api/guardian/resignations/{quidId} — pending guardian
+     * resignations for the subject. Returns the inner array (unwrapped
+     * from {@code data} or {@code resignations}) or an empty node when
+     * no resignations are pending.
+     */
+    public JsonNode guardianResignations(String quidId) {
+        if (quidId == null || quidId.isEmpty())
+            throw new ValidationException("quidId is required");
+        JsonNode data;
+        try {
+            data = doGet("guardian/resignations/" + urlencode(quidId));
+        } catch (ValidationException e) {
+            if ("NOT_FOUND".equals(e.details().get("code")))
+                return MAPPER.createArrayNode();
+            throw e;
+        }
+        if (data == null || data.isNull()) return MAPPER.createArrayNode();
+        if (data.isArray()) return data;
+        if (data.has("data") && data.get("data").isArray()) return data.get("data");
+        if (data.has("resignations") && data.get("resignations").isArray())
+            return data.get("resignations");
+        return data;
     }
 
     // =====================================================================
@@ -618,5 +837,20 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    /**
+     * Append {@code key=value} to a query-string builder, prefixing
+     * {@code ?} or {@code &} as needed. {@code null} values are skipped
+     * so callers can pass through optional parameters verbatim.
+     */
+    private static void appendQueryParam(StringBuilder q, String key, Object value) {
+        if (value == null) return;
+        String s = String.valueOf(value);
+        if (s.isEmpty()) return;
+        q.append(q.length() == 0 ? '?' : '&')
+         .append(urlencode(key))
+         .append('=')
+         .append(urlencode(s));
     }
 }

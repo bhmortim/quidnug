@@ -66,6 +66,71 @@ Runnable examples live in `examples/`:
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
 
+## Full API surface
+
+Every endpoint on the reference node has a corresponding typed method
+on `Client`. Methods mirror the Python `QuidnugClient` one-for-one.
+The cross-language matrix (Rust method ↔ JS / Java / Swift / .NET
+counterpart) lives at
+[`docs/sdk-coverage.md`](../../docs/sdk-coverage.md).
+
+| Area | Method | Endpoint |
+| --- | --- | --- |
+| Health / info | `health` | `GET /api/health` |
+| Health / info | `info` | `GET /api/info` |
+| Health / info | `nodes` | `GET /api/nodes` |
+| Identity | `register_identity` | `POST /api/transactions/identity` |
+| Identity | `get_identity` | `GET /api/identity/{quid}` |
+| Identity | `query_identity_registry` | `GET /api/registry/identity` |
+| Identity | `wait_for_identity` | polls `get_identity` |
+| Identity | `wait_for_identities` | polls `get_identity` over a batch |
+| Trust | `grant_trust` | `POST /api/transactions/trust` |
+| Trust | `get_trust` | `GET /api/trust/{observer}/{target}` |
+| Trust | `query_relational_trust` | `POST /api/trust/query` |
+| Trust | `get_trust_edges` | `GET /api/trust/edges/{quid}` |
+| Trust | `query_trust_registry` | `GET /api/registry/trust` |
+| Title | `register_title` | `POST /api/transactions/title` |
+| Title | `get_title` | `GET /api/title/{asset}` |
+| Title | `query_title_registry` | `GET /api/registry/title` |
+| Title | `wait_for_title` | polls `get_title` |
+| Events | `emit_event` | `POST /api/events` |
+| Events | `get_event_stream` | `GET /api/streams/{subject}` |
+| Events | `get_stream_events` | `GET /api/streams/{subject}/events` |
+| Storage | `ipfs_pin` | `POST /api/ipfs/pin` |
+| Storage | `ipfs_get` | `GET /api/ipfs/{cid}` |
+| Guardians | `submit_guardian_set_update` | `POST /api/guardian/set-update` |
+| Guardians | `submit_recovery_init` | `POST /api/guardian/recovery/init` |
+| Guardians | `submit_recovery_veto` | `POST /api/guardian/recovery/veto` |
+| Guardians | `submit_recovery_commit` | `POST /api/guardian/recovery/commit` |
+| Guardians | `submit_guardian_resignation` | `POST /api/guardian/resign` |
+| Guardians | `get_guardian_set` | `GET /api/guardian/set/{quid}` |
+| Guardians | `get_pending_recovery` | `GET /api/guardian/pending-recovery/{quid}` |
+| Guardians | `get_guardian_resignations` | `GET /api/guardian/resignations/{quid}` |
+| Gossip | `submit_domain_fingerprint` | `POST /api/domain-fingerprints` |
+| Gossip | `get_latest_domain_fingerprint` | `GET /api/domain-fingerprints/{domain}/latest` |
+| Gossip | `submit_anchor_gossip` | `POST /api/anchor-gossip` |
+| Gossip | `push_anchor` | `POST /api/gossip/push-anchor` |
+| Gossip | `push_fingerprint` | `POST /api/gossip/push-fingerprint` |
+| Bootstrap | `submit_nonce_snapshot` | `POST /api/nonce-snapshots` |
+| Bootstrap | `get_latest_nonce_snapshot` | `GET /api/nonce-snapshots/{domain}/latest` |
+| Bootstrap | `bootstrap_status` | `GET /api/bootstrap/status` |
+| Fork-block | `submit_fork_block` | `POST /api/fork-block` |
+| Fork-block | `fork_block_status` | `GET /api/fork-block/status` |
+| Blocks | `get_blocks` | `GET /api/blocks` |
+| Blocks | `get_tentative_blocks` | `GET /api/blocks/tentative/{domain}` |
+| Blocks | `get_pending_transactions` | `GET /api/transactions` |
+| Domains | `list_domains` | `GET /api/domains` |
+| Domains | `register_domain` | `POST /api/domains` |
+| Domains | `ensure_domain` | idempotent `register_domain` wrapper |
+| Domains | `get_node_domains` | `GET /api/node/domains` |
+| Domains | `update_node_domains` | `POST /api/node/domains` |
+
+Methods returning rich wire types (`IdentityRecord`, `Title`,
+`TrustResult`, `TrustEdge`) decode the server envelope into the
+corresponding struct from `quidnug::types`. Everything else returns
+`serde_json::Value` so SDK consumers never silently drop fields the
+node added in a forward-compatible release.
+
 ## Error taxonomy
 
 ```rust

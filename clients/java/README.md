@@ -87,15 +87,73 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
-| Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| Health | `health`, `info`, `nodes`, `blocks`, `tentativeBlocks`, `pendingTransactions`, `listDomains` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
+| Events | `emitEvent`, `getEventStream`, `getStreamEvents`, `getStreamEventsRaw` |
+| IPFS | `ipfsPin`, `ipfsGet` |
+| Domains | `nodeDomains`, `updateNodeDomains`, `registerDomain`, `ensureDomain` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `guardianResignations` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+
+### Full API surface
+
+Every method maps one-to-one onto a single node endpoint. All responses
+are returned with the `{success,data,error}` envelope already unwrapped.
+The cross-language matrix (Java method ↔ JS / Rust / Swift / .NET counterpart)
+lives at [`docs/sdk-coverage.md`](../../docs/sdk-coverage.md).
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `health()` | GET `/api/health` | Liveness probe. |
+| `info()` | GET `/api/info` | Node identity, version, features. |
+| `nodes()` | GET `/api/nodes` | Known peers. |
+| `blocks()` | GET `/api/blocks` | Recent finalized blocks. |
+| `tentativeBlocks(domain)` | GET `/api/blocks/tentative/{domain}` | Proposed-but-not-finalized blocks. |
+| `pendingTransactions()` | GET `/api/transactions` | Mempool snapshot. |
+| `listDomains()` | GET `/api/domains` | All registered trust domains. |
+| `nodeDomains()` | GET `/api/node/domains` | Domains this node manages. |
+| `updateNodeDomains(domains)` | POST `/api/node/domains` | Replace this node's managed-domain set. |
+| `registerDomain(domain)` | POST `/api/domains` | Register a new trust domain. |
+| `ensureDomain(domain)` | POST `/api/domains` | Idempotent register — succeeds if it already exists. |
+| `registerIdentity(signer, params)` | POST `/api/transactions/identity` | Sign + submit an IDENTITY tx. |
+| `getIdentity(quidId[, domain])` | GET `/api/identity/{quid}` | Identity record (`null` on 404). |
+| `queryIdentityRegistry(quidId, limit, offset)` | GET `/api/registry/identity` | Paginated identity dump. |
+| `grantTrust(signer, params)` | POST `/api/transactions/trust` | Sign + submit a TRUST tx. |
+| `getTrust(observer, target, domain, maxDepth)` | GET `/api/trust/{observer}/{target}` | Relational trust via GET. |
+| `queryRelationalTrust(observer, target, domain, maxDepth)` | POST `/api/trust/query` | Structured relational trust query. |
+| `getTrustEdges(quidId)` | GET `/api/trust/edges/{quid}` | Direct outbound edges. |
+| `queryTrustRegistry(truster, trustee, limit, offset)` | GET `/api/registry/trust` | Paginated trust-edge listing. |
+| `registerTitle(signer, params)` | POST `/api/transactions/title` | Sign + submit a TITLE tx. |
+| `getTitle(assetId[, domain])` | GET `/api/title/{asset}` | Title record (`null` on 404). |
+| `queryTitleRegistry(assetId, ownerId, limit, offset)` | GET `/api/registry/title` | Paginated title listing. |
+| `emitEvent(signer, params)` | POST `/api/events` | Sign + submit an EVENT tx. |
+| `getEventStream(subjectId[, domain])` | GET `/api/streams/{subject}` | Stream metadata. |
+| `getStreamEvents(subjectId, domain, limit, offset)` | GET `/api/streams/{subject}/events` | Typed `List<Event>`. |
+| `getStreamEventsRaw(subjectId, domain, limit, offset)` | GET `/api/streams/{subject}/events` | Raw JSON incl. pagination. |
+| `ipfsPin(content)` | POST `/api/ipfs/pin` | Pin raw bytes, returns CID. |
+| `ipfsGet(cid)` | GET `/api/ipfs/{cid}` | Raw bytes for a CID. |
+| `submitGuardianSetUpdate(update)` | POST `/api/guardian/set-update` | Install or rotate guardians. |
+| `submitRecoveryInit(init)` | POST `/api/guardian/recovery/init` | Start M-of-N recovery delay. |
+| `submitRecoveryVeto(veto)` | POST `/api/guardian/recovery/veto` | Abort an in-flight recovery. |
+| `submitRecoveryCommit(commit)` | POST `/api/guardian/recovery/commit` | Finalize delayed recovery. |
+| `submitGuardianResignation(resignation)` | POST `/api/guardian/resign` | Guardian leaves the set. |
+| `getGuardianSet(quidId)` | GET `/api/guardian/set/{quid}` | Current guardian set or `null`. |
+| `getPendingRecovery(quidId)` | GET `/api/guardian/pending-recovery/{quid}` | In-flight recovery for a subject. |
+| `guardianResignations(quidId)` | GET `/api/guardian/resignations/{quid}` | Pending resignations array. |
+| `submitDomainFingerprint(fp)` | POST `/api/domain-fingerprints` | Publish a signed fingerprint. |
+| `getLatestDomainFingerprint(domain)` | GET `/api/domain-fingerprints/{domain}/latest` | Latest fingerprint or `null`. |
+| `submitAnchorGossip(msg)` | POST `/api/anchor-gossip` | Cross-domain anchor message. |
+| `pushAnchor(msg)` | POST `/api/gossip/push-anchor` | Push-gossip anchor variant. |
+| `pushFingerprint(fp)` | POST `/api/gossip/push-fingerprint` | Push-gossip fingerprint variant. |
+| `submitNonceSnapshot(snapshot)` | POST `/api/nonce-snapshots` | K-of-K bootstrap snapshot. |
+| `getLatestNonceSnapshot(domain)` | GET `/api/nonce-snapshots/{domain}/latest` | Latest snapshot or `null`. |
+| `bootstrapStatus()` | GET `/api/bootstrap/status` | Bootstrap progress. |
+| `submitForkBlock(fb)` | POST `/api/fork-block` | Signed fork-activation block. |
+| `forkBlockStatus()` | GET `/api/fork-block/status` | Activation status per feature. |
 
 ### `CanonicalBytes` — signable-bytes encoder
 

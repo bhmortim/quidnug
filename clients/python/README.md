@@ -8,6 +8,12 @@ trust, titles, event streams, anchors, guardian sets, guardian
 recovery, cross-domain gossip, K-of-K bootstrap, fork-block activation,
 and compact Merkle inclusion proofs (QDPs 0001–0010).
 
+This SDK is the canonical reference for the Quidnug client API — every
+other Tier-1 SDK (JS, Java, Rust, Swift, .NET) tracks parity against
+the methods defined in `quidnug/client.py`. See
+[`docs/sdk-coverage.md`](../../docs/sdk-coverage.md) for the
+cross-language method-name matrix.
+
 ## Install
 
 ```bash

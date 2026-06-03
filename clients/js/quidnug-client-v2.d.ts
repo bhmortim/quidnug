@@ -163,6 +163,16 @@ export interface ForkBlock {
 
 declare module "./quidnug-client.js" {
   interface QuidnugClient {
+    // Health / info / domain bootstrap (v2 mixin additions)
+    health(): Promise<unknown>;
+    info(): Promise<unknown>;
+    getTentativeBlocks(domain: string): Promise<unknown>;
+    listDomains(): Promise<unknown>;
+    registerDomain(domain: string, attrs?: Record<string, unknown>): Promise<unknown>;
+    ensureDomain(domain: string, attrs?: Record<string, unknown>): Promise<unknown>;
+    getNodeDomains(): Promise<unknown>;
+    updateNodeDomains(domains: string[]): Promise<unknown>;
+
     // Guardians
     submitGuardianSetUpdate(update: GuardianSetUpdate): Promise<unknown>;
     submitRecoveryInit(init: GuardianRecoveryInit): Promise<unknown>;

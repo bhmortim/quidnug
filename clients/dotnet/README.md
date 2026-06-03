@@ -71,13 +71,71 @@ shared across request handlers.
 | --- | --- |
 | Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
 | Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync`, `QueryRelationalTrustAsync` |
 | Title | `RegisterTitleAsync`, `GetTitleAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `EnsureDomainAsync`, `NodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| Registry | `QueryIdentityRegistryAsync`, `QueryTrustRegistryAsync`, `QueryTitleRegistryAsync` |
+| Blocks / mempool | `BlocksAsync`, `TentativeBlocksAsync`, `PendingTransactionsAsync` |
+| IPFS | `IpfsPinAsync`, `IpfsGetAsync` |
+| Guardians (QDP-0002/0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `PendingRecoveryAsync`, `GuardianResignationsAsync` |
+| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `BootstrapStatusAsync`, `SubmitNonceSnapshotAsync`, `LatestNonceSnapshotAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+
+### Full API surface
+
+Every public method on `QuidnugClient`, with the endpoint it calls. Mirrors the Python SDK reference.
+The cross-language matrix (`.NET` method ↔ JS / Java / Rust / Swift counterpart)
+lives at [`docs/sdk-coverage.md`](../../docs/sdk-coverage.md).
+
+| Method | Endpoint |
+| --- | --- |
+| `HealthAsync()` | `GET /api/health` |
+| `InfoAsync()` | `GET /api/info` |
+| `NodesAsync()` | `GET /api/nodes` |
+| `BlocksAsync()` | `GET /api/blocks` |
+| `TentativeBlocksAsync(domain)` | `GET /api/blocks/tentative/{domain}` |
+| `PendingTransactionsAsync(limit?, offset?)` | `GET /api/transactions` |
+| `ListDomainsAsync()` | `GET /api/domains` |
+| `RegisterDomainAsync(domain)` | `POST /api/domains` |
+| `EnsureDomainAsync(domain)` | `POST /api/domains` (idempotent) |
+| `NodeDomainsAsync()` | `GET /api/node/domains` |
+| `UpdateNodeDomainsAsync(domains)` | `POST /api/node/domains` |
+| `RegisterIdentityAsync(signer, ...)` | `POST /api/transactions/identity` |
+| `GetIdentityAsync(quidId, domain?)` | `GET /api/identity/{quidId}` |
+| `QueryIdentityRegistryAsync(quidId?, limit?, offset?)` | `GET /api/registry/identity` |
+| `GrantTrustAsync(signer, trustee, level, ...)` | `POST /api/transactions/trust` |
+| `GetTrustAsync(observer, target, domain, maxDepth)` | `GET /api/trust/{observer}/{target}` |
+| `GetTrustEdgesAsync(quidId)` | `GET /api/trust/edges/{quidId}` |
+| `QueryRelationalTrustAsync(observer, target, domain, maxDepth)` | `POST /api/trust/query` |
+| `QueryTrustRegistryAsync(truster?, trustee?, limit?, offset?)` | `GET /api/registry/trust` |
+| `RegisterTitleAsync(signer, assetId, owners, ...)` | `POST /api/transactions/title` |
+| `GetTitleAsync(assetId, domain?)` | `GET /api/title/{assetId}` |
+| `QueryTitleRegistryAsync(assetId?, ownerId?, limit?, offset?)` | `GET /api/registry/title` |
+| `EmitEventAsync(signer, subjectId, subjectType, eventType, ...)` | `POST /api/events` |
+| `GetEventStreamAsync(subjectId, domain?)` | `GET /api/streams/{subjectId}` |
+| `GetStreamEventsAsync(subjectId, domain?, limit, offset)` | `GET /api/streams/{subjectId}/events` |
+| `IpfsPinAsync(content)` | `POST /api/ipfs/pin` (raw bytes) |
+| `IpfsGetAsync(cid)` | `GET /api/ipfs/{cid}` (raw bytes) |
+| `SubmitGuardianSetUpdateAsync(update)` | `POST /api/guardian/set-update` |
+| `SubmitRecoveryInitAsync(init)` | `POST /api/guardian/recovery/init` |
+| `SubmitRecoveryVetoAsync(veto)` | `POST /api/guardian/recovery/veto` |
+| `SubmitRecoveryCommitAsync(commit)` | `POST /api/guardian/recovery/commit` |
+| `SubmitGuardianResignationAsync(body)` | `POST /api/guardian/resign` |
+| `GetGuardianSetAsync(quidId)` | `GET /api/guardian/set/{quidId}` |
+| `PendingRecoveryAsync(quidId)` | `GET /api/guardian/pending-recovery/{quidId}` |
+| `GuardianResignationsAsync(quidId)` | `GET /api/guardian/resignations/{quidId}` |
+| `SubmitDomainFingerprintAsync(fp)` | `POST /api/domain-fingerprints` |
+| `GetLatestDomainFingerprintAsync(domain)` | `GET /api/domain-fingerprints/{domain}/latest` |
+| `SubmitAnchorGossipAsync(msg)` | `POST /api/anchor-gossip` |
+| `PushAnchorAsync(body)` | `POST /api/gossip/push-anchor` |
+| `PushFingerprintAsync(body)` | `POST /api/gossip/push-fingerprint` |
+| `SubmitNonceSnapshotAsync(body)` | `POST /api/nonce-snapshots` |
+| `LatestNonceSnapshotAsync(domain)` | `GET /api/nonce-snapshots/{domain}/latest` |
+| `BootstrapStatusAsync()` | `GET /api/bootstrap/status` |
+| `SubmitForkBlockAsync(fb)` | `POST /api/fork-block` |
+| `ForkBlockStatusAsync()` | `GET /api/fork-block/status` |
 
 ### `CanonicalBytes` / `Merkle`
 

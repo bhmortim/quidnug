@@ -56,6 +56,68 @@ async function _getOrNull(client, path) {
 }
 
 // ---------------------------------------------------------------------------
+// Health / info / domain bootstrap (parity with python.health/info, etc.)
+// ---------------------------------------------------------------------------
+
+/** GET /api/health — is the node up and reachable? */
+QuidnugClient.prototype.health = async function () {
+  return _getJson(this, "health");
+};
+
+/** GET /api/info — node identity, version, features, domains. */
+QuidnugClient.prototype.info = async function () {
+  return _getJson(this, "info");
+};
+
+/** GET /api/blocks/tentative/{domain} — tentative blocks awaiting commit. */
+QuidnugClient.prototype.getTentativeBlocks = async function (domain) {
+  if (!domain) throw new Error("domain required");
+  return _getJson(this, `blocks/tentative/${encodeURIComponent(domain)}`);
+};
+
+/** GET /api/domains — list registered trust domains. */
+QuidnugClient.prototype.listDomains = async function () {
+  return _getJson(this, "domains");
+};
+
+/** POST /api/domains — register a new trust domain. */
+QuidnugClient.prototype.registerDomain = async function (domain, attrs = {}) {
+  if (!domain) throw new Error("domain required");
+  return _postJson(this, "domains", { name: domain, ...attrs });
+};
+
+/**
+ * Idempotent registerDomain: returns a synthetic success envelope when the
+ * server reports the domain already exists.
+ */
+QuidnugClient.prototype.ensureDomain = async function (domain, attrs = {}) {
+  try {
+    return await this.registerDomain(domain, attrs);
+  } catch (err) {
+    const msg = (err && err.message ? err.message : "").toLowerCase();
+    if (msg.includes("already exists")) {
+      return {
+        status: "success",
+        domain,
+        message: "trust domain already exists",
+      };
+    }
+    throw err;
+  }
+};
+
+/** GET /api/node/domains — managed domains on this node. */
+QuidnugClient.prototype.getNodeDomains = async function () {
+  return _getJson(this, "node/domains");
+};
+
+/** POST /api/node/domains — update the managed domain set for this node. */
+QuidnugClient.prototype.updateNodeDomains = async function (domains) {
+  if (!Array.isArray(domains)) throw new Error("domains must be an array");
+  return _postJson(this, "node/domains", { managedDomains: domains });
+};
+
+// ---------------------------------------------------------------------------
 // Guardian sets (QDP-0002, QDP-0006)
 // ---------------------------------------------------------------------------
 

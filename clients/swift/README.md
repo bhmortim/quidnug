@@ -71,17 +71,24 @@ Python, Java, .NET, Rust, and JavaScript SDKs. Quid ID is
 `QuidnugClient` is an `actor` so all mutation is isolated. Every
 method uses `async throws`.
 
-| Area | Methods |
+| Area | Methods (endpoint) |
 | --- | --- |
-| Health | `health`, `info`, `nodes` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
-| Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Health | `health` (`GET health`), `info` (`GET info`), `nodes` (`GET nodes`) |
+| Blocks + tx | `blocks` (`GET blocks`), `tentativeBlocks` (`GET blocks/tentative/{domain}`), `pendingTransactions` (`GET transactions`) |
+| Domains | `listDomains` (`GET domains`), `registerDomain` (`POST domains`), `ensureDomain` (idempotent wrapper), `nodeDomains` (`GET node/domains`), `updateNodeDomains` (`POST node/domains`) |
+| Identity | `registerIdentity` (`POST transactions/identity`), `getIdentity` (`GET identity/{quid}`), `queryIdentityRegistry` (`GET registry/identity`) |
+| Trust | `grantTrust` (`POST transactions/trust`), `getTrust` (`GET trust/{observer}/{target}`), `getTrustEdges` (`GET trust/edges/{quid}`), `queryTrustRegistry` (`GET registry/trust`), `queryRelationalTrust` (`POST trust/query`) |
+| Title | `registerTitle` (`POST transactions/title`), `getTitle` (`GET title/{asset}`), `queryTitleRegistry` (`GET registry/title`) |
+| Events | `emitEvent` (`POST events`), `getEventStream` (`GET streams/{subject}`), `getStreamEvents` (`GET streams/{subject}/events`) |
+| IPFS | `ipfsPin` (`POST ipfs/pin`, raw bytes), `ipfsGet` (`GET ipfs/{cid}`, raw bytes) |
+| Guardians (QDP-0002 / 0006) | `submitGuardianSetUpdate` (`POST guardian/set-update`), `submitRecoveryInit` (`POST guardian/recovery/init`), `submitRecoveryVeto` (`POST guardian/recovery/veto`), `submitRecoveryCommit` (`POST guardian/recovery/commit`), `submitGuardianResignation` (`POST guardian/resign`), `getGuardianSet` (`GET guardian/set/{quid}`), `pendingRecovery` (`GET guardian/pending-recovery/{quid}`), `guardianResignations` (`GET guardian/resignations/{quid}`) |
+| Gossip (QDP-0003 / 0005) | `submitDomainFingerprint` (`POST domain-fingerprints`), `getLatestDomainFingerprint` (`GET domain-fingerprints/{domain}/latest`), `submitAnchorGossip` (`POST anchor-gossip`), `pushAnchor` (`POST gossip/push-anchor`), `pushFingerprint` (`POST gossip/push-fingerprint`) |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot` (`POST nonce-snapshots`), `latestNonceSnapshot` (`GET nonce-snapshots/{domain}/latest`), `bootstrapStatus` (`GET bootstrap/status`) |
+| Fork-block (QDP-0009) | `submitForkBlock` (`POST fork-block`), `forkBlockStatus` (`GET fork-block/status`) |
+
+The cross-language API surface — every Tier-1 SDK's method name for every
+HTTP operation — is tabulated in
+[`docs/sdk-coverage.md`](../../docs/sdk-coverage.md).
 
 ### `CanonicalBytes` / `Merkle`
 
