@@ -70,11 +70,17 @@ const ok = await QuidnugClient.verifyInclusionProof(
 
 | Area | Methods |
 | --- | --- |
+| Health / info | `health`, `info` |
+| Domain bootstrap | `listDomains`, `registerDomain`, `ensureDomain` (idempotent), `getNodeDomains`, `updateNodeDomains`, `getTentativeBlocks` |
 | Guardians | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
 | Gossip | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `getBootstrapStatus` |
 | Fork-block | `submitForkBlock`, `getForkBlockStatus` |
 | Static helpers | `QuidnugClient.verifyInclusionProof`, `QuidnugClient.canonicalBytes`, `QuidnugClient.bytesToHex`, `QuidnugClient.hexToBytes` |
+
+The cross-language API surface — every Tier-1 SDK's method name for every
+HTTP operation — is tabulated in
+[`docs/sdk-coverage.md`](../../docs/sdk-coverage.md).
 
 ### Canonicalization
 

@@ -94,9 +94,32 @@ lifecycleScope.launch {
 }
 ```
 
-Full protocol surface is available via `client.client` (the
-underlying Java `QuidnugClient`) — every Java method works
-unchanged.
+Suspending wrappers ship for the most common mobile flows:
+
+| Wrapper | Underlying Java method |
+| --- | --- |
+| `registerIdentity` | `client.registerIdentity` |
+| `grantTrust` | `client.grantTrust` |
+| `getTrust` | `client.getTrust` |
+| `getTrustEdges` | `client.getTrustEdges` |
+| `getIdentity` | `client.getIdentity` |
+| `getTitle` | `client.getTitle` |
+| `emitEvent` | `client.emitEvent` |
+| `streamEvents` | `client.getStreamEvents` |
+| `getGuardianSet` | `client.getGuardianSet` |
+| `submitGuardianSetUpdate` | `client.submitGuardianSetUpdate` |
+| `submitRecoveryInit` / `Veto` / `Commit` | `client.submitRecovery*` |
+| `health` / `info` | `client.health` / `client.info` |
+
+The full Java surface is reachable via `client.raw()` (or `client.client`)
+— wrap rarely-used calls in `withContext(Dispatchers.IO) { ... }` to keep
+them off the main thread:
+
+```kotlin
+val tentative = withContext(Dispatchers.IO) {
+    client.raw().tentativeBlocks("myapp.users")
+}
+```
 
 ### `QuidVault`
 

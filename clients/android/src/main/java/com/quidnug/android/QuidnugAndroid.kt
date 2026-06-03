@@ -86,6 +86,57 @@ class QuidnugAndroidClient(
         client.getStreamEvents(subjectId, domain, limit, offset)
     }
 
+    /** Suspending wrapper around `getIdentity`. */
+    suspend fun getIdentity(quidId: String, domain: String? = null) =
+        withContext(Dispatchers.IO) {
+            if (domain != null) client.getIdentity(quidId, domain) else client.getIdentity(quidId)
+        }
+
+    /** Suspending wrapper around `getTitle`. */
+    suspend fun getTitle(assetId: String, domain: String = "default") =
+        withContext(Dispatchers.IO) { client.getTitle(assetId, domain) }
+
+    /** Suspending wrapper around `getTrustEdges`. */
+    suspend fun getTrustEdges(quidId: String) =
+        withContext(Dispatchers.IO) { client.getTrustEdges(quidId) }
+
+    /** Suspending wrapper around `getGuardianSet`. */
+    suspend fun getGuardianSet(quidId: String) =
+        withContext(Dispatchers.IO) { client.getGuardianSet(quidId) }
+
+    /** Suspending wrapper around `submitGuardianSetUpdate`. */
+    suspend fun submitGuardianSetUpdate(update: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitGuardianSetUpdate(update) }
+
+    /** Suspending wrapper around `submitRecoveryInit`. */
+    suspend fun submitRecoveryInit(init: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryInit(init) }
+
+    /** Suspending wrapper around `submitRecoveryVeto`. */
+    suspend fun submitRecoveryVeto(veto: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryVeto(veto) }
+
+    /** Suspending wrapper around `submitRecoveryCommit`. */
+    suspend fun submitRecoveryCommit(commit: Map<String, Any>) =
+        withContext(Dispatchers.IO) { client.submitRecoveryCommit(commit) }
+
+    /** Suspending wrapper around `health` — useful for bootstrap UI. */
+    suspend fun health() = withContext(Dispatchers.IO) { client.health() }
+
+    /** Suspending wrapper around `info` — node features for capability gating. */
+    suspend fun info() = withContext(Dispatchers.IO) { client.info() }
+
+    /**
+     * Full Java [QuidnugClient] surface escape hatch.
+     *
+     * Every method on the underlying client is reachable via [client]; the
+     * suspending bridges above only cover the most common mobile flows.
+     * Wrap rarely-used calls in `withContext(Dispatchers.IO) { client.foo() }`
+     * to keep them off the main thread.
+     */
+    @Suppress("unused")
+    fun raw(): QuidnugClient = client
+
     companion object {
         /** Convenience constructor using sane defaults. */
         fun create(nodeUrl: String, authToken: String? = null): QuidnugAndroidClient {
