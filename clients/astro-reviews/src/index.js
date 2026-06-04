@@ -10,8 +10,15 @@
  * This makes Quidnug ratings fully SEO- and RSS-friendly in the
  * exact same shape as the interactive version — no separate
  * server-side code path.
+ *
+ * The companion `lib/rating.js` provides `computePersonalRating()`,
+ * a server-side helper that resolves a fully-rendered rating
+ * object from a (productId, observerId, topic) tuple ready to
+ * feed straight into the primitives.
  */
 
 export { default as QnAurora } from "./primitives/QnAurora.astro";
 export { default as QnConstellation } from "./primitives/QnConstellation.astro";
 export { default as QnTrace } from "./primitives/QnTrace.astro";
+
+export { computePersonalRating } from "./lib/rating.js";

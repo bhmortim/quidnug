@@ -295,3 +295,114 @@ def test_post_is_not_retried_by_default(session):
     with pytest.raises(NodeError):
         client.grant_trust(q, trustee="x", level=0.5)
     assert len(session.calls) == 1
+
+
+# --- Moderation / audit / privacy routing (QDP-0015/0017/0018) ----------
+
+
+def test_submit_moderation_action_posts_to_moderation_actions(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"txId": "m1"}}))
+    out = client.submit_moderation_action(
+        {
+            "targetType": "EVENT",
+            "targetId": "ev-1",
+            "actionType": "TAKEDOWN",
+            "moderatorQuid": "mod",
+            "reason": "spam",
+        }
+    )
+    assert out["txId"] == "m1"
+    method, url, kw = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/moderation/actions")
+    body = json.loads(kw["data"])
+    assert body["targetType"] == "EVENT"
+    assert body["targetId"] == "ev-1"
+
+
+def test_get_moderation_actions_encodes_path(session, client):
+    session.queue(
+        _FakeResponse(
+            payload={"success": True, "data": {"data": [{"id": "a1"}, {"id": "a2"}]}}
+        )
+    )
+    out = client.get_moderation_actions("QUID", "user 1")
+    assert out == [{"id": "a1"}, {"id": "a2"}]
+    method, url, _ = session.calls[0]
+    assert method == "GET"
+    assert "/moderation/actions/QUID/user%201" in url
+
+
+def test_get_moderation_actions_rejects_bad_type(client):
+    with pytest.raises(ValidationError):
+        client.get_moderation_actions("REVIEW", "id")
+
+
+def test_audit_head_routes_correctly(session, client):
+    session.queue(
+        _FakeResponse(payload={"success": True, "data": {"sequence": 42, "hash": "deadbeef"}})
+    )
+    head = client.audit_head()
+    assert head == {"sequence": 42, "hash": "deadbeef"}
+    method, url, _ = session.calls[0]
+    assert method == "GET"
+    assert url.endswith("/audit/head")
+
+
+def test_audit_entries_passes_pagination_params(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"data": [], "pagination": {}}}))
+    client.audit_entries(since=10, limit=5)
+    _, url, kw = session.calls[0]
+    assert kw["params"] == {"since": 10, "limit": 5}
+    assert url.endswith("/audit/entries")
+
+
+def test_audit_entry_uses_int_sequence(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"sequence": 7}}))
+    client.audit_entry(7)
+    _, url, _ = session.calls[0]
+    assert url.endswith("/audit/entry/7")
+
+
+def test_submit_dsr_posts_to_privacy_dsr(session, client):
+    session.queue(
+        _FakeResponse(payload={"success": True, "data": {"requestTxId": "tx-1"}})
+    )
+    out = client.submit_dsr({"subjectQuid": "alice", "requestType": "ACCESS"})
+    assert out["requestTxId"] == "tx-1"
+    method, url, _ = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/privacy/dsr")
+
+
+def test_get_dsr_status_encodes_request_tx_id(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"status": "COMPLETED"}}))
+    client.get_dsr_status("tx-1")
+    _, url, _ = session.calls[0]
+    assert url.endswith("/privacy/dsr/tx-1")
+
+
+def test_get_consent_history_strips_none_params(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"events": []}}))
+    client.get_consent_history(subject_quid="alice")
+    _, url, kw = session.calls[0]
+    assert kw["params"] == {"subjectQuid": "alice"}
+    assert url.endswith("/privacy/consent/history")
+
+
+def test_get_restrictions_for_subject_returns_list(session, client):
+    session.queue(
+        _FakeResponse(
+            payload={"success": True, "data": {"data": [{"id": "r1"}, {"id": "r2"}]}}
+        )
+    )
+    out = client.get_restrictions_for_subject("alice")
+    assert out == [{"id": "r1"}, {"id": "r2"}]
+
+
+def test_submit_processing_restriction_posts_correctly(session, client):
+    session.queue(_FakeResponse(payload={"success": True, "data": {"ok": True}}))
+    client.submit_processing_restriction({"subjectQuid": "alice", "scope": "marketing"})
+    method, url, _ = session.calls[0]
+    assert method == "POST"
+    assert url.endswith("/privacy/restrictions")

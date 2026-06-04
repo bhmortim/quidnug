@@ -40,12 +40,14 @@ const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
 ```
 
-## v2 extensions (QDPs 0002–0010)
+## v2 extensions (QDPs 0002–0010, 0015, 0017, 0018)
 
 Importing the v2 module installs guardian / gossip / bootstrap /
-fork-block / Merkle methods on the `QuidnugClient` prototype. Keep
-your v1 import for the transaction-signing surface, and add v2 when
-you need the newer protocol features.
+fork-block / Merkle methods on the `QuidnugClient` prototype,
+plus the operational APIs added in the QDP-0015/0017/0018 work
+(moderation, privacy/DSR, tamper-evident audit log). Keep your v1
+import for the transaction-signing surface, and add v2 when you
+need the newer protocol features.
 
 ```js
 import QuidnugClient from "@quidnug/client";
@@ -74,6 +76,9 @@ const ok = await QuidnugClient.verifyInclusionProof(
 | Gossip | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `getBootstrapStatus` |
 | Fork-block | `submitForkBlock`, `getForkBlockStatus` |
+| Moderation (QDP-0015) | `submitModerationAction`, `getModerationActions` |
+| Audit log (QDP-0018) | `getAuditHead`, `getAuditEntries`, `getAuditEntry` |
+| Privacy (QDP-0017) | `submitDSR`, `getDSRStatus`, `submitConsentGrant`, `submitConsentWithdraw`, `getConsentHistory`, `submitProcessingRestriction`, `getRestrictionsForSubject`, `submitDSRCompliance` |
 | Static helpers | `QuidnugClient.verifyInclusionProof`, `QuidnugClient.canonicalBytes`, `QuidnugClient.bytesToHex`, `QuidnugClient.hexToBytes` |
 
 ### Canonicalization

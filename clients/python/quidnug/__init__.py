@@ -2,7 +2,7 @@
 
 Covers the full v2.x protocol surface:
     - Identity + Trust + Title (v1 surface, plus improvements)
-    - Event streams
+    - Event streams + IPFS payload pinning
     - Key lifecycle: Anchors (rotation, invalidation, epoch-cap)
     - Guardian sets + Recovery + Resignation (QDP-0002 / QDP-0006)
     - Cross-domain fingerprint + anchor gossip (QDP-0003)
@@ -10,6 +10,9 @@ Covers the full v2.x protocol surface:
     - K-of-K bootstrap snapshots (QDP-0008)
     - Fork-block activation (QDP-0009)
     - Compact Merkle proof verification (QDP-0010)
+    - Content moderation actions (QDP-0015)
+    - Data Subject Rights, consent, processing restrictions (QDP-0017)
+    - Tamper-evident operator audit log (QDP-0018)
 
 Typical usage::
 

@@ -1,14 +1,14 @@
 # @quidnug/vue-reviews
 
-Vue 3 wrappers around Quidnug's trust-weighted review
-components. Thin adapter layer over `@quidnug/web-components`
-that lets you use `<QnAurora>`, `<QnConstellation>`, and
-`<QnTrace>` as first-class Vue components with props + events.
+Vue 3 components, composables, and a `provideQuidnug()` context for
+the Quidnug trust-weighted review system. Feature-parity with
+[`@quidnug/react-reviews`](../react-reviews/) — every React hook
+has a Vue composable, every React component has a Vue counterpart.
 
 ## Install
 
 ```bash
-npm install @quidnug/vue-reviews @quidnug/web-components
+npm install @quidnug/vue-reviews @quidnug/web-components @quidnug/client
 ```
 
 ## Vite / compiler setup
@@ -34,52 +34,123 @@ export default {
 };
 ```
 
-## Use
+## Provider
+
+Install the Quidnug context once in a top-level setup script. Every
+composable below reads `client` (and optionally `quid`) from this
+context — same shape as the React `<QuidnugProvider>`.
+
+```vue
+<!-- App.vue -->
+<script setup>
+import { provideQuidnug } from "@quidnug/vue-reviews";
+import QuidnugClient from "@quidnug/client";
+import "@quidnug/client/v2";
+
+const client = new QuidnugClient({ defaultNode: "http://localhost:8080" });
+provideQuidnug({ client, defaultDomain: "reviews.public.other" });
+</script>
+```
+
+## Drop-in components
+
+The high-level components fetch + render. Use them when you don't
+want to wire the data flow yourself.
+
+```vue
+<script setup>
+import {
+    QuidnugStars,
+    QuidnugReviewPanel,
+} from "@quidnug/vue-reviews";
+</script>
+
+<template>
+    <!-- Star summary -->
+    <QuidnugStars product="laptop-x1"
+                  topic="reviews.public.technology.laptops"
+                  show-count />
+
+    <!-- Full panel: headline + list + (optional) write form -->
+    <QuidnugReviewPanel product="laptop-x1"
+                        topic="reviews.public.technology.laptops"
+                        :show-write="true" />
+</template>
+```
+
+## Composables
+
+When you want full control over the rendering:
+
+```vue
+<script setup>
+import { useTrustWeightedRating, useReviews, useWriteReview }
+    from "@quidnug/vue-reviews";
+
+const product = "laptop-x1";
+const topic = "reviews.public.technology.laptops";
+
+const { data: rating, loading } = useTrustWeightedRating(product, topic);
+const { data: reviews } = useReviews(product, topic, { limit: 50 });
+const { mutate: postReview, loading: posting } = useWriteReview();
+</script>
+```
+
+All composables accept `product` / `topic` as plain strings, refs,
+or getter functions and re-run automatically when any dep — including
+the active observer quid — changes.
+
+## Low-level primitives
+
+Pure-render building blocks — zero networking, identical SVG output
+to `@quidnug/web-components`:
 
 ```vue
 <script setup>
 import { QnAurora, QnTrace } from "@quidnug/vue-reviews";
 
 const contributors = [
-    { id: "vet",  name: "veteran",   rating: 4.8, weight: 0.6, direct: true },
-    { id: "sam",  name: "sam-tech",  rating: 4.5, weight: 0.2, direct: true },
-    { id: "kai",  name: "kai",       rating: 4.2, weight: 0.1, direct: false },
+    { id: "vet", name: "veteran",  rating: 4.8, weight: 0.6, direct: true },
+    { id: "sam", name: "sam-tech", rating: 4.5, weight: 0.2, direct: true },
+    { id: "kai", name: "kai",      rating: 4.2, weight: 0.1, direct: false },
 ];
-
-function openDrilldown(detail) {
-    // show a modal with the full breakdown
-}
 </script>
 
 <template>
-    <QnAurora :rating="4.7"
-              :contributors="7" :direct="5" :crowd="4.1"
-              observer-name="alice"
-              show-delta show-histogram
+    <QnAurora :rating="4.7" :contributors="7" :direct="5" :crowd="4.1"
+              observer-name="alice" show-delta show-histogram
               :contributor-ratings="[4.5, 4.8, 4.2, 5, 4, 4.3, 4.7]"
-              @aurora-click="openDrilldown" />
-
+              @aurora-click="(d) => console.log(d)" />
     <QnTrace :contributors="contributors" show-labels />
 </template>
 ```
 
-## Primitives
-
-| Component | Purpose |
+| Primitive | Purpose |
 | --- | --- |
 | `<QnAurora>` | Headline rating glyph. Sentiment dot + confidence ring + optional delta chip. Three sizes: `nano`, `standard`, `large`. |
 | `<QnConstellation>` | Bullseye drilldown. Concentric tiers of trust, one dot per contributor. |
 | `<QnTrace>` | Horizontal stacked weight bar. One segment per contributor. |
 
-See [../web-components/stories/index.html](../web-components/stories/index.html) for every visual state.
+See [../web-components/stories/index.html](../web-components/stories/index.html)
+for every visual state.
+
+## Surface summary
+
+| Symbol | Kind | Mirrors React |
+| --- | --- | --- |
+| `provideQuidnug`, `useQuidnug` | provider | `<QuidnugProvider>`, `useQuidnug()` |
+| `useTrustWeightedRating(product, topic[, options])` | composable | `useTrustWeightedRating` |
+| `useReviews(product, topic[, { limit, offset }])` | composable | `useReviews` |
+| `useWriteReview()` | composable | `useWriteReview` |
+| `<QuidnugStars>` | component | `<QuidnugStars>` |
+| `<QuidnugReviewPanel>` | component | `<QuidnugReviewPanel>` |
+| `<QuidnugReviewList>` | component | `<QuidnugReviewList>` |
+| `<QuidnugWriteReview>` | component | `<QuidnugWriteReview>` |
+| `<QnAurora>`, `<QnConstellation>`, `<QnTrace>` | primitive | identical |
 
 ## Roadmap
 
-- Vue composables mirroring the React hooks (`useTrustWeightedRating`,
-  `useReviews`, `useWriteReview`).
-- High-level `<QuidnugReviewPanel>`, `<QuidnugStars>` Vue components
-  that fetch + compute + render automatically.
-- Nuxt integration (SSR-safe).
+- Nuxt integration (SSR-safe `useFetch` wrapper around the composables).
 
 ## License
 

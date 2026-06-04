@@ -3,10 +3,19 @@
 `quidnug` — the official Rust crate for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the full protocol surface: identity, trust, titles, event
-streams, anchors, guardian sets, recovery, cross-domain gossip,
-K-of-K bootstrap, fork-block activation, compact Merkle inclusion
-proofs (QDPs 0001–0010).
+**Coverage status: partial.** The crate ships the typed read/write
+paths Rust callers hit most — identity, trust, titles, domain
+registration, trust-edge queries, ECDSA P-256 signing, canonical
+bytes, and offline QDP-0010 Merkle inclusion proofs — plus block-commit
+waiters for race-free demos. Event streams, the full guardian set
+update / recovery / resignation surface, cross-domain gossip,
+K-of-K bootstrap snapshots, fork-block submission, and the
+operational APIs (moderation / privacy / audit) are **not yet
+exposed** as typed methods on `Client`; the Python and JavaScript
+SDKs are the recommended reference clients for those areas.
+
+See [What's in the crate](#whats-in-the-crate) below for the exact
+method list.
 
 ## Install
 
@@ -65,6 +74,23 @@ Runnable examples live in `examples/`:
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+### Methods on `Client`
+
+| Area | Methods |
+| --- | --- |
+| Health / info | `health`, `info` |
+| Identity | `register_identity`, `get_identity` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges` |
+| Title | `get_title` |
+| Domains | `register_domain`, `ensure_domain` |
+| Commit waiters | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
+
+Anything outside this list (event streams, full guardian flow,
+gossip, bootstrap, fork-block, moderation, privacy, audit) is on
+the roadmap. For now use the raw HTTP surface via your own
+`reqwest` calls plus `canonical_bytes` for signing, or use the
+Python or JavaScript SDK alongside.
 
 ## Error taxonomy
 

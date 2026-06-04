@@ -629,8 +629,11 @@ See [`docs/integration-guide.md`](docs/integration-guide.md) for:
 ## Integration — SDKs, integrations, tooling
 
 Quidnug ships first-class SDKs covering the **full protocol surface**
-(QDPs 0001–0010) in Python, Go, JavaScript, and Rust, plus scaffolds
-for Java/Kotlin, C#/.NET, Swift, and Android. See
+(QDPs 0001–0010 plus the 0015/0017/0018 operational APIs) in Python,
+Go, and JavaScript; the Rust crate covers identity/trust/title
+CRUD and offline Merkle verification; Java, C#/.NET, Swift, and
+Android cover the QDP 0001–0010 protocol surface with the operational
+APIs reachable via raw HTTP. See
 [`docs/integration-guide.md`](docs/integration-guide.md) for
 side-by-side examples of the same workflow in every language.
 
@@ -640,16 +643,16 @@ Core protocol SDKs:
 
 | Language | Path | Status | Package |
 | --- | --- | --- | --- |
-| Python 3.9+ | [`clients/python/`](clients/python/) | **full** — typed dataclasses, ECDSA P-256, Merkle verifier | `pip install quidnug` |
+| Python 3.9+ | [`clients/python/`](clients/python/) | **full** — typed dataclasses, ECDSA P-256, Merkle verifier, moderation/privacy/audit | `pip install quidnug` |
 | Go 1.25+ | [`pkg/client/`](pkg/client/) | **full** — context-aware, typed, OTel hooks | `go get github.com/quidnug/quidnug/pkg/client` |
-| JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin for guardians/gossip/merkle | `npm install @quidnug/client` |
-| Rust stable | [`clients/rust/`](clients/rust/) | **full** — async reqwest, wiremock-tested | `cargo add quidnug` |
-| Java 17+ / Kotlin | [`clients/java/`](clients/java/) | scaffold — keypair + signing | — |
-| C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | scaffold — keypair + signing | — |
-| Swift iOS/macOS | [`clients/swift/`](clients/swift/) | scaffold — CryptoKit-based | — |
-| Android (Kotlin) | [`clients/android/`](clients/android/) | scaffold — planned Android Keystore integration | — |
-| Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | scaffold | — |
-| ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | scaffold | — |
+| JavaScript / TypeScript | [`clients/js/`](clients/js/) | **full** — v1 + v2 mixin for guardians/gossip/merkle/moderation/privacy/audit | `npm install @quidnug/client` |
+| Rust stable | [`clients/rust/`](clients/rust/) | **partial** — identity/trust/title CRUD + Merkle verifier; event streams, guardians, gossip, ops APIs via raw HTTP | `cargo add quidnug` |
+| Java 17+ / Kotlin | [`clients/java/`](clients/java/) | **partial** — QDPs 0001–0010 typed (identity/trust/title/events/guardians/gossip/bootstrap/fork-block); ops APIs via raw HTTP | — |
+| C# / .NET 8 | [`clients/dotnet/`](clients/dotnet/) | **partial** — QDPs 0001–0010 typed; ops APIs via raw HTTP | — |
+| Swift iOS/macOS | [`clients/swift/`](clients/swift/) | **partial** — identity/trust/title/events read+write + guardian/gossip read side; CryptoKit-based | — |
+| Android (Kotlin) | [`clients/android/`](clients/android/) | **partial** — coroutine wrappers over the Java SDK + Android Keystore signer | — |
+| Browser extension (MV3) | [`clients/browser-extension/`](clients/browser-extension/) | **scaffold** — MV3 vault + injected `window.quidnug` (listQuids/sign/getNodeInfo) | — |
+| ISO 20022 mapping | [`clients/iso20022/`](clients/iso20022/) | redirect to [`integrations/iso20022/`](integrations/iso20022/) | — |
 | CLI | [`cmd/quidnug-cli/`](cmd/quidnug-cli/) | **full** — wraps the Go SDK | `go install .../cmd/quidnug-cli@latest` |
 
 Reviews use case (QRP-0001) drop-in packages:
@@ -659,10 +662,10 @@ Reviews use case (QRP-0001) drop-in packages:
 | `@quidnug/web-components` | [`clients/web-components/`](clients/web-components/) | **full** — custom elements + `<qn-aurora>` / `<qn-constellation>` / `<qn-trace>` visualization primitives | `npm install @quidnug/web-components` |
 | `@quidnug/reviews-widget` | [`clients/reviews-widget/`](clients/reviews-widget/) | **full** — one-line HTML embed | `<script src=".../loader.js">` |
 | `@quidnug/react-reviews` | [`clients/react-reviews/`](clients/react-reviews/) | **full** — hooks + components + React primitive wrappers | `npm install @quidnug/react-reviews` |
-| `@quidnug/vue-reviews` | [`clients/vue-reviews/`](clients/vue-reviews/) | **full** — Vue 3 primitive wrappers | `npm install @quidnug/vue-reviews` |
-| `@quidnug/astro-reviews` | [`clients/astro-reviews/`](clients/astro-reviews/) | **full** — SSR-first, emits real SVG at build time | `npm install @quidnug/astro-reviews` |
+| `@quidnug/vue-reviews` | [`clients/vue-reviews/`](clients/vue-reviews/) | **full** — provider + composables + components + Vue 3 primitive wrappers (React parity) | `npm install @quidnug/vue-reviews` |
+| `@quidnug/astro-reviews` | [`clients/astro-reviews/`](clients/astro-reviews/) | **full** — SSR-first, emits real SVG at build time, ships `computePersonalRating()` helper | `npm install @quidnug/astro-reviews` |
 | WordPress plugin | [`clients/wordpress-plugin/`](clients/wordpress-plugin/) | **full** — WooCommerce integration | WP plugin upload |
-| Shopify app | [`clients/shopify-app/`](clients/shopify-app/) | scaffold | — |
+| Shopify app | [`clients/shopify-app/`](clients/shopify-app/) | design-only — Liquid + admin + checkout extension sketches, no shipped code yet | — |
 
 See [`examples/reviews-and-comments/`](examples/reviews-and-comments/)
 for the end-to-end working demo (16 identities, 15 reviews,

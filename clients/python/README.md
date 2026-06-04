@@ -6,7 +6,10 @@ decentralized protocol for relational, per-observer trust.
 Version 2.x of this SDK covers the full protocol surface: identity,
 trust, titles, event streams, anchors, guardian sets, guardian
 recovery, cross-domain gossip, K-of-K bootstrap, fork-block activation,
-and compact Merkle inclusion proofs (QDPs 0001–0010).
+compact Merkle inclusion proofs (QDPs 0001–0010), plus the operational
+QDPs added since: content moderation (QDP-0015), data subject rights /
+consent / processing restrictions (QDP-0017), and the tamper-evident
+operator audit log (QDP-0018).
 
 ## Install
 
@@ -64,7 +67,11 @@ corresponding typed method.
 | Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
 | Fork-block | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
-| Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_node_domains`, `update_node_domains` |
+| Moderation (QDP-0015) | `submit_moderation_action`, `get_moderation_actions` |
+| Audit log (QDP-0018) | `audit_head`, `audit_entries`, `audit_entry` |
+| Privacy (QDP-0017) | `submit_dsr`, `get_dsr_status`, `submit_consent_grant`, `submit_consent_withdraw`, `get_consent_history`, `submit_processing_restriction`, `get_restrictions_for_subject`, `submit_dsr_compliance` |
+| Block-commit helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
 
 ### `Quid` — cryptographic identity
 
@@ -189,7 +196,7 @@ pytest -v
 
 | SDK version | Node version | QDPs |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | 0001–0010, 0015, 0017, 0018 |
 | 1.x | 1.x | identity, trust, title only |
 
 v2 is **not** wire-compatible with v1. If you have a v1-era node,

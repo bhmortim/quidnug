@@ -1,8 +1,8 @@
 /**
  * Quidnug Client SDK v2 extensions.
  *
- * Adds protocol coverage for QDPs 0002–0010 on top of the v1
- * identity/trust/title/event surface in quidnug-client.js:
+ * Adds protocol coverage on top of the v1 identity/trust/title/event
+ * surface in quidnug-client.js:
  *
  *   - Guardian sets + recovery + resignation (QDP-0002, QDP-0006)
  *   - Cross-domain fingerprint & anchor gossip (QDP-0003)
@@ -10,6 +10,9 @@
  *   - K-of-K bootstrap nonce snapshots (QDP-0008)
  *   - Fork-block activation (QDP-0009)
  *   - Compact Merkle inclusion proofs (QDP-0010)
+ *   - Content moderation actions (QDP-0015)
+ *   - Data Subject Rights, consent, processing restrictions (QDP-0017)
+ *   - Tamper-evident operator audit log (QDP-0018)
  *
  * Usage (ES modules):
  *
@@ -151,6 +154,102 @@ QuidnugClient.prototype.submitForkBlock = async function (forkBlock) {
 
 QuidnugClient.prototype.getForkBlockStatus = async function () {
   return _getJson(this, "fork-block/status");
+};
+
+// ---------------------------------------------------------------------------
+// Moderation (QDP-0015) — content takedowns, restores, dispute marks
+// ---------------------------------------------------------------------------
+
+/**
+ * Submit an append-only moderation action against a subject.
+ * @param {Object} action - Signed ModerationAction envelope. Shape:
+ *   { targetType, targetId, actionType, moderatorQuid, reason,
+ *     evidenceCid?, signature, ... }.
+ */
+QuidnugClient.prototype.submitModerationAction = async function (action) {
+  if (!action || !action.targetId) throw new Error("targetId required");
+  return _postJson(this, "moderation/actions", action);
+};
+
+QuidnugClient.prototype.getModerationActions = async function (targetType, targetId) {
+  if (!targetType || !targetId) throw new Error("targetType and targetId required");
+  if (targetType !== "EVENT" && targetType !== "QUID" && targetType !== "TITLE") {
+    throw new Error("targetType must be EVENT, QUID, or TITLE");
+  }
+  const data = await _getJson(
+    this,
+    `moderation/actions/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`
+  );
+  return data.data || data.actions || [];
+};
+
+// ---------------------------------------------------------------------------
+// Audit log (QDP-0018) — tamper-evident operator log
+// ---------------------------------------------------------------------------
+
+QuidnugClient.prototype.getAuditHead = async function () {
+  return _getJson(this, "audit/head");
+};
+
+QuidnugClient.prototype.getAuditEntries = async function ({ since, limit } = {}) {
+  const params = new URLSearchParams();
+  if (since !== undefined) params.set("since", String(since));
+  if (limit !== undefined) params.set("limit", String(limit));
+  const qs = params.toString();
+  return _getJson(this, "audit/entries" + (qs ? `?${qs}` : ""));
+};
+
+QuidnugClient.prototype.getAuditEntry = async function (sequence) {
+  return _getJson(this, `audit/entry/${Number(sequence)}`);
+};
+
+// ---------------------------------------------------------------------------
+// Privacy: DSR, consent, restrictions, compliance (QDP-0017)
+// ---------------------------------------------------------------------------
+
+/**
+ * File a signed Data Subject Right request (access / erasure /
+ * portability / restriction). Server returns ``{ requestTxId, ... }``.
+ */
+QuidnugClient.prototype.submitDSR = async function (request) {
+  return _postJson(this, "privacy/dsr", request);
+};
+
+QuidnugClient.prototype.getDSRStatus = async function (requestTxId) {
+  if (!requestTxId) throw new Error("requestTxId required");
+  return _getJson(this, `privacy/dsr/${encodeURIComponent(requestTxId)}`);
+};
+
+QuidnugClient.prototype.submitConsentGrant = async function (grant) {
+  return _postJson(this, "privacy/consent/grants", grant);
+};
+
+QuidnugClient.prototype.submitConsentWithdraw = async function (withdraw) {
+  return _postJson(this, "privacy/consent/withdraws", withdraw);
+};
+
+QuidnugClient.prototype.getConsentHistory = async function ({ subjectQuid, processorQuid } = {}) {
+  const params = new URLSearchParams();
+  if (subjectQuid) params.set("subjectQuid", subjectQuid);
+  if (processorQuid) params.set("processorQuid", processorQuid);
+  const qs = params.toString();
+  return _getJson(this, "privacy/consent/history" + (qs ? `?${qs}` : ""));
+};
+
+QuidnugClient.prototype.submitProcessingRestriction = async function (restriction) {
+  return _postJson(this, "privacy/restrictions", restriction);
+};
+
+QuidnugClient.prototype.getRestrictionsForSubject = async function (subjectQuid) {
+  if (!subjectQuid) throw new Error("subjectQuid required");
+  const data = await _getJson(
+    this, `privacy/restrictions/${encodeURIComponent(subjectQuid)}`
+  );
+  return data.data || data.restrictions || [];
+};
+
+QuidnugClient.prototype.submitDSRCompliance = async function (compliance) {
+  return _postJson(this, "privacy/compliance", compliance);
 };
 
 // ---------------------------------------------------------------------------
