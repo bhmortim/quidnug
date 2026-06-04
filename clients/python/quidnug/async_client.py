@@ -531,6 +531,82 @@ class AsyncQuidnugClient:
     async def bootstrap_status(self) -> Dict[str, Any]:
         return await self._request("GET", "bootstrap/status")
 
+    # --- Moderation (QDP-0015) --------------------------------------------
+
+    async def submit_moderation_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request("POST", "moderation/actions", body=action)
+
+    async def get_moderation_actions(
+        self, target_type: str, target_id: str
+    ) -> List[Dict[str, Any]]:
+        if target_type not in ("EVENT", "QUID", "TITLE"):
+            raise ValidationError("target_type must be EVENT, QUID, or TITLE")
+        path = (
+            f"moderation/actions/{quote(target_type, safe='')}/"
+            f"{quote(target_id, safe='')}"
+        )
+        data = await self._request("GET", path)
+        raw = data.get("data") or data.get("actions") or []
+        return raw if isinstance(raw, list) else []
+
+    # --- Audit log (QDP-0018) ---------------------------------------------
+
+    async def audit_head(self) -> Dict[str, Any]:
+        return await self._request("GET", "audit/head")
+
+    async def audit_entries(
+        self, *, since: Optional[int] = None, limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        params = {k: v for k, v in {"since": since, "limit": limit}.items() if v is not None}
+        return await self._request("GET", "audit/entries", params=params)
+
+    async def audit_entry(self, sequence: int) -> Dict[str, Any]:
+        return await self._request("GET", f"audit/entry/{int(sequence)}")
+
+    # --- Data subject rights + consent (QDP-0017) -------------------------
+
+    async def submit_dsr(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request("POST", "privacy/dsr", body=request)
+
+    async def get_dsr_status(self, request_tx_id: str) -> Dict[str, Any]:
+        return await self._request(
+            "GET", f"privacy/dsr/{quote(request_tx_id, safe='')}"
+        )
+
+    async def submit_consent_grant(self, grant: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request("POST", "privacy/consent/grants", body=grant)
+
+    async def submit_consent_withdraw(self, withdraw: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request("POST", "privacy/consent/withdraws", body=withdraw)
+
+    async def get_consent_history(
+        self,
+        *,
+        subject_quid: Optional[str] = None,
+        processor_quid: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        params = {
+            k: v for k, v in
+            {"subjectQuid": subject_quid, "processorQuid": processor_quid}.items()
+            if v is not None
+        }
+        return await self._request("GET", "privacy/consent/history", params=params)
+
+    async def submit_processing_restriction(
+        self, restriction: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return await self._request("POST", "privacy/restrictions", body=restriction)
+
+    async def get_restrictions_for_subject(self, subject_quid: str) -> List[Dict[str, Any]]:
+        data = await self._request(
+            "GET", f"privacy/restrictions/{quote(subject_quid, safe='')}"
+        )
+        raw = data.get("data") or data.get("restrictions") or []
+        return raw if isinstance(raw, list) else []
+
+    async def submit_dsr_compliance(self, compliance: Dict[str, Any]) -> Dict[str, Any]:
+        return await self._request("POST", "privacy/compliance", body=compliance)
+
 
 def _json_fallback(obj: Any) -> Any:
     if hasattr(obj, "__dataclass_fields__"):

@@ -9,7 +9,7 @@ hydrates for interactivity (hover tooltips, click events).
 ## Install
 
 ```bash
-npm install @quidnug/astro-reviews @quidnug/web-components
+npm install @quidnug/astro-reviews @quidnug/web-components @quidnug/client
 ```
 
 ## Use
@@ -18,9 +18,10 @@ npm install @quidnug/astro-reviews @quidnug/web-components
 ---
 // product.astro
 import { QnAurora, QnTrace } from "@quidnug/astro-reviews";
-import { computePersonalRating } from "./lib/rating.js";
+import { computePersonalRating } from "@quidnug/astro-reviews/lib/rating.js";
 
 const rating = await computePersonalRating({
+    node: import.meta.env.PUBLIC_QUIDNUG_NODE,
     productId: Astro.props.productId,
     observerId: Astro.locals.user?.quidId,
     topic: "reviews.public.technology.laptops",
@@ -28,21 +29,61 @@ const rating = await computePersonalRating({
 ---
 
 <section>
-    <h1>{rating.productName}</h1>
+    <h1>{rating.productName ?? Astro.props.productId}</h1>
 
     <QnAurora size="standard"
               rating={rating.personal}
               crowd={rating.crowd}
-              contributors={rating.contributors.length}
+              contributors={rating.contributingReviews}
               direct={rating.contributors.filter(c => c.direct).length}
               observerName={Astro.locals.user?.displayName}
               showDelta
               showHistogram
-              contributorRatings={rating.contributors.map(c => c.rating)} />
+              contributorRatings={rating.contributorRatings} />
 
     <QnTrace contributors={rating.contributors} showLabels />
 </section>
 ```
+
+## Server-side helper: `computePersonalRating`
+
+```js
+import { computePersonalRating } from "@quidnug/astro-reviews/lib/rating.js";
+
+const r = await computePersonalRating({
+    node: "http://localhost:8080",      // base URL of the Quidnug node
+    productId: "laptop-x1",             // subject (title) id
+    topic: "reviews.public.technology.laptops",
+    observerId: "alice",                // or undefined for "anonymous"
+    // raterOptions: { recencyHalflifeDays: 365, ... }
+});
+```
+
+Returns:
+
+```ts
+{
+    productId: string;
+    observerId: string;
+    topic: string;
+    personal: number | null;        // observer-weighted rating
+    crowd: number | null;           // anonymous-observer view (no trust edges)
+    rating: number | null;          // alias for personal
+    contributors: Array<{
+        id: string; name?: string;
+        rating: number; weight: number; direct: boolean;
+    }>;
+    contributorRatings: number[];   // ready for <QnAurora :contributor-ratings>
+    contributingReviews: number;
+    totalReviewsConsidered: number;
+    confidenceRange: number;
+}
+```
+
+Internally it runs the same `Rater` algorithm used by the
+client-side custom element, against the live node — so the
+build-time SVG, the hydrated client SVG, and the algorithm's
+Python / Go reference implementations all agree byte-for-byte.
 
 ## Why SSR matters
 

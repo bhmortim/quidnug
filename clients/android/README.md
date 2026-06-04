@@ -11,7 +11,11 @@ Kotlin-first Android wrapper over the [Java SDK](../java/), adding:
 - **`QuidVault`** — dev-grade SharedPreferences-backed quid store
   for tests and demos.
 
-**Status**: SDK complete. Publication to Maven Central + Android's
+**Status**: Android-specific layer (Keystore signer, coroutine
+wrappers, vault) is complete. Protocol coverage is inherited from
+the underlying Java SDK, which currently exposes QDPs 0001–0010 —
+the QDP-0015 / 0017 / 0018 operational APIs are reachable only via
+raw HTTP for now. Publication to Maven Central + Android's
 published repository is pending.
 
 ## Install

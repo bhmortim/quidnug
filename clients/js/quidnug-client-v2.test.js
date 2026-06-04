@@ -150,3 +150,109 @@ test("getGuardianSet — returns null on 404", async () => {
   const set = await client.getGuardianSet("missing");
   assert.equal(set, null);
 });
+
+// --- Moderation / audit / privacy routing (smoke tests) -------------------
+
+function _stubOnce(body = { success: true, data: { ok: true } }, status = 200) {
+  const calls = { url: null, method: null, body: null };
+  globalThis.fetch = async (url, init = {}) => {
+    calls.url = url;
+    calls.method = init.method ?? "GET";
+    calls.body = init.body ? JSON.parse(init.body) : null;
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  return calls;
+}
+
+function _readyClient() {
+  const client = new QuidnugClient({ defaultNode: "http://n.local" });
+  client.nodes[0] = { url: "http://n.local", status: "healthy" };
+  return client;
+}
+
+test("submitModerationAction — routes to /moderation/actions", async () => {
+  const calls = _stubOnce();
+  await _readyClient().submitModerationAction({
+    targetType: "EVENT", targetId: "ev-1",
+    actionType: "TAKEDOWN", moderatorQuid: "mod", reason: "spam",
+  });
+  assert.equal(calls.url, "http://n.local/api/moderation/actions");
+  assert.equal(calls.method, "POST");
+  assert.equal(calls.body.targetId, "ev-1");
+});
+
+test("submitModerationAction — rejects missing targetId", async () => {
+  await assert.rejects(
+    () => _readyClient().submitModerationAction({ actionType: "TAKEDOWN" }),
+    /targetId required/,
+  );
+});
+
+test("getModerationActions — encodes targetType/targetId into URL", async () => {
+  const calls = _stubOnce({ success: true, data: { data: [{ id: "a1" }] } });
+  const actions = await _readyClient().getModerationActions("QUID", "user with space");
+  assert.equal(
+    calls.url,
+    "http://n.local/api/moderation/actions/QUID/user%20with%20space",
+  );
+  assert.deepEqual(actions, [{ id: "a1" }]);
+});
+
+test("getModerationActions — rejects invalid targetType", async () => {
+  await assert.rejects(
+    () => _readyClient().getModerationActions("REVIEW", "id"),
+    /targetType must be/,
+  );
+});
+
+test("getAuditHead — routes to /audit/head", async () => {
+  const calls = _stubOnce({ success: true, data: { sequence: 42, hash: "deadbeef" } });
+  const head = await _readyClient().getAuditHead();
+  assert.equal(calls.url, "http://n.local/api/audit/head");
+  assert.equal(head.sequence, 42);
+});
+
+test("getAuditEntries — passes since/limit", async () => {
+  const calls = _stubOnce({ success: true, data: { data: [], pagination: {} } });
+  await _readyClient().getAuditEntries({ since: 100, limit: 10 });
+  assert.equal(calls.url, "http://n.local/api/audit/entries?since=100&limit=10");
+});
+
+test("getAuditEntry — encodes sequence as number", async () => {
+  const calls = _stubOnce({ success: true, data: { sequence: 7 } });
+  await _readyClient().getAuditEntry(7);
+  assert.equal(calls.url, "http://n.local/api/audit/entry/7");
+});
+
+test("submitDSR — routes to /privacy/dsr", async () => {
+  const calls = _stubOnce({ success: true, data: { requestTxId: "tx-1" } });
+  const out = await _readyClient().submitDSR({
+    subjectQuid: "alice", requestType: "ACCESS",
+  });
+  assert.equal(calls.url, "http://n.local/api/privacy/dsr");
+  assert.equal(out.requestTxId, "tx-1");
+});
+
+test("getDSRStatus — encodes requestTxId", async () => {
+  const calls = _stubOnce({ success: true, data: { status: "COMPLETED" } });
+  await _readyClient().getDSRStatus("tx-1");
+  assert.equal(calls.url, "http://n.local/api/privacy/dsr/tx-1");
+});
+
+test("getConsentHistory — passes both query params", async () => {
+  const calls = _stubOnce({ success: true, data: { events: [] } });
+  await _readyClient().getConsentHistory({ subjectQuid: "alice", processorQuid: "acme" });
+  assert.equal(
+    calls.url,
+    "http://n.local/api/privacy/consent/history?subjectQuid=alice&processorQuid=acme",
+  );
+});
+
+test("getRestrictionsForSubject — returns array unwrapped", async () => {
+  _stubOnce({ success: true, data: { data: [{ id: "r1" }, { id: "r2" }] } });
+  const out = await _readyClient().getRestrictionsForSubject("alice");
+  assert.deepEqual(out, [{ id: "r1" }, { id: "r2" }]);
+});

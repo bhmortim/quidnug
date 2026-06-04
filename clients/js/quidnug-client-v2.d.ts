@@ -188,6 +188,28 @@ declare module "./quidnug-client.js" {
     // Fork-block
     submitForkBlock(fb: ForkBlock): Promise<unknown>;
     getForkBlockStatus(): Promise<unknown>;
+
+    // Moderation (QDP-0015)
+    submitModerationAction(action: Record<string, unknown>): Promise<unknown>;
+    getModerationActions(
+      targetType: "EVENT" | "QUID" | "TITLE",
+      targetId: string
+    ): Promise<unknown[]>;
+
+    // Audit log (QDP-0018)
+    getAuditHead(): Promise<unknown>;
+    getAuditEntries(opts?: { since?: number; limit?: number }): Promise<unknown>;
+    getAuditEntry(sequence: number): Promise<unknown>;
+
+    // Privacy / DSR (QDP-0017)
+    submitDSR(request: Record<string, unknown>): Promise<{ requestTxId?: string } & Record<string, unknown>>;
+    getDSRStatus(requestTxId: string): Promise<unknown>;
+    submitConsentGrant(grant: Record<string, unknown>): Promise<unknown>;
+    submitConsentWithdraw(withdraw: Record<string, unknown>): Promise<unknown>;
+    getConsentHistory(opts?: { subjectQuid?: string; processorQuid?: string }): Promise<unknown>;
+    submitProcessingRestriction(restriction: Record<string, unknown>): Promise<unknown>;
+    getRestrictionsForSubject(subjectQuid: string): Promise<unknown[]>;
+    submitDSRCompliance(compliance: Record<string, unknown>): Promise<unknown>;
   }
 
   namespace QuidnugClient {

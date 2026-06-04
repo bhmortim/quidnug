@@ -1,7 +1,7 @@
 {
   "name": "@quidnug/client",
   "version": "2.0.0",
-  "description": "Quidnug Client SDK for JavaScript \u2014 full protocol surface (QDPs 0001\u20130010)",
+  "description": "Quidnug Client SDK for JavaScript \u2014 full protocol surface (QDPs 0001\u20130010, plus operational APIs 0015/0017/0018)",
   "main": "quidnug-client.js",
   "module": "quidnug-client.js",
   "types": "quidnug-client.d.ts",

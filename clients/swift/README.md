@@ -2,8 +2,21 @@
 
 iOS 15+ / macOS 12+ client SDK for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust.
+
+**Coverage status: partial.** Ships the read/write paths Apple
+developers hit most — identity, trust (grant + relational query +
+edges), titles, event streams, plus the read side of guardian
+sets and cross-domain fingerprints — alongside ECDSA P-256 via
+CryptoKit, canonical signable bytes, and offline QDP-0010 Merkle
+proof verification. The full guardian write flow (recovery
+init/veto/commit, resignation), gossip submission, K-of-K
+snapshot publish, fork-block publish, moderation (QDP-0015),
+privacy / DSR (QDP-0017), and the audit log (QDP-0018) are not
+yet exposed as typed methods. The Python and JavaScript SDKs are
+the recommended reference clients for those areas.
+
+See the methods table below for what's actually shipped.
 
 Uses Apple's `CryptoKit` for ECDSA P-256 (no C dependencies, no
 App Store review friction) and `URLSession` for HTTP.
@@ -46,7 +59,7 @@ Runnable examples under [`examples/`](examples/):
 | File | Shows |
 | --- | --- |
 | `Quickstart.swift` | Two-party trust + relational trust query. |
-| `MobileAuth.swift` | Register on first launch, emit LOGIN events, fetch audit log. |
+| `MobileAuth.swift` | Register on first launch, emit LOGIN events, and replay the user's own event stream as a per-user authentication audit trail. |
 | `TrustMatrix.swift` | SwiftUI view model rendering an N×N relational-trust grid. |
 
 ## What ships

@@ -1,7 +1,7 @@
 {
     "name": "@quidnug/vue-reviews",
-    "version": "0.1.0",
-    "description": "Vue 3 components for Quidnug trust-weighted reviews. Thin wrappers over @quidnug/web-components.",
+    "version": "0.2.0",
+    "description": "Vue 3 components, composables, and provider for Quidnug trust-weighted reviews. Mirrors @quidnug/react-reviews.",
     "type": "module",
     "main": "src/index.js",
     "module": "src/index.js",
@@ -11,7 +11,10 @@
     ],
     "exports": {
         ".": "./src/index.js",
-        "./primitives": "./src/primitives/index.js"
+        "./primitives": "./src/primitives/index.js",
+        "./composables": "./src/composables/index.js",
+        "./components": "./src/components/index.js",
+        "./provider": "./src/provider.js"
     },
     "scripts": {
         "test": "echo 'no tests yet'"

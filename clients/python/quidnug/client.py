@@ -863,6 +863,126 @@ class QuidnugClient:
     def update_node_domains(self, domains: List[str]) -> Dict[str, Any]:
         return self._request("POST", "node/domains", body={"managedDomains": domains})
 
+    # --- Moderation (QDP-0015) --------------------------------------------
+
+    def submit_moderation_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/moderation/actions — record an append-only moderation
+        decision (takedown, restore, mark-disputed) against a subject.
+
+        The body shape is defined by the Go ``ModerationAction`` type:
+
+            {
+              "targetType": "EVENT" | "QUID" | "TITLE",
+              "targetId":   "<id>",
+              "actionType": "TAKEDOWN" | "RESTORE" | "MARK_DISPUTED",
+              "moderatorQuid": "<quid>",
+              "reason":     "<text>",
+              "evidenceCid": "<ipfs cid, optional>",
+              "signature":  "<hex>",
+              ...
+            }
+
+        Returns the server's transaction receipt.
+        """
+        return self._request("POST", "moderation/actions", body=action)
+
+    def get_moderation_actions(self, target_type: str, target_id: str) -> List[Dict[str, Any]]:
+        """GET /api/moderation/actions/{targetType}/{targetId} — history of
+        moderation actions against a subject, newest-first."""
+        if target_type not in ("EVENT", "QUID", "TITLE"):
+            raise ValidationError("target_type must be EVENT, QUID, or TITLE")
+        path = (
+            f"moderation/actions/{quote(target_type, safe='')}/"
+            f"{quote(target_id, safe='')}"
+        )
+        data = self._request("GET", path)
+        raw = data.get("data") or data.get("actions") or []
+        return raw if isinstance(raw, list) else []
+
+    # --- Audit log (QDP-0018) ---------------------------------------------
+
+    def audit_head(self) -> Dict[str, Any]:
+        """GET /api/audit/head — current tip of the tamper-evident
+        operator log. Returns ``{ "sequence": int, "hash": str, ... }``."""
+        return self._request("GET", "audit/head")
+
+    def audit_entries(
+        self,
+        *,
+        since: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/audit/entries — paginated walk of the audit log.
+
+        ``since`` is the last seen sequence (-1 from the head).
+        Returns ``{ "data": [Entry...], "pagination": {...} }``.
+        """
+        params = _strip_none({"since": since, "limit": limit})
+        return self._request("GET", "audit/entries", params=params)
+
+    def audit_entry(self, sequence: int) -> Dict[str, Any]:
+        """GET /api/audit/entry/{sequence} — single audit-log entry by sequence."""
+        return self._request("GET", f"audit/entry/{int(sequence)}")
+
+    # --- Data subject rights + consent (QDP-0017) -------------------------
+
+    def submit_dsr(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/privacy/dsr — file a signed Data Subject Right request
+        (access, erasure, portability, restriction). Returns the receipt
+        carrying ``requestTxId`` used to poll status."""
+        return self._request("POST", "privacy/dsr", body=request)
+
+    def get_dsr_status(self, request_tx_id: str) -> Dict[str, Any]:
+        """GET /api/privacy/dsr/{requestTxId} — status of a previously-filed
+        DSR (RECEIVED, IN_PROGRESS, COMPLETED, REJECTED)."""
+        return self._request(
+            "GET", f"privacy/dsr/{quote(request_tx_id, safe='')}"
+        )
+
+    def submit_consent_grant(self, grant: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/privacy/consent/grants — append a signed consent grant
+        from a data subject to a processor for a stated purpose."""
+        return self._request("POST", "privacy/consent/grants", body=grant)
+
+    def submit_consent_withdraw(self, withdraw: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/privacy/consent/withdraws — withdraw a previously-granted
+        consent. Append-only — older grants stay in the log."""
+        return self._request("POST", "privacy/consent/withdraws", body=withdraw)
+
+    def get_consent_history(
+        self,
+        *,
+        subject_quid: Optional[str] = None,
+        processor_quid: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/privacy/consent/history — full consent timeline,
+        filterable by subject and/or processor."""
+        params = _strip_none(
+            {"subjectQuid": subject_quid, "processorQuid": processor_quid}
+        )
+        return self._request("GET", "privacy/consent/history", params=params)
+
+    def submit_processing_restriction(
+        self, restriction: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """POST /api/privacy/restrictions — install a processing restriction
+        (Article 18 GDPR) for a subject; signed by the subject."""
+        return self._request("POST", "privacy/restrictions", body=restriction)
+
+    def get_restrictions_for_subject(self, subject_quid: str) -> List[Dict[str, Any]]:
+        """GET /api/privacy/restrictions/{subjectQuid} — active processing
+        restrictions for a subject."""
+        data = self._request(
+            "GET", f"privacy/restrictions/{quote(subject_quid, safe='')}"
+        )
+        raw = data.get("data") or data.get("restrictions") or []
+        return raw if isinstance(raw, list) else []
+
+    def submit_dsr_compliance(self, compliance: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/privacy/compliance — record proof that a DSR was
+        actioned (deletion certificate, export bundle CID, etc.)."""
+        return self._request("POST", "privacy/compliance", body=compliance)
+
 
 # --- Wire -> dataclass decoders -------------------------------------------
 #

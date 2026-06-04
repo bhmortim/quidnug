@@ -3,10 +3,17 @@
 Java 17+ client SDK for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the **full v2 protocol surface** (QDPs 0001–0010): identity,
-trust, titles, event streams, anchors, guardian sets + recovery,
+Covers the **QDP 0001–0010 protocol surface**: identity, trust,
+titles, event streams, anchors, guardian sets + recovery,
 cross-domain gossip, K-of-K bootstrap, fork-block activation, and
 compact Merkle inclusion proofs.
+
+The newer operational APIs — moderation (QDP-0015), data subject
+rights (QDP-0017), the tamper-evident audit log (QDP-0018) — and
+the v1 registry-query / IPFS / relational-trust-query endpoints
+ship in Python and JavaScript only today. Use the raw HTTP path
+plus `CanonicalBytes` for those areas, or contribute a typed
+method — the patterns above generalize cleanly.
 
 ## Install
 

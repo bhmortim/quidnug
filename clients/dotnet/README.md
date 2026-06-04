@@ -2,8 +2,16 @@
 
 `Quidnug.Client` — the official .NET client for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust. Covers the **QDP
+0001–0010 protocol surface**: identity, trust, titles, event
+streams, the guardian primitives, cross-domain gossip,
+K-of-K bootstrap, fork-block, and compact Merkle proofs.
+
+The newer operational APIs — moderation (QDP-0015), data subject
+rights (QDP-0017), tamper-evident audit log (QDP-0018) — and the
+v1 registry-query / IPFS / relational-trust-query endpoints ship
+in Python and JavaScript only today. Use the raw HTTP path plus
+`CanonicalBytes` for those areas, or contribute a typed method.
 
 Targets .NET 8 (runs under .NET 8/9/10). Uses built-in
 `System.Security.Cryptography.ECDsa`, `System.Net.Http`, and
