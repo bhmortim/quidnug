@@ -3,10 +3,14 @@
 `quidnug` — the official Rust crate for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the full protocol surface: identity, trust, titles, event
-streams, anchors, guardian sets, recovery, cross-domain gossip,
-K-of-K bootstrap, fork-block activation, compact Merkle inclusion
-proofs (QDPs 0001–0010).
+Implements the v1.0-conformant identity / trust / title surface plus
+QDP-0010 compact Merkle inclusion-proof verification. The crate
+ships strongly-typed wire structs (`GuardianSet`, `DomainFingerprint`,
+`NonceSnapshot`, `ForkBlock`, …) for the full v2 protocol so callers
+can construct/inspect those payloads today; client methods that
+submit/query them are tracked under [Coverage](#coverage) below.
+The Go (`pkg/client`) and Python (`clients/python`) SDKs remain the
+reference implementations for the full v2 surface.
 
 ## Install
 
@@ -63,8 +67,33 @@ Runnable examples live in `examples/`:
 | `quidnug::canonical_bytes` | Canonical signable bytes (matches Go / Python byte-for-byte). |
 | `quidnug::verify_inclusion_proof` | QDP-0010 Merkle proof verifier. |
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
-| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
+| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, GuardianSet, DomainFingerprint, NonceSnapshot, ForkBlock, ...}` | Wire types for v1 + v2 features. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+## Coverage
+
+The async `Client` currently exposes the v1 transaction surface plus
+commit-wait and domain-registration helpers:
+
+| Area | Methods |
+| --- | --- |
+| Health | `health`, `info` |
+| Identity | `register_identity`, `get_identity` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges` |
+| Title | `get_title` |
+| Domains | `register_domain`, `ensure_domain` |
+| Commit-wait | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
+
+The v2 surface (events, discovery, guardians, gossip, bootstrap,
+fork-block, blocks) is **not yet wrapped** in this crate. Either:
+
+- Call the node directly via your own `reqwest::Client` against
+  the documented HTTP endpoints (see [`docs/api/`](../../docs/api)), or
+- Use the Go (`pkg/client`), Python (`clients/python`), Java
+  (`clients/java`), or .NET (`clients/dotnet`) SDKs which cover
+  more of the v2 surface today.
+
+Tracked in the project roadmap; contributions welcome.
 
 ## Error taxonomy
 

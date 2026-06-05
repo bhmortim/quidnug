@@ -3,10 +3,13 @@
 Java 17+ client SDK for [Quidnug](https://github.com/bhmortim/quidnug),
 a decentralized protocol for relational, per-observer trust.
 
-Covers the **full v2 protocol surface** (QDPs 0001–0010): identity,
-trust, titles, event streams, anchors, guardian sets + recovery,
-cross-domain gossip, K-of-K bootstrap, fork-block activation, and
-compact Merkle inclusion proofs.
+Covers the v2 transaction surface — identity, trust, titles, event
+streams, guardian sets + recovery + resignation, cross-domain
+gossip, K-of-K bootstrap, fork-block activation, and compact Merkle
+inclusion proofs (QDPs 0001–0010). The [Coverage](#coverage) section
+below lists every method that ships today and the small set of v2
+endpoints (QDP-0014 discovery, domain admin, commit-wait helpers)
+not yet wrapped here.
 
 ## Install
 
@@ -85,6 +88,8 @@ against any other.
 
 Thread-safe, builder-constructed. Every endpoint has a typed method.
 
+<a id="coverage"></a>
+
 | Area | Methods |
 | --- | --- |
 | Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
@@ -96,6 +101,16 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+
+**Not yet wrapped** (call the Go / Python SDKs or hit the HTTP
+endpoints directly):
+
+- Discovery (QDP-0014): `publishNodeAdvertisement`, `discoverDomain`,
+  `discoverNode`, `discoverOperator`, `discoverQuids`,
+  `discoverTrustedQuids`.
+- Domain admin: `registerDomain`, `ensureDomain`.
+- Commit-wait helpers: `waitForIdentity`, `waitForIdentities`,
+  `waitForTitle`.
 
 ### `CanonicalBytes` — signable-bytes encoder
 
@@ -225,9 +240,9 @@ roadmap.
 
 ## Protocol version compatibility
 
-| SDK | Node | QDPs |
+| SDK | Node | Wire compatibility |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | v1 transactions byte-identical with every Quidnug SDK; v2 endpoints listed in [coverage table](#coverage) above. |
 
 ## Contributing
 

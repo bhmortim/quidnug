@@ -2,8 +2,14 @@
 
 `Quidnug.Client` — the official .NET client for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust.
+
+Implements the v1 identity / trust / title / events surface plus the
+v2 guardian recovery, gossip, bootstrap and fork-block endpoints
+exercised by enterprise integrations. The [Coverage](#coverage)
+table below lists the methods that ship today; gaps fall back to the
+Go (`pkg/client`) or Python (`clients/python`) SDKs which remain the
+reference v2 implementations.
 
 Targets .NET 8 (runs under .NET 8/9/10). Uses built-in
 `System.Security.Cryptography.ECDsa`, `System.Net.Http`, and
@@ -67,6 +73,8 @@ Java, JavaScript, and Rust SDKs. The quid ID is `sha256(publicKey)[0..8]`.
 Every method returns a `Task`. Thread-safe — one instance may be
 shared across request handlers.
 
+<a id="coverage"></a>
+
 | Area | Methods |
 | --- | --- |
 | Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
@@ -78,6 +86,20 @@ shared across request handlers.
 | Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
 | Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
+
+**Not yet wrapped** (call the Go / Python SDKs or the HTTP
+endpoints directly):
+
+- Discovery (QDP-0014): `PublishNodeAdvertisement`, `DiscoverDomain`,
+  `DiscoverNode`, `DiscoverOperator`, `DiscoverQuids`,
+  `DiscoverTrustedQuids`.
+- Guardian writes: `SubmitGuardianResignation`, `GetPendingRecovery`.
+- Push-mode gossip: `PushAnchor`, `PushFingerprint`.
+- Bootstrap snapshots: `SubmitNonceSnapshot`, `GetLatestNonceSnapshot`.
+- Chain reads: `GetPendingTransactions`, `ListDomains`.
+- Domain admin: `RegisterDomain`, `EnsureDomain`.
+- Commit-wait helpers: `WaitForIdentity`, `WaitForIdentities`,
+  `WaitForTitle`.
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -223,9 +245,9 @@ invocation.
 
 ## Protocol version compatibility
 
-| SDK | Node | QDPs |
+| SDK | Node | Wire compatibility |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | v1 transactions byte-identical across SDKs; v2 endpoints in [coverage table](#coverage) above. |
 
 ## License
 

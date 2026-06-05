@@ -85,7 +85,7 @@ val client = QuidnugAndroidClient.create(
     authToken = BuildConfig.QUIDNUG_TOKEN
 )
 
-// All methods are suspending (coroutines-first).
+// Suspending wrappers run the JVM client on Dispatchers.IO.
 lifecycleScope.launch {
     client.registerIdentity(quid, name = "Alice", homeDomain = "myapp.users")
     client.grantTrust(quid, trustee = "bob-id", level = 0.9, domain = "myapp.users")
@@ -94,9 +94,14 @@ lifecycleScope.launch {
 }
 ```
 
-Full protocol surface is available via `client.client` (the
-underlying Java `QuidnugClient`) — every Java method works
-unchanged.
+The Kotlin wrapper currently ships **five** `suspend` shortcuts for
+the highest-traffic mobile flows: `registerIdentity`, `grantTrust`,
+`getTrust`, `emitEvent`, `streamEvents`. Every other method on the
+[Java SDK](../java/) — title transactions, guardian sets, gossip,
+fork-block, etc. — is reachable through the exposed `client.client`
+property. Wrap any of those in `withContext(Dispatchers.IO) { … }`
+to stay off the main thread; idiomatic suspending wrappers for the
+remaining endpoints are tracked in the roadmap.
 
 ### `QuidVault`
 

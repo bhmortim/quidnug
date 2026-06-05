@@ -1,10 +1,22 @@
-# Quidnug Reviews — Shopify app (scaffold)
+# Quidnug Reviews — Shopify app (design scaffold)
 
-Shopify-native app scaffold for Quidnug trust-weighted reviews.
+Shopify-native app **design scaffold** for Quidnug trust-weighted
+reviews. This directory contains only this README; the Liquid /
+JavaScript / Polaris snippets below are blueprints, not runnable
+code. Build artefacts (`extensions/quidnug-reviews-theme/`,
+`extensions/quidnug-admin/`, `shopify.app.toml`, …) do not yet
+exist.
 
-Status: **Scaffold with concrete design**; full app submission to
-the Shopify App Store is on the roadmap once we have a published
-marketplace-ready node at `public.quidnug.dev`.
+Status:
+
+- **Theme app extension, admin UI, checkout extension:** designed
+  here, not implemented.
+- **App Store listing:** roadmap, gated on a published
+  marketplace-ready node at `public.quidnug.dev`.
+
+For a working e-commerce review integration today, see the
+[WordPress plugin](../wordpress-plugin/), which ships production-
+ready PHP code with WooCommerce hooks and Schema.org output.
 
 ## Architecture
 
@@ -173,11 +185,14 @@ specific bits are what's above.
 
 ## Roadmap
 
-1. **Phase 1 (this scaffold)**: full theme extension working
-   against the public node.
-2. **Phase 2**: admin UI for topic mapping + analytics.
-3. **Phase 3**: checkout extension with auto-PURCHASE attestation.
-4. **Phase 4**: Shopify App Store listing.
+1. **Phase 1 — _not yet started_:** build the theme extension as
+   sketched above and validate it against the public node.
+2. **Phase 2:** admin UI for topic mapping + analytics.
+3. **Phase 3:** checkout extension with auto-PURCHASE attestation.
+4. **Phase 4:** Shopify App Store listing.
+
+The current state of this directory is **design notes only**;
+nothing here is shipping code.
 
 ## License
 

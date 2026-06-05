@@ -1,6 +1,6 @@
 """Quidnug Python SDK — client library for a decentralized trust protocol.
 
-Covers the full v2.x protocol surface:
+The synchronous :class:`QuidnugClient` covers the full v2.x protocol surface:
     - Identity + Trust + Title (v1 surface, plus improvements)
     - Event streams
     - Key lifecycle: Anchors (rotation, invalidation, epoch-cap)
@@ -10,6 +10,11 @@ Covers the full v2.x protocol surface:
     - K-of-K bootstrap snapshots (QDP-0008)
     - Fork-block activation (QDP-0009)
     - Compact Merkle proof verification (QDP-0010)
+
+The asyncio :class:`AsyncQuidnugClient` mirrors the v1 transaction
+surface and the production-critical v2 read paths plus the most
+common writes (guardian set updates, anchor gossip, fork-block submit).
+See the README for the exact method list and parity status.
 
 Typical usage::
 
@@ -25,6 +30,15 @@ Typical usage::
 
 from quidnug.crypto import Quid, canonical_bytes, sign_bytes, verify_signature
 from quidnug.client import QuidnugClient
+
+# AsyncQuidnugClient depends on the optional `httpx` extra. Surface a
+# clear ImportError when callers reach for it without the extra
+# installed, but don't punish the (much more common) sync-only user.
+try:
+    from quidnug.async_client import AsyncQuidnugClient
+except ImportError:  # pragma: no cover - httpx not installed
+    AsyncQuidnugClient = None  # type: ignore[assignment]
+
 from quidnug.errors import (
     QuidnugError,
     ValidationError,
@@ -56,6 +70,7 @@ __version__ = "2.0.0"
 __all__ = [
     "__version__",
     "QuidnugClient",
+    "AsyncQuidnugClient",
     "Quid",
     "canonical_bytes",
     "sign_bytes",
