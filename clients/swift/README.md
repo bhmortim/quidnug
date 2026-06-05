@@ -2,8 +2,14 @@
 
 iOS 15+ / macOS 12+ client SDK for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust.
+
+Implements the v1 identity / trust / title / events surface plus
+read-side helpers for guardians, gossip, bootstrap and fork-block —
+enough to drive a mobile-first quid lifecycle (enrol → audit →
+recover). The full v2 submit surface lives in the Go (`pkg/client`),
+Python and Java SDKs; the [Coverage](#coverage) section below lists
+which methods ship here today.
 
 Uses Apple's `CryptoKit` for ECDSA P-256 (no C dependencies, no
 App Store review friction) and `URLSession` for HTTP.
@@ -71,6 +77,8 @@ Python, Java, .NET, Rust, and JavaScript SDKs. Quid ID is
 `QuidnugClient` is an `actor` so all mutation is isolated. Every
 method uses `async throws`.
 
+<a id="coverage"></a>
+
 | Area | Methods |
 | --- | --- |
 | Health | `health`, `info`, `nodes` |
@@ -82,6 +90,24 @@ method uses `async throws`.
 | Gossip (QDP-0003) | `getLatestDomainFingerprint` |
 | Bootstrap (QDP-0008) | `bootstrapStatus` |
 | Fork-block (QDP-0009) | `forkBlockStatus` |
+
+**Not yet wrapped in Swift** (use the Go / Python / Java SDKs
+or call the HTTP endpoints directly):
+
+- Discovery (QDP-0014): `publishNodeAdvertisement`, `discoverDomain`,
+  `discoverNode`, `discoverOperator`, `discoverQuids`,
+  `discoverTrustedQuids`.
+- Guardian writes beyond `submitGuardianSetUpdate`:
+  `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`,
+  `getPendingRecovery`.
+- Gossip writes: `submitDomainFingerprint`, `submitAnchorGossip`,
+  `pushAnchor`, `pushFingerprint`.
+- Bootstrap writes: `submitNonceSnapshot`, `getLatestNonceSnapshot`.
+- Fork-block writes: `submitForkBlock`.
+- Chain reads: `getBlocks`, `getPendingTransactions`, `listDomains`.
+- Domain admin: `registerDomain`, `ensureDomain`.
+- Commit-wait helpers: `waitForIdentity`, `waitForIdentities`,
+  `waitForTitle`.
 
 ### `CanonicalBytes` / `Merkle`
 
@@ -197,9 +223,9 @@ Tests ship under `Tests/QuidnugTests/`:
 
 ## Protocol version compatibility
 
-| SDK | Node | QDPs |
+| SDK | Node | Wire compatibility |
 | --- | --- | --- |
-| 2.x | 2.x | 0001–0010 |
+| 2.x | 2.x | v1 transactions byte-identical across SDKs; v2 reads in [coverage table](#coverage) above. |
 
 ## License
 

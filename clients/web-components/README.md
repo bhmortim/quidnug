@@ -222,13 +222,20 @@ quidnug-stars, quidnug-review, quidnug-review-list {
 }
 ```
 
-Full CSS custom properties exposed across all components:
+CSS custom properties exposed across all components (set on a
+shared ancestor or `:root`):
 
-| Property | Default |
-| --- | --- |
-| `--quidnug-font` | `system-ui, sans-serif` |
+| Property | Used by | Notes |
+| --- | --- | --- |
+| `--quidnug-font` | `<quidnug-stars>`, `<quidnug-review>`, `<quidnug-review-list>` | Component-level font stack. |
+| `--qn-font` | `<qn-aurora>`, `<qn-constellation>`, `<qn-trace>` | Primitive font stack (defaults to `system-ui, sans-serif`). |
+| `--qn-sentiment-*` | All three primitives | Per-bucket sentiment colors (`-low`, `-mid`, `-high`, `-no-basis`). |
+| `--qn-delta-*` | `<qn-aurora>` | Delta chip colors (`-pos`, `-neg`, `-neutral`). |
+| `--qn-tier-{n}` | `<qn-constellation>` | Concentric tier fills, one per trust hop. |
 
-(More tokens planned — file an issue with what you need.)
+See [`src/design-tokens.js`](src/design-tokens.js) for the exact
+default values and the `setProperty(...)` call sites that pick
+each token up.
 
 ## Production deployment
 

@@ -59,9 +59,9 @@ active user Quid:
 | `useQuid()` | `{ quid, setQuid }` — active signer Quid. |
 | `useQuidnug()` | Full context: `{ client, quid, setQuid, defaultDomain }`. |
 | `useTrust(observer, target, domain, { maxDepth })` | `{ data: { trustLevel, trustPath, pathDepth }, error, loading, refetch }` |
-| `useIdentity(quidId, { domain })` | Identity record or `null` (on 404). |
-| `useStream(subjectId, { limit, offset, domain })` | Paginated event-stream slice. |
-| `useGuardianSet(quidId)` | Guardian set (QDP-0002) or `null`. |
+| `useIdentity(quidId, { domain })` | `{ data, error, loading, refetch }` — `data` is the identity record or `null` (on 404). |
+| `useStream(subjectId, { limit, offset, domain })` | `{ data, error, loading, refetch }` — `data` is `{ events, pagination }`. |
+| `useGuardianSet(quidId)` | `{ data, error, loading, refetch }` — `data` is the QDP-0002 guardian set or `null` (on 404). |
 | `useRegisterIdentity()` | `{ mutate, data, error, pending }` |
 | `useGrantTrust()` | `{ mutate, data, error, pending }` |
 | `useEmitEvent()` | `{ mutate, data, error, pending }` |

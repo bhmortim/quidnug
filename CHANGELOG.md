@@ -7,6 +7,44 @@ onward.
 
 ## [Unreleased]
 
+### Client SDK documentation alignment
+
+Audited every client under `clients/` against the canonical Go SDK
+(`pkg/client`) and the in-repo HTTP surface. Where SDK READMEs
+advertised a "full v2 protocol surface" but the code wrapped only
+part of it, the docs now describe what ships today and which v2
+endpoints fall back to other SDKs:
+
+- **Rust** (`clients/rust`): README + crate-level doc no longer
+  claim full QDP coverage. New "Coverage" section enumerates the
+  twelve methods that ship (`health`, `info`, identity, trust,
+  title getter, domain helpers, commit-wait) and points callers to
+  Go / Python for the v2 write surface.
+- **Swift, .NET, Java**: Per-SDK coverage tables now include an
+  explicit "Not yet wrapped" sub-list (discovery / domain admin /
+  commit-wait helpers, plus extra writes for Swift and .NET). The
+  marketing headline and compatibility table no longer claim full
+  QDP-0001..0010 coverage.
+- **Python**: `AsyncQuidnugClient` is now exported from the
+  `quidnug` top-level package (gracefully `None` when the optional
+  `httpx` extra is missing). README documents the async surface
+  and its parity gap with the sync client.
+- **Android**: README clarifies that only five high-traffic flows
+  ship as `suspend` wrappers; everything else goes through the
+  exposed `client.client` (Java SDK) property.
+- **Web components**: Styling table now lists the `--qn-sentiment-*`,
+  `--qn-delta-*`, `--qn-tier-*`, and `--qn-font` tokens actually set
+  by `design-tokens.js`, not just `--quidnug-font`.
+- **React**: `useIdentity` / `useStream` / `useGuardianSet` hook
+  rows in the table now show the `{ data, error, loading, refetch }`
+  envelope that `useAsync` returns.
+- **Shopify app** (`clients/shopify-app`): README flagged more
+  explicitly as a design scaffold — the directory contains no
+  shipping code today; production e-commerce integrations should
+  use the WordPress plugin until Phase 1 is built out.
+
+No code behaviour changes other than the Python re-export.
+
 ### Operator identity + peering subsystem (Phases 1-4)
 
 Adds operator-quid persistence, three-source peer discovery (static

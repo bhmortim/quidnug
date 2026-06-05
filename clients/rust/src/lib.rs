@@ -1,11 +1,16 @@
 //! # Quidnug Rust SDK
 //!
 //! The official Rust client for [Quidnug], a decentralized protocol
-//! for relational, per-observer trust. Covers the full protocol
-//! surface (QDPs 0001–0010): identity, trust, titles, event streams,
-//! anchors, guardian sets + recovery, cross-domain gossip, K-of-K
-//! bootstrap, fork-block activation, and compact Merkle inclusion
-//! proofs.
+//! for relational, per-observer trust.
+//!
+//! Implements the v1.0-conformant identity / trust / title surface
+//! plus compact Merkle inclusion-proof verification (QDP-0010).
+//! Wire-level types for the full v2 surface (guardians, gossip,
+//! bootstrap, fork-block) are exported so callers can construct and
+//! inspect those payloads today; the matching client methods that
+//! submit and query them are tracked in the README under "Coverage".
+//! See the Go (`pkg/client`) or Python (`clients/python`) SDKs for
+//! the reference v2 implementation.
 //!
 //! ## Thirty-second example
 //!

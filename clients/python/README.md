@@ -3,10 +3,16 @@
 The official Python client for [Quidnug](https://github.com/bhmortim/quidnug), a
 decentralized protocol for relational, per-observer trust.
 
-Version 2.x of this SDK covers the full protocol surface: identity,
-trust, titles, event streams, anchors, guardian sets, guardian
-recovery, cross-domain gossip, K-of-K bootstrap, fork-block activation,
-and compact Merkle inclusion proofs (QDPs 0001–0010).
+Version 2.x of the synchronous `QuidnugClient` covers the full v2
+protocol surface: identity, trust, titles, event streams, anchors,
+guardian sets, guardian recovery, cross-domain gossip, K-of-K
+bootstrap, fork-block activation, and compact Merkle inclusion proofs
+(QDPs 0001–0010).
+
+An `AsyncQuidnugClient` (`aiohttp`-based) mirrors the v1 transaction
+surface and the read/write subset of v2 currently in production use;
+see [`AsyncQuidnugClient` below](#asyncquidnugclient-asyncio) for the
+exact method list.
 
 ## Install
 
@@ -46,7 +52,7 @@ More runnable examples live in [`examples/`](./examples/):
 
 ## What's in the package
 
-### `QuidnugClient`
+### `QuidnugClient` (synchronous)
 
 HTTP client for a running Quidnug node. Every node endpoint has a
 corresponding typed method.
@@ -64,7 +70,45 @@ corresponding typed method.
 | Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
 | Fork-block | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
-| Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_node_domains`, `update_node_domains` |
+| Commit-wait | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
+
+### `AsyncQuidnugClient` (asyncio)
+
+`from quidnug import AsyncQuidnugClient` — same wire format and
+canonicalization as `QuidnugClient`, surfaced as `await`-able
+methods over `httpx`. Install with the `async` extra:
+
+```bash
+pip install 'quidnug[async]'   # or: pip install quidnug httpx
+```
+
+If `httpx` is not installed, `AsyncQuidnugClient` is exported as
+`None` so the sync client still imports cleanly.
+
+```python
+import asyncio
+from quidnug import AsyncQuidnugClient, Quid
+
+async def main():
+    async with AsyncQuidnugClient("http://localhost:8080") as client:
+        alice = Quid.generate()
+        await client.register_identity(alice, name="Alice", home_domain="contractors.home")
+        tr = await client.get_trust(alice.id, "bob", domain="contractors.home")
+        print(tr.trust_level)
+
+asyncio.run(main())
+```
+
+**Async surface — partial parity.** The async client today wraps
+identity, trust, title, events, the read side of guardians /
+gossip / bootstrap / fork-block, and a subset of the write side
+(`submit_guardian_set_update`, `submit_anchor_gossip`,
+`submit_fork_block`). For methods not yet ported (registry queries,
+guardian recovery init/veto/commit, push-mode gossip, nonce
+snapshots, block/transaction reads, domain admin, commit-wait
+helpers) use the synchronous `QuidnugClient` from a thread, or open
+an issue tracking the port you need.
 
 ### `Quid` — cryptographic identity
 
