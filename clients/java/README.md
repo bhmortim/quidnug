@@ -87,13 +87,16 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health | `health`, `info`, `nodes` |
+| Identity | `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
-| Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
+| Blocks | `blocks`, `getTentativeBlocks`, `pendingTransactions` |
+| Domains | `listDomains`, `registerDomain`, `ensureDomain`, `getNodeDomains`, `updateNodeDomains` |
+| Storage | `ipfsPin`, `ipfsGet` |
+| Guardians (QDP-0002 / 0006) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery`, `getGuardianResignations` |
+| Gossip (QDP-0003 / 0005) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
 

@@ -377,6 +377,9 @@ public sealed class QuidnugClient : IDisposable
     public Task<JsonNode?> SubmitRecoveryCommitAsync(object commit, CancellationToken ct = default)
         => RequestAsync(HttpMethod.Post, "guardian/recovery/commit", commit, ct);
 
+    public Task<JsonNode?> SubmitGuardianResignationAsync(object resignation, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "guardian/resign", resignation, ct);
+
     public async Task<GuardianSet?> GetGuardianSetAsync(string quidId, CancellationToken ct = default)
     {
         try
@@ -390,6 +393,25 @@ public sealed class QuidnugClient : IDisposable
             return null;
         }
     }
+
+    public async Task<JsonNode?> GetPendingRecoveryAsync(string quidId, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RequestAsync(
+                HttpMethod.Get,
+                $"guardian/pending-recovery/{Uri.EscapeDataString(quidId)}",
+                null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    public Task<JsonNode?> GetGuardianResignationsAsync(string quidId, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, $"guardian/resignations/{Uri.EscapeDataString(quidId)}", null, ct);
 
     // =====================================================================
     // Gossip / bootstrap / fork-block
@@ -416,6 +438,12 @@ public sealed class QuidnugClient : IDisposable
     public Task<JsonNode?> SubmitAnchorGossipAsync(object msg, CancellationToken ct = default)
         => RequestAsync(HttpMethod.Post, "anchor-gossip", msg, ct);
 
+    public Task<JsonNode?> PushAnchorAsync(object msg, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-anchor", msg, ct);
+
+    public Task<JsonNode?> PushFingerprintAsync(object fp, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-fingerprint", fp, ct);
+
     public Task<JsonNode?> SubmitForkBlockAsync(object fb, CancellationToken ct = default)
         => RequestAsync(HttpMethod.Post, "fork-block", fb, ct);
 
@@ -424,6 +452,70 @@ public sealed class QuidnugClient : IDisposable
 
     public Task<JsonNode?> BootstrapStatusAsync(CancellationToken ct = default)
         => RequestAsync(HttpMethod.Get, "bootstrap/status", null, ct);
+
+    public Task<JsonNode?> SubmitNonceSnapshotAsync(object snapshot, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "nonce-snapshots", snapshot, ct);
+
+    public async Task<JsonNode?> GetLatestNonceSnapshotAsync(string domain, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RequestAsync(
+                HttpMethod.Get,
+                $"nonce-snapshots/{Uri.EscapeDataString(domain)}/latest",
+                null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    // =====================================================================
+    // Registry / blocks / domains / IPFS
+    // =====================================================================
+
+    public Task<JsonNode?> GetTentativeBlocksAsync(string domain, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, $"blocks/tentative/{Uri.EscapeDataString(domain)}", null, ct);
+
+    public Task<JsonNode?> GetPendingTransactionsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "transactions", null, ct);
+
+    public Task<JsonNode?> QueryTrustRegistryAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "registry/trust", null, ct);
+
+    public Task<JsonNode?> QueryIdentityRegistryAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "registry/identity", null, ct);
+
+    public Task<JsonNode?> QueryTitleRegistryAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "registry/title", null, ct);
+
+    public async Task<TrustResult> QueryRelationalTrustAsync(object query, CancellationToken ct = default)
+    {
+        var node = await RequestAsync(HttpMethod.Post, "trust/query", query, ct)
+                   ?? throw new QuidnugNodeException(0, "trust/query returned no data");
+        return JsonSerializer.Deserialize<TrustResult>(node.ToJsonString())
+               ?? throw new QuidnugNodeException(0, "trust/query: deserialize returned null");
+    }
+
+    public Task<JsonNode?> ListDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "domains", null, ct);
+
+    public Task<JsonNode?> RegisterDomainAsync(string name, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "domains", new { name }, ct);
+
+    public Task<JsonNode?> GetNodeDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "node/domains", null, ct);
+
+    public Task<JsonNode?> UpdateNodeDomainsAsync(object domains, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "node/domains", domains, ct);
+
+    public Task<JsonNode?> IpfsPinAsync(object content, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "ipfs/pin", content, ct);
+
+    public Task<JsonNode?> IpfsGetAsync(string cid, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, $"ipfs/{Uri.EscapeDataString(cid)}", null, ct);
 
     // =====================================================================
     // HTTP plumbing

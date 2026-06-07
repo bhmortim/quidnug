@@ -2,6 +2,7 @@ package com.quidnug.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -345,6 +346,10 @@ public final class QuidnugClient {
         }
     }
 
+    public JsonNode getGuardianResignations(String quidId) {
+        return doGet("guardian/resignations/" + urlencode(quidId));
+    }
+
     // =====================================================================
     // Gossip + bootstrap + fork-block
     // =====================================================================
@@ -398,6 +403,63 @@ public final class QuidnugClient {
     }
 
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+
+    // =====================================================================
+    // Registry / domains / blocks / IPFS
+    // =====================================================================
+
+    public JsonNode getTentativeBlocks(String domain) {
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    public JsonNode queryTrustRegistry()    { return doGet("registry/trust"); }
+    public JsonNode queryIdentityRegistry() { return doGet("registry/identity"); }
+    public JsonNode queryTitleRegistry()    { return doGet("registry/title"); }
+
+    public Types.TrustResult queryRelationalTrust(Map<String, Object> query) {
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", query), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust result: " + e.getMessage(), e);
+        }
+    }
+
+    public JsonNode registerDomain(String name) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", name);
+        return doPost("domains", body);
+    }
+
+    /** Idempotent domain registration — returns normally on already-exists. */
+    public JsonNode ensureDomain(String name) {
+        try {
+            return registerDomain(name);
+        } catch (ConflictException | ValidationException e) {
+            String msg = String.valueOf(e.getMessage()).toLowerCase();
+            if (msg.contains("already exists")) {
+                ObjectNode out = MAPPER.createObjectNode();
+                out.put("status", "success");
+                out.put("domain", name);
+                out.put("message", "trust domain already exists");
+                return out;
+            }
+            throw e;
+        }
+    }
+
+    public JsonNode getNodeDomains() { return doGet("node/domains"); }
+
+    public JsonNode updateNodeDomains(Map<String, Object> body) {
+        return doPost("node/domains", body);
+    }
+
+    public JsonNode ipfsPin(Map<String, Object> content) {
+        return doPost("ipfs/pin", content);
+    }
+
+    public JsonNode ipfsGet(String cid) {
+        return doGet("ipfs/" + urlencode(cid));
+    }
 
     // =====================================================================
     // Param objects (fluent builders)

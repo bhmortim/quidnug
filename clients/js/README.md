@@ -19,6 +19,25 @@ titles, event streams, IPFS, and the client-side relational trust BFS.
 These are covered by the existing test suite
 (`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
 
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Identity | `generateQuid`, `importQuid`, `createIdentityTransaction`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `createTrustTransaction`, `getTrustLevel`, `findTrustPath`, `queryRelationalTrust`, `computeTransitiveTrust`, `queryTrustRegistry` |
+| Title | `createTitleTransaction`, `getAssetOwnership`, `queryTitleRegistry` |
+| Events | `createEventTransaction`, `getEventStream`, `getStreamEvents` |
+| Storage | `pinToIPFS`, `getFromIPFS` |
+| Blocks / nodes | `getBlocks`, `getNodes`, `getPendingTransactions`, `submitTransaction` |
+| Domains | `queryDomain`, `findNodesForDomain` |
+
+JS method names differ from the Python / Rust / Java / .NET / Swift SDKs
+for historical reasons (`createTrustTransaction` here vs. `grant_trust`
+elsewhere; `getBootstrapStatus` here vs. `bootstrap_status` elsewhere).
+The wire format is identical, so a transaction signed in any SDK
+verifies against the node and against every other SDK; only the
+method name on the client object differs.
+
 ```js
 import QuidnugClient from "@quidnug/client";
 
