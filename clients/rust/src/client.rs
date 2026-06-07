@@ -2,7 +2,10 @@
 
 use crate::crypto::Quid;
 use crate::error::{Error, Result};
-use crate::types::{IdentityRecord, Title, TrustEdge, TrustResult};
+use crate::types::{
+    DomainFingerprint, Event, GuardianSet, IdentityRecord, NonceSnapshot, Title, TrustEdge,
+    TrustResult,
+};
 use crate::wire::{IdentityTx, TrustTx};
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::de::DeserializeOwned;
@@ -315,6 +318,300 @@ impl Client {
         } else {
             Ok(w.data)
         }
+    }
+
+    // --- Node / blocks / registry queries -----------------------------
+
+    /// List known nodes (GET /api/nodes).
+    pub async fn nodes(&self) -> Result<Value> {
+        self.get("nodes").await
+    }
+
+    /// List blocks (GET /api/blocks).
+    pub async fn get_blocks(&self) -> Result<Value> {
+        self.get("blocks").await
+    }
+
+    /// Tentative blocks for a domain (GET /api/blocks/tentative/{domain}).
+    pub async fn get_tentative_blocks(&self, domain: &str) -> Result<Value> {
+        self.get(&format!("blocks/tentative/{}", urlencoding(domain)))
+            .await
+    }
+
+    /// Pending transaction pool (GET /api/transactions).
+    pub async fn get_pending_transactions(&self) -> Result<Value> {
+        self.get("transactions").await
+    }
+
+    /// Trust registry snapshot (GET /api/registry/trust).
+    pub async fn query_trust_registry(&self) -> Result<Value> {
+        self.get("registry/trust").await
+    }
+
+    /// Identity registry snapshot (GET /api/registry/identity).
+    pub async fn query_identity_registry(&self) -> Result<Value> {
+        self.get("registry/identity").await
+    }
+
+    /// Title registry snapshot (GET /api/registry/title).
+    pub async fn query_title_registry(&self) -> Result<Value> {
+        self.get("registry/title").await
+    }
+
+    /// POST /api/trust/query — bulk relational trust query.
+    ///
+    /// Body should match the server's `TrustQuery` envelope (observer,
+    /// target, domain, maxDepth). Returns a [`TrustResult`].
+    pub async fn query_relational_trust(&self, query: &Value) -> Result<TrustResult> {
+        let raw = self.post("trust/query", query).await?;
+        serde_json::from_value(raw).map_err(Error::from)
+    }
+
+    // --- Domain management --------------------------------------------
+
+    /// List registered trust domains (GET /api/domains).
+    pub async fn list_domains(&self) -> Result<Value> {
+        self.get("domains").await
+    }
+
+    /// Domains this node manages (GET /api/node/domains).
+    pub async fn get_node_domains(&self) -> Result<Value> {
+        self.get("node/domains").await
+    }
+
+    /// Replace this node's managed-domains list (POST /api/node/domains).
+    pub async fn update_node_domains(&self, body: &Value) -> Result<Value> {
+        self.post("node/domains", body).await
+    }
+
+    // --- Events --------------------------------------------------------
+
+    /// Submit a fully-signed `EVENT` transaction (POST /api/events).
+    ///
+    /// The caller is responsible for assembling and signing the event
+    /// envelope; this method handles transport only. For a typed
+    /// event-emit helper, see the higher-level builder under
+    /// `clients/python/quidnug/client.py::emit_event`.
+    pub async fn emit_event(&self, event: &Value) -> Result<Value> {
+        self.post("events", event).await
+    }
+
+    /// Get a subject's event-stream header (GET /api/streams/{subjectId}).
+    pub async fn get_event_stream(&self, subject_id: &str) -> Result<Option<Value>> {
+        match self.get(&format!("streams/{}", urlencoding(subject_id))).await {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(Error::Conflict { code, .. }) if code == "NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get events from a subject's stream (GET /api/streams/{subjectId}/events).
+    ///
+    /// `limit` / `offset` are forwarded as query parameters when non-zero.
+    pub async fn get_stream_events(
+        &self,
+        subject_id: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<Event>> {
+        let mut path = format!("streams/{}/events", urlencoding(subject_id));
+        let mut q = Vec::new();
+        if limit > 0 {
+            q.push(format!("limit={}", limit));
+        }
+        if offset > 0 {
+            q.push(format!("offset={}", offset));
+        }
+        if !q.is_empty() {
+            path.push('?');
+            path.push_str(&q.join("&"));
+        }
+        #[derive(serde::Deserialize)]
+        struct Wrap {
+            #[serde(default)]
+            events: Vec<Event>,
+            #[serde(default)]
+            data: Vec<Event>,
+        }
+        let w: Wrap = self.get_typed(&path).await?;
+        if !w.events.is_empty() {
+            Ok(w.events)
+        } else {
+            Ok(w.data)
+        }
+    }
+
+    // --- IPFS ----------------------------------------------------------
+
+    /// Pin a payload to the node's IPFS backend (POST /api/ipfs/pin).
+    /// Returns the IPFS CID in the response.
+    pub async fn ipfs_pin(&self, body: &Value) -> Result<Value> {
+        self.post("ipfs/pin", body).await
+    }
+
+    /// Fetch an IPFS-pinned payload by CID (GET /api/ipfs/{cid}).
+    pub async fn ipfs_get(&self, cid: &str) -> Result<Value> {
+        self.get(&format!("ipfs/{}", urlencoding(cid))).await
+    }
+
+    // --- Guardian sets + recovery (QDP-0002, QDP-0006) ----------------
+    //
+    // These take pre-signed JSON envelopes — the caller assembles and
+    // signs the envelope with the appropriate quorum, the SDK handles
+    // transport + error translation only.
+
+    /// Install or rotate a guardian set (POST /api/guardian/set-update).
+    pub async fn submit_guardian_set_update(&self, update: &Value) -> Result<Value> {
+        self.post("guardian/set-update", update).await
+    }
+
+    /// Initiate a guardian-quorum recovery (POST /api/guardian/recovery/init).
+    pub async fn submit_recovery_init(&self, init: &Value) -> Result<Value> {
+        self.post("guardian/recovery/init", init).await
+    }
+
+    /// Veto an in-flight recovery during the time-lock window
+    /// (POST /api/guardian/recovery/veto).
+    pub async fn submit_recovery_veto(&self, veto: &Value) -> Result<Value> {
+        self.post("guardian/recovery/veto", veto).await
+    }
+
+    /// Commit a recovery after the time-lock elapses
+    /// (POST /api/guardian/recovery/commit).
+    pub async fn submit_recovery_commit(&self, commit: &Value) -> Result<Value> {
+        self.post("guardian/recovery/commit", commit).await
+    }
+
+    /// Guardian withdraws consent (POST /api/guardian/resign).
+    pub async fn submit_guardian_resignation(&self, resignation: &Value) -> Result<Value> {
+        self.post("guardian/resign", resignation).await
+    }
+
+    /// Fetch the current guardian set or `None` on 404.
+    pub async fn get_guardian_set(&self, quid_id: &str) -> Result<Option<GuardianSet>> {
+        match self
+            .get_typed::<GuardianSet>(&format!("guardian/set/{}", urlencoding(quid_id)))
+            .await
+        {
+            Ok(g) => Ok(Some(g)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(Error::Conflict { code, .. }) if code == "NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Fetch a pending recovery (GET /api/guardian/pending-recovery/{quid}).
+    /// Returns `None` when no recovery is in flight.
+    pub async fn get_pending_recovery(&self, quid_id: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("guardian/pending-recovery/{}", urlencoding(quid_id)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(Error::Conflict { code, .. }) if code == "NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Fetch all guardian resignations for a subject
+    /// (GET /api/guardian/resignations/{quid}).
+    pub async fn get_guardian_resignations(&self, quid_id: &str) -> Result<Vec<Value>> {
+        let raw = self
+            .get(&format!("guardian/resignations/{}", urlencoding(quid_id)))
+            .await?;
+        if let Some(arr) = raw.get("resignations").and_then(|v| v.as_array()) {
+            return Ok(arr.clone());
+        }
+        if let Some(arr) = raw.as_array() {
+            return Ok(arr.clone());
+        }
+        Ok(Vec::new())
+    }
+
+    // --- Cross-domain gossip (QDP-0003, QDP-0005) ---------------------
+
+    /// Submit a domain fingerprint (POST /api/domain-fingerprints).
+    pub async fn submit_domain_fingerprint(&self, fingerprint: &Value) -> Result<Value> {
+        self.post("domain-fingerprints", fingerprint).await
+    }
+
+    /// Latest domain fingerprint for `domain`
+    /// (GET /api/domain-fingerprints/{domain}/latest).
+    pub async fn get_latest_domain_fingerprint(
+        &self,
+        domain: &str,
+    ) -> Result<Option<DomainFingerprint>> {
+        match self
+            .get_typed::<DomainFingerprint>(&format!(
+                "domain-fingerprints/{}/latest",
+                urlencoding(domain)
+            ))
+            .await
+        {
+            Ok(d) => Ok(Some(d)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(Error::Conflict { code, .. }) if code == "NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Submit anchor gossip (POST /api/anchor-gossip).
+    pub async fn submit_anchor_gossip(&self, message: &Value) -> Result<Value> {
+        self.post("anchor-gossip", message).await
+    }
+
+    /// Push an anchor to a subscribed peer (POST /api/gossip/push-anchor).
+    pub async fn push_anchor(&self, message: &Value) -> Result<Value> {
+        self.post("gossip/push-anchor", message).await
+    }
+
+    /// Push a domain fingerprint to a peer
+    /// (POST /api/gossip/push-fingerprint).
+    pub async fn push_fingerprint(&self, fingerprint: &Value) -> Result<Value> {
+        self.post("gossip/push-fingerprint", fingerprint).await
+    }
+
+    // --- K-of-K bootstrap (QDP-0008) ----------------------------------
+
+    /// Submit a nonce snapshot (POST /api/nonce-snapshots).
+    pub async fn submit_nonce_snapshot(&self, snapshot: &Value) -> Result<Value> {
+        self.post("nonce-snapshots", snapshot).await
+    }
+
+    /// Latest nonce snapshot for a domain
+    /// (GET /api/nonce-snapshots/{domain}/latest).
+    pub async fn get_latest_nonce_snapshot(&self, domain: &str) -> Result<Option<NonceSnapshot>> {
+        match self
+            .get_typed::<NonceSnapshot>(&format!(
+                "nonce-snapshots/{}/latest",
+                urlencoding(domain)
+            ))
+            .await
+        {
+            Ok(s) => Ok(Some(s)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(Error::Conflict { code, .. }) if code == "NOT_FOUND" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Bootstrap progress for the local node (GET /api/bootstrap/status).
+    pub async fn bootstrap_status(&self) -> Result<Value> {
+        self.get("bootstrap/status").await
+    }
+
+    // --- Fork-block (QDP-0009) ----------------------------------------
+
+    /// Submit a fork-block activation (POST /api/fork-block).
+    pub async fn submit_fork_block(&self, fork_block: &Value) -> Result<Value> {
+        self.post("fork-block", fork_block).await
+    }
+
+    /// Pending + active fork-block summary (GET /api/fork-block/status).
+    pub async fn fork_block_status(&self) -> Result<Value> {
+        self.get("fork-block/status").await
     }
 
     // --- Plumbing ------------------------------------------------------

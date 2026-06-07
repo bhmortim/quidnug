@@ -69,14 +69,17 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Health | `HealthAsync`, `InfoAsync`, `NodesAsync` |
+| Identity | `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `QueryRelationalTrustAsync`, `GetTrustEdgesAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
-| Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
-| Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
+| Blocks | `BlocksAsync`, `GetTentativeBlocksAsync`, `GetPendingTransactionsAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync` |
+| Storage | `IpfsPinAsync`, `IpfsGetAsync` |
+| Guardians (QDP-0002 / 0006) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `SubmitGuardianResignationAsync`, `GetGuardianSetAsync`, `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync` |
+| Gossip (QDP-0003 / 0005) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync`, `PushAnchorAsync`, `PushFingerprintAsync` |
+| Bootstrap (QDP-0008) | `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync`, `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
 
 ### `CanonicalBytes` / `Merkle`

@@ -7,6 +7,74 @@ onward.
 
 ## [Unreleased]
 
+### Client SDK coverage parity (Rust, .NET, Swift, Java)
+
+Brings the four secondary-language SDKs up to full v2 protocol
+surface (QDPs 0001–0010), matching the Python and JavaScript
+clients. All four SDKs already covered identity / trust / title /
+events; this fills in the v2 areas they were missing while still
+claiming "full" coverage in their READMEs.
+
+**New client methods added** (caller assembles & signs the
+envelope; SDK handles transport + envelope/error translation):
+
+- **Rust (`clients/rust/`)** — `submit_guardian_set_update`,
+  `submit_recovery_init/veto/commit`, `submit_guardian_resignation`,
+  `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations`,
+  `submit_domain_fingerprint`, `get_latest_domain_fingerprint`,
+  `submit_anchor_gossip`, `push_anchor`, `push_fingerprint`,
+  `submit_nonce_snapshot`, `get_latest_nonce_snapshot`,
+  `bootstrap_status`, `submit_fork_block`, `fork_block_status`,
+  `query_relational_trust`, `query_{trust,identity,title}_registry`,
+  `list_domains`, `get_node_domains`, `update_node_domains`,
+  `nodes`, `get_blocks`, `get_tentative_blocks`,
+  `get_pending_transactions`, `emit_event`, `get_event_stream`,
+  `get_stream_events`, `ipfs_pin`, `ipfs_get`. Seven new wiremock
+  integration tests cover the typed paths and 404 handling.
+- **.NET (`clients/dotnet/`)** — `SubmitGuardianResignationAsync`,
+  `GetPendingRecoveryAsync`, `GetGuardianResignationsAsync`,
+  `PushAnchorAsync`, `PushFingerprintAsync`,
+  `SubmitNonceSnapshotAsync`, `GetLatestNonceSnapshotAsync`,
+  `GetTentativeBlocksAsync`, `GetPendingTransactionsAsync`,
+  `Query{Trust,Identity,Title}RegistryAsync`,
+  `QueryRelationalTrustAsync`, `ListDomainsAsync`,
+  `RegisterDomainAsync`, `GetNodeDomainsAsync`,
+  `UpdateNodeDomainsAsync`, `IpfsPinAsync`, `IpfsGetAsync`.
+- **Swift (`clients/swift/`)** — `submitRecoveryInit/Veto/Commit`,
+  `submitGuardianResignation`, `getPendingRecovery`,
+  `getGuardianResignations`, `submitDomainFingerprint`,
+  `submitAnchorGossip`, `pushAnchor`, `pushFingerprint`,
+  `submitNonceSnapshot`, `getLatestNonceSnapshot`,
+  `submitForkBlock`, `getBlocks`, `getTentativeBlocks`,
+  `getPendingTransactions`, `query{Trust,Identity,Title}Registry`,
+  `queryRelationalTrust`, `listDomains`, `registerDomain`,
+  `getNodeDomains`, `updateNodeDomains`, `ipfsPin`, `ipfsGet`.
+- **Java (`clients/java/`)** — `getGuardianResignations`,
+  `getTentativeBlocks`, `query{Trust,Identity,Title}Registry`,
+  `queryRelationalTrust`, `registerDomain`, `ensureDomain`,
+  `getNodeDomains`, `updateNodeDomains`, `ipfsPin`, `ipfsGet`.
+  Java's 35 unit tests still pass.
+
+**Documentation parity:**
+
+- Each SDK's README method table now lists every public method,
+  grouped consistently by area (Health / Identity / Trust / Title
+  / Events / Blocks / Domains / Storage / Guardians / Gossip /
+  Bootstrap / Fork-block) so callers can scan side-by-side across
+  languages.
+- Main `README.md` SDK-coverage table updated: Java, .NET, and
+  Swift were previously labeled "scaffold" but actually ship the
+  full surface; Android is more honestly labeled "partial"
+  (Keystore signer + coroutine wrappers over the Java client);
+  browser-extension is labeled "key-management only" rather than
+  "scaffold" to match what it actually does; `clients/iso20022/`
+  is labeled "superseded" pointing to the Go integration.
+- JS README adds an explicit v1 method-list table and a note
+  explaining the SDK's historical naming divergence
+  (`createTrustTransaction` vs. `grant_trust`,
+  `getBootstrapStatus` vs. `bootstrap_status`) — wire format is
+  unchanged.
+
 ### Operator identity + peering subsystem (Phases 1-4)
 
 Adds operator-quid persistence, three-source peer discovery (static

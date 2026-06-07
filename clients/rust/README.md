@@ -63,8 +63,32 @@ Runnable examples live in `examples/`:
 | `quidnug::canonical_bytes` | Canonical signable bytes (matches Go / Python byte-for-byte). |
 | `quidnug::verify_inclusion_proof` | QDP-0010 Merkle proof verifier. |
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
-| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
+| `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, GuardianSet, DomainFingerprint, NonceSnapshot, ForkBlock, ...}` | Wire types. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+### `Client` HTTP surface
+
+Every node endpoint has a corresponding method. Methods that
+require a signed envelope (guardian set updates, recovery, gossip,
+nonce snapshots, fork-block proposals) take a pre-signed
+`serde_json::Value` — the caller assembles + signs, the SDK handles
+transport and envelope/error translation.
+
+| Area | Methods |
+| --- | --- |
+| Health / info | `health`, `info`, `nodes` |
+| Identity | `register_identity`, `get_identity`, `query_identity_registry` |
+| Trust | `grant_trust`, `get_trust`, `query_relational_trust`, `get_trust_edges`, `query_trust_registry` |
+| Title | `get_title`, `query_title_registry` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events` |
+| Storage | `ipfs_pin`, `ipfs_get` |
+| Guardians (QDP-0002 / 0006) | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
+| Gossip (QDP-0003 / 0005) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
+| Domains | `list_domains`, `register_domain`, `ensure_domain`, `get_node_domains`, `update_node_domains` |
+| Commit-wait helpers | `wait_for_identity`, `wait_for_identities`, `wait_for_title` |
 
 ## Error taxonomy
 
