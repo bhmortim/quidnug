@@ -1496,22 +1496,259 @@ class QuidnugClient {
     if (!cid) {
       throw new Error('CID is required');
     }
-    
+
     try {
       const nodeUrl = this._getHealthyNode();
       const response = await this._fetchWithRetry(`${nodeUrl}/api/ipfs/${cid}`);
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         const error = new Error(errorData.error?.message || 'IPFS retrieval failed');
         error.code = errorData.error?.code || 'IPFS_ERROR';
         throw error;
       }
-      
+
       return await response.arrayBuffer();
     } catch (error) {
       if (error.code) throw error;
       throw new Error(`IPFS retrieval failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check node health (public, read-only).
+   *
+   * Unlike the private `_checkNodeHealth`, this method neither mutates the
+   * client's node-pool state nor swallows transport errors — it surfaces
+   * them so callers can build their own liveness logic.
+   *
+   * @returns {Promise<Object>} Health payload `{ status, node_id, uptime, version }`
+   */
+  async health() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/health`);
+      if (!response.ok) {
+        const error = new Error(`Health check failed: HTTP ${response.status}`);
+        error.code = 'HEALTH_CHECK_FAILED';
+        error.httpStatus = response.status;
+        throw error;
+      }
+      return await response.json();
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Health check failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get detailed information about the node.
+   * @returns {Promise<Object>} Node info payload `{ nodeQuid, managedDomains, blockHeight, version }`
+   */
+  async getInfo() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/info`);
+      if (!response.ok) {
+        const error = new Error(`Info request failed: HTTP ${response.status}`);
+        error.code = 'INFO_REQUEST_FAILED';
+        error.httpStatus = response.status;
+        throw error;
+      }
+      return await response.json();
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Info request failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get tentative blocks for a domain.
+   *
+   * Tentative blocks have been proposed but have not yet achieved the
+   * trust threshold required for final acceptance.
+   *
+   * @param {string} domain - Trust domain name
+   * @returns {Promise<Object>} `{ domain, blocks }` payload
+   */
+  async getTentativeBlocks(domain) {
+    if (!domain) {
+      throw new Error('Missing required parameter: domain');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const url = `${nodeUrl}/api/blocks/tentative/${encodeURIComponent(domain)}`;
+      const response = await this._fetchWithRetry(url);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Tentative blocks query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get direct outbound trust edges for a quid, with provenance.
+   * @param {string} quidId - Quid ID
+   * @param {Object} [options] - Query options
+   * @param {boolean} [options.includeUnverified=false] - Include unverified edges
+   * @returns {Promise<Object>} `{ quidId, includeUnverified, edges }` payload
+   */
+  async getTrustEdges(quidId, options = {}) {
+    if (!quidId) {
+      throw new Error('Missing required parameter: quidId');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      let url = `${nodeUrl}/api/trust/edges/${encodeURIComponent(quidId)}`;
+      if (options.includeUnverified) {
+        url += `?includeUnverified=true`;
+      }
+      const response = await this._fetchWithRetry(url);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Trust edges query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get the domains supported by the current node.
+   * @returns {Promise<Object>} `{ nodeId, domains }` payload
+   */
+  async getNodeDomains() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Node domains query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Update the list of domains supported by the current node.
+   * @param {string[]} domains - Domain names this node should support
+   * @returns {Promise<Object>} `{ status, domains }` payload
+   */
+  async updateNodeDomains(domains) {
+    if (!Array.isArray(domains)) {
+      throw new Error('domains must be an array of strings');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/node/domains`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ domains })
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Node domains update failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * List all trust domains managed by this node.
+   * @returns {Promise<Object>} `{ domains: [...] }` payload
+   */
+  async getDomains() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Domains query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Register a new trust domain with this node.
+   * @param {string} name - Domain name (max 253 chars, dot-notation)
+   * @param {Object} [options] - Domain configuration
+   * @param {number} [options.trustThreshold] - Minimum trust threshold (0.0 to 1.0)
+   * @param {string[]} [options.validatorNodes] - Validator node IDs
+   * @param {Object<string, number>} [options.validators] - Map of validator IDs to weights
+   * @param {Object<string, string>} [options.validatorPublicKeys] - Map of validator IDs to hex public keys
+   * @returns {Promise<Object>} `{ status, message, domain }` payload
+   */
+  async registerDomain(name, options = {}) {
+    if (!name) {
+      throw new Error('Missing required parameter: name');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const body = { name };
+      if (options.trustThreshold !== undefined) body.trustThreshold = options.trustThreshold;
+      if (options.validatorNodes !== undefined) body.validatorNodes = options.validatorNodes;
+      if (options.validators !== undefined) body.validators = options.validators;
+      if (options.validatorPublicKeys !== undefined) body.validatorPublicKeys = options.validatorPublicKeys;
+
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/domains`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Domain registration failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Deliver a domain gossip message to this node (node-to-node endpoint).
+   * @param {Object} gossipMessage - Gossip payload with fields like nodeId, domains, timestamp, ttl, hopCount, messageId
+   * @returns {Promise<Object>} `{ status }` payload
+   */
+  async receiveDomainGossip(gossipMessage) {
+    if (!gossipMessage || typeof gossipMessage !== 'object') {
+      throw new Error('gossipMessage object is required');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/gossip/domains`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gossipMessage)
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Domain gossip submission failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Fetch raw Prometheus-formatted metrics text.
+   *
+   * Returns the response body verbatim because `/metrics` does not emit
+   * the standard `{success, data, error}` JSON envelope.
+   *
+   * @returns {Promise<string>} Prometheus metrics text
+   */
+  async getMetrics() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/metrics`);
+      if (!response.ok) {
+        const error = new Error(`Metrics request failed: HTTP ${response.status}`);
+        error.code = 'METRICS_REQUEST_FAILED';
+        error.httpStatus = response.status;
+        throw error;
+      }
+      return await response.text();
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Metrics request failed: ${error.message}`);
     }
   }
 }

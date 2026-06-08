@@ -9,11 +9,45 @@ pub struct OwnershipStake {
     #[serde(rename = "ownerId")]
     /// Quid ID of the owner.
     pub owner_id: String,
-    /// Ownership percentage (summing to 100 across a title).
+    /// Ownership percentage. Stored on the fraction scale (sums to 1.0
+    /// across a title) on the wire; callers may pass either fraction or
+    /// percent and use [`OwnershipStake::normalize_percentages`] to
+    /// convert to the wire form.
     pub percentage: f64,
     #[serde(rename = "stakeType", skip_serializing_if = "Option::is_none")]
     /// Optional stake type discriminator.
     pub stake_type: Option<String>,
+}
+
+impl OwnershipStake {
+    /// Normalize a slice of stakes so percentages sum to 1.0.
+    ///
+    /// Accepts either fraction scale (sum ≈ 1.0) or percent scale
+    /// (sum ≈ 100.0); rejects anything else with a validation error.
+    /// Mirrors the Python client's `register_title` behavior.
+    pub fn normalize_percentages(stakes: &[OwnershipStake]) -> crate::Result<Vec<OwnershipStake>> {
+        if stakes.is_empty() {
+            return Err(crate::Error::validation("owners is required"));
+        }
+        let total: f64 = stakes.iter().map(|s| s.percentage).sum();
+        let factor = if (total - 1.0).abs() < 0.001 {
+            1.0
+        } else if (total - 100.0).abs() < 0.001 {
+            0.01
+        } else {
+            return Err(crate::Error::validation(format!(
+                "ownership percentages must sum to 1.0 (or 100.0 for percent); got {total}"
+            )));
+        };
+        Ok(stakes
+            .iter()
+            .map(|s| OwnershipStake {
+                owner_id: s.owner_id.clone(),
+                percentage: s.percentage * factor,
+                stake_type: s.stake_type.clone(),
+            })
+            .collect())
+    }
 }
 
 /// Title record as returned by the node.
@@ -114,6 +148,26 @@ pub struct TrustResult {
     pub path_depth: i64,
     /// Domain.
     pub domain: String,
+}
+
+/// Event-stream metadata as returned by `GET /api/streams/{subject}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventStream {
+    #[serde(rename = "subjectId")]
+    /// Subject quid / title id.
+    pub subject_id: String,
+    #[serde(rename = "subjectType", default)]
+    /// `"QUID"` or `"TITLE"`.
+    pub subject_type: String,
+    #[serde(rename = "latestSequence", default)]
+    /// Latest committed sequence in the stream.
+    pub latest_sequence: i64,
+    #[serde(rename = "eventCount", default)]
+    /// Total committed events in the stream.
+    pub event_count: i64,
+    #[serde(default)]
+    /// Free-form additional fields the node may emit.
+    pub attributes: HashMap<String, serde_json::Value>,
 }
 
 /// Event-stream row.

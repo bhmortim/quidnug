@@ -27,6 +27,8 @@ clients/rust/target/
 clients/dotnet/bin/
 clients/dotnet/obj/
 clients/java/target/
+clients/android/.gradle/
+clients/android/build/
 clients/dotnet/tests/bin/
 clients/dotnet/tests/obj/
 clients/dotnet/examples/*/bin/

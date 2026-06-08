@@ -302,6 +302,18 @@ class QuidnugClient:
 
     # --- Identity ----------------------------------------------------------
 
+    def create_quid(self, *, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """POST /api/quids — server-side keypair generation.
+
+        Returns ``{quidId, publicKey, created}``. The node generates and
+        retains the private key; contrast with ``Quid.generate()``, which
+        creates a keypair entirely client-side and never transmits it.
+        """
+        body: Dict[str, Any] = {}
+        if metadata is not None:
+            body["metadata"] = metadata
+        return self._request("POST", "quids", body=body)
+
     def register_identity(
         self,
         signer: Quid,
@@ -650,6 +662,26 @@ class QuidnugClient:
             )
         return resp.content
 
+    # --- Metrics -----------------------------------------------------------
+
+    def metrics(self) -> str:
+        """GET /metrics — Prometheus text-format metrics.
+
+        Bypasses the JSON envelope: /metrics lives at the node root
+        (not under /api) and emits text/plain Prometheus output.
+        """
+        resp = self._session.get(
+            urljoin(self.base_url + "/", "metrics"),
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise NodeError(
+                f"metrics fetch failed (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return resp.text
+
     # --- Guardian sets + recovery (QDP-0002 / QDP-0006) --------------------
 
     def submit_guardian_set_update(self, update: GuardianSetUpdate) -> Dict[str, Any]:
@@ -728,6 +760,14 @@ class QuidnugClient:
     def push_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
         """POST /api/gossip/push-fingerprint — push gossip variant (QDP-0005)."""
         return self._request("POST", "gossip/push-fingerprint", body=_dc(fp))
+
+    def receive_domain_gossip(self, gossip: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/gossip/domains — accept a domain-gossip message.
+
+        Node-to-node endpoint; application code rarely needs this.
+        The gossip dict is forwarded as the JSON body unchanged.
+        """
+        return self._request("POST", "gossip/domains", body=gossip)
 
     # --- Bootstrap + nonce snapshots (QDP-0008) ----------------------------
 

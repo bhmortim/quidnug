@@ -15,7 +15,8 @@ npm install @quidnug/client
 ## v1 surface
 
 The default import provides the v1 surface — identities, trust,
-titles, event streams, IPFS, and the client-side relational trust BFS.
+titles, event streams, IPFS, the client-side relational trust BFS,
+and the node admin endpoints (health, info, domains, metrics).
 These are covered by the existing test suite
 (`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
 
@@ -39,6 +40,22 @@ await client.submitTransaction(tx);
 const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
 ```
+
+### Methods
+
+| Area | Methods |
+| --- | --- |
+| Health / info | `health`, `getInfo` |
+| Identity | `generateQuid`, `importQuid`, `createIdentityTransaction`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `createTrustTransaction`, `getTrustLevel`, `findTrustPath`, `queryRelationalTrust`, `computeTransitiveTrust`, `getTrustEdges`, `queryTrustRegistry` |
+| Title | `createTitleTransaction`, `getAssetOwnership`, `queryTitleRegistry` |
+| Events | `createEventTransaction`, `getEventStream`, `getStreamEvents` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Blocks | `getBlocks`, `getTentativeBlocks` |
+| Transactions | `submitTransaction`, `getPendingTransactions` |
+| Domains | `getDomains`, `registerDomain`, `queryDomain`, `findNodesForDomain`, `receiveDomainGossip` |
+| Nodes | `addNode`, `getNodes`, `getNodeDomains`, `updateNodeDomains` |
+| Metrics | `getMetrics` |
 
 ## v2 extensions (QDPs 0002–0010)
 

@@ -62,7 +62,7 @@ export interface BaseTransaction {
 }
 
 /** Transaction type discriminator values */
-export type TransactionType = 'TRUST' | 'IDENTITY' | 'TITLE';
+export type TransactionType = 'TRUST' | 'IDENTITY' | 'TITLE' | 'EVENT';
 
 /**
  * Trust transaction establishing direct trust from truster to trustee.
@@ -126,6 +126,63 @@ export interface TitleTransaction extends BaseTransaction {
 
 /** Union of all transaction types */
 export type Transaction = TrustTransaction | IdentityTransaction | TitleTransaction;
+
+/**
+ * Subject type for an event stream.
+ */
+export type EventSubjectType = 'QUID' | 'TITLE';
+
+/**
+ * Event stream metadata returned by /api/streams/{subjectId}.
+ */
+export interface EventStream {
+  /** Subject quid ID */
+  subjectId: string;
+  /** Subject type */
+  subjectType?: EventSubjectType;
+  /** Highest sequence number observed for this stream */
+  latestSequence: number;
+  /** Trust domain */
+  domain?: string;
+  /** Additional implementation-specific metadata */
+  [key: string]: unknown;
+}
+
+/**
+ * A single event record from an event stream.
+ */
+export interface EventRecord {
+  /** Subject quid ID the event is associated with */
+  subjectId: string;
+  /** Subject type */
+  subjectType: EventSubjectType;
+  /** Event type (max 64 chars) */
+  eventType: string;
+  /** Monotonic sequence number within the stream */
+  sequence: number;
+  /** Inline payload (omitted when payloadCid is used) */
+  payload?: Record<string, unknown>;
+  /** IPFS CID of an externally-stored payload */
+  payloadCid?: string;
+  /** Unix timestamp when the event was emitted */
+  timestamp: number;
+  /** Quid ID of the signer/creator */
+  signerQuid?: string;
+  /** Base64-encoded ECDSA signature */
+  signature?: string;
+  /** Trust domain */
+  trustDomain?: string;
+}
+
+/**
+ * Result of submitting an event transaction.
+ */
+export interface EventSubmissionResult {
+  /** Transaction ID assigned by the node */
+  txId: string;
+  /** Sequence number assigned within the stream */
+  sequence: number;
+}
 
 // ============================================================================
 // Blockchain Types
@@ -439,6 +496,146 @@ export interface TitleRegistryQueryOptions extends PaginationOptions {
   ownerId?: string;
 }
 
+/**
+ * Parameters for creating an event transaction.
+ */
+export interface CreateEventTransactionParams {
+  /** Quid ID of the subject (entity the event is about) */
+  subjectId: string;
+  /** Type of subject */
+  subjectType: EventSubjectType;
+  /** Type of event (max 64 chars) */
+  eventType: string;
+  /** Trust domain */
+  domain: string;
+  /** Inline event payload (required if no payloadCID) */
+  payload?: Record<string, unknown>;
+  /** IPFS CID of payload (required if no payload) */
+  payloadCID?: string;
+  /** Sequence number (auto-generated if omitted) */
+  sequence?: number;
+}
+
+/**
+ * Options for trust edges queries.
+ */
+export interface TrustEdgesOptions {
+  /** Include unverified edges in the result */
+  includeUnverified?: boolean;
+}
+
+/**
+ * Options for stream events queries.
+ */
+export interface StreamEventsOptions extends PaginationOptions {
+  /** Trust domain filter */
+  domain?: string;
+}
+
+/**
+ * Paginated stream events response.
+ */
+export interface StreamEventsResponse {
+  /** Array of event records */
+  events: EventRecord[];
+  /** Pagination metadata */
+  pagination: PaginationMeta | Record<string, unknown>;
+}
+
+/**
+ * Options for registering a trust domain.
+ */
+export interface RegisterDomainOptions {
+  /** Minimum trust threshold (0.0 to 1.0) */
+  trustThreshold?: number;
+  /** List of validator node IDs */
+  validatorNodes?: string[];
+  /** Map of validator IDs to voting weights */
+  validators?: Record<string, number>;
+  /** Map of validator IDs to hex-encoded public keys */
+  validatorPublicKeys?: Record<string, string>;
+}
+
+/**
+ * Health check payload returned by GET /api/health.
+ */
+export interface HealthResult {
+  /** Node status string, e.g. 'ok' */
+  status: string;
+  /** 16-character hex node ID */
+  node_id?: string;
+  /** Uptime in seconds */
+  uptime?: number;
+  /** Node software version */
+  version?: string;
+}
+
+/**
+ * Node information payload returned by GET /api/info.
+ */
+export interface NodeInfo {
+  /** Node's quid ID */
+  nodeQuid?: string;
+  /** Trust domains managed by this node */
+  managedDomains?: string[];
+  /** Current blockchain height */
+  blockHeight?: number;
+  /** Node software version */
+  version?: string;
+}
+
+/**
+ * Tentative blocks payload returned by GET /api/blocks/tentative/{domain}.
+ */
+export interface TentativeBlocksResult {
+  /** Trust domain */
+  domain: string;
+  /** Tentatively accepted blocks */
+  blocks: Block[];
+}
+
+/**
+ * Trust edges payload returned by GET /api/trust/edges/{quidId}.
+ */
+export interface TrustEdgesResult {
+  /** Quid ID queried */
+  quidId: string;
+  /** Whether unverified edges were included */
+  includeUnverified: boolean;
+  /** Trust edges with provenance */
+  edges: Array<Record<string, unknown>>;
+}
+
+/**
+ * Node domains payload returned by GET /api/node/domains.
+ */
+export interface NodeDomainsResult {
+  /** Node's quid ID */
+  nodeId?: string;
+  /** Domain names this node supports */
+  domains: string[];
+}
+
+/**
+ * Domain gossip message used by POST /api/gossip/domains.
+ */
+export interface DomainGossipMessage {
+  /** Originating node's quid ID */
+  nodeId?: string;
+  /** Domains the origin node supports */
+  domains?: string[];
+  /** Unix timestamp of message creation */
+  timestamp?: number;
+  /** Time-to-live hop count */
+  ttl?: number;
+  /** Number of hops travelled */
+  hopCount?: number;
+  /** Unique identifier for deduplication */
+  messageId?: string;
+  /** Additional implementation-specific fields */
+  [key: string]: unknown;
+}
+
 // ============================================================================
 // Internal Types (for reference)
 // ============================================================================
@@ -699,6 +896,116 @@ declare class QuidnugClient {
    * @returns List of nodes managing the domain
    */
   findNodesForDomain(domain: string): Promise<Node[]>;
+
+  /**
+   * Create, sign, and submit an event transaction for a subject's stream.
+   * The signing quid must be the owner of the subject (QUID or TITLE).
+   * @param params - Event parameters
+   * @param quid - Quid object with private key for signing
+   * @returns Submission result with txId and assigned sequence
+   */
+  createEventTransaction(params: CreateEventTransactionParams, quid: Quid): Promise<EventSubmissionResult>;
+
+  /**
+   * Get event stream metadata for a subject.
+   * @param subjectId - Subject quid ID
+   * @param domain - Optional trust domain
+   * @returns Stream metadata or null if not found
+   */
+  getEventStream(subjectId: string, domain?: string): Promise<EventStream | null>;
+
+  /**
+   * Get paginated events for a stream.
+   * @param subjectId - Subject quid ID
+   * @param options - Pagination and domain options
+   * @returns Object with events array and pagination metadata
+   */
+  getStreamEvents(subjectId: string, options?: StreamEventsOptions): Promise<StreamEventsResponse>;
+
+  /**
+   * Pin content to IPFS.
+   * @param content - String or ArrayBuffer payload to pin
+   * @returns CID of pinned content
+   */
+  pinToIPFS(content: string | ArrayBuffer): Promise<string>;
+
+  /**
+   * Fetch content from IPFS by CID.
+   * @param cid - Content identifier
+   * @returns Content as ArrayBuffer
+   */
+  getFromIPFS(cid: string): Promise<ArrayBuffer>;
+
+  /**
+   * Public, read-only node health check.
+   * Surfaces transport errors rather than swallowing them like the
+   * internal node-pool health check.
+   * @returns Health payload
+   */
+  health(): Promise<HealthResult>;
+
+  /**
+   * Get detailed information about the node.
+   * @returns Node info payload
+   */
+  getInfo(): Promise<NodeInfo>;
+
+  /**
+   * Get tentative (proposed but not yet finalized) blocks for a domain.
+   * @param domain - Trust domain name
+   * @returns Tentative blocks payload
+   */
+  getTentativeBlocks(domain: string): Promise<TentativeBlocksResult>;
+
+  /**
+   * Get direct outbound trust edges for a quid, with provenance.
+   * @param quidId - Quid ID
+   * @param options - Edge query options
+   * @returns Trust edges payload
+   */
+  getTrustEdges(quidId: string, options?: TrustEdgesOptions): Promise<TrustEdgesResult>;
+
+  /**
+   * Get the list of domains supported by the current node.
+   * @returns Node domains payload
+   */
+  getNodeDomains(): Promise<NodeDomainsResult>;
+
+  /**
+   * Update the list of domains supported by the current node.
+   * @param domains - Domain names this node should support
+   * @returns `{ status, domains }` payload
+   */
+  updateNodeDomains(domains: string[]): Promise<{ status: string; domains: string[] }>;
+
+  /**
+   * List all trust domains managed by this node.
+   * @returns `{ domains }` payload
+   */
+  getDomains(): Promise<{ domains: TrustDomain[] }>;
+
+  /**
+   * Register a new trust domain with this node.
+   * @param name - Domain name (dot-notation; max 253 chars)
+   * @param options - Domain configuration
+   * @returns `{ status, message, domain }` payload
+   */
+  registerDomain(name: string, options?: RegisterDomainOptions): Promise<{ status: string; message?: string; domain?: string }>;
+
+  /**
+   * Deliver a domain gossip message to this node.
+   * Intended for node-to-node propagation; rarely called by application clients.
+   * @param gossipMessage - Gossip payload
+   * @returns `{ status }` payload
+   */
+  receiveDomainGossip(gossipMessage: DomainGossipMessage): Promise<{ status: string }>;
+
+  /**
+   * Fetch raw Prometheus-formatted metrics text from the node.
+   * The response does not use the standard JSON envelope; the raw body is returned verbatim.
+   * @returns Prometheus metrics text
+   */
+  getMetrics(): Promise<string>;
 }
 
 // ============================================================================

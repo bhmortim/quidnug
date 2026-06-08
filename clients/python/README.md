@@ -54,17 +54,18 @@ corresponding typed method.
 | Area | Methods |
 | --- | --- |
 | Health / info | `health`, `info`, `nodes` |
-| Identity | `register_identity`, `get_identity`, `query_identity_registry` |
+| Identity | `create_quid`, `register_identity`, `get_identity`, `query_identity_registry` |
 | Trust | `grant_trust`, `get_trust`, `query_relational_trust`, `get_trust_edges`, `query_trust_registry` |
 | Title | `register_title`, `get_title`, `query_title_registry` |
 | Events | `emit_event`, `get_event_stream`, `get_stream_events` |
 | Storage | `ipfs_pin`, `ipfs_get` |
 | Guardians | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set`, `get_pending_recovery`, `get_guardian_resignations` |
-| Gossip | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint` |
+| Gossip | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip`, `push_anchor`, `push_fingerprint`, `receive_domain_gossip` |
 | Bootstrap | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
 | Fork-block | `submit_fork_block`, `fork_block_status` |
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
 | Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
+| Metrics | `metrics` |
 
 ### `Quid` — cryptographic identity
 

@@ -65,6 +65,24 @@ public struct Event: Codable, Sendable {
     public let sequence: Int64
 }
 
+/// Event-stream metadata.
+public struct EventStream: Codable, Sendable {
+    public let subjectId: String
+    public let subjectType: String?
+    public let latestSequence: Int64?
+    public let eventCount: Int64?
+    public let createdAt: Int64?
+    public let updatedAt: Int64?
+    public let latestEventId: String?
+}
+
+/// Newly-created quid as returned by POST /api/quids.
+public struct NewQuid: Codable, Sendable {
+    public let quidId: String
+    public let publicKey: String
+    public let created: Int64?
+}
+
 /// Guardian entry.
 public struct GuardianRef: Codable, Sendable {
     public let quid: String

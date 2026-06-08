@@ -254,6 +254,18 @@ class AsyncQuidnugClient:
 
     # --- Identity --------------------------------------------------------
 
+    async def create_quid(self, *, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """POST /api/quids — server-side keypair generation.
+
+        Returns ``{quidId, publicKey, created}``. The node generates and
+        retains the private key; contrast with ``Quid.generate()``, which
+        creates a keypair entirely client-side and never transmits it.
+        """
+        body: Dict[str, Any] = {}
+        if metadata is not None:
+            body["metadata"] = metadata
+        return await self._request("POST", "quids", body=body)
+
     async def register_identity(
         self,
         signer: Quid,
@@ -512,6 +524,32 @@ class AsyncQuidnugClient:
 
     async def submit_anchor_gossip(self, message: AnchorGossipMessage) -> Dict[str, Any]:
         return await self._request("POST", "anchor-gossip", body=_dc(message))
+
+    async def receive_domain_gossip(self, gossip: Dict[str, Any]) -> Dict[str, Any]:
+        """POST /api/gossip/domains — accept a domain-gossip message.
+
+        Node-to-node endpoint; application code rarely needs this.
+        The gossip dict is forwarded as the JSON body unchanged.
+        """
+        return await self._request("POST", "gossip/domains", body=gossip)
+
+    async def metrics(self) -> str:
+        """GET /metrics — Prometheus text-format metrics.
+
+        Bypasses the JSON envelope: /metrics lives at the node root
+        (not under /api) and emits text/plain Prometheus output.
+        """
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._owns_client = True
+        resp = await self._client.get(urljoin(self.base_url + "/", "metrics"))
+        if resp.status_code >= 400:
+            raise NodeError(
+                f"metrics fetch failed (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return resp.text
 
     async def get_latest_domain_fingerprint(self, domain: str) -> Optional[DomainFingerprint]:
         try:
