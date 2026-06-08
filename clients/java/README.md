@@ -87,15 +87,25 @@ Thread-safe, builder-constructed. Every endpoint has a typed method.
 
 | Area | Methods |
 | --- | --- |
-| Health | `health`, `info`, `nodes`, `blocks`, `pendingTransactions`, `listDomains` |
-| Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
-| Title | `registerTitle`, `getTitle` |
+| Health / info | `health`, `info`, `nodes` |
+| Identity | `createQuid`, `registerIdentity`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `grantTrust`, `getTrust`, `queryRelationalTrust`, `getTrustEdges`, `queryTrustRegistry`, `queryTrustRegistryRelational` |
+| Title | `registerTitle`, `getTitle`, `queryTitleRegistry` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit/Veto/Commit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
+| Storage (IPFS) | `pinToIPFS`, `getFromIPFS` |
+| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet`, `getPendingRecovery` |
 | Gossip (QDP-0003/5) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip`, `pushAnchor`, `pushFingerprint` |
 | Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
 | Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Blocks / transactions | `blocks`, `getTentativeBlocks`, `pendingTransactions` |
+| Domains | `listDomains`, `registerDomain`, `queryDomain` |
+| Node membership | `getNodeDomains`, `updateNodeDomains`, `receiveDomainGossip` |
+| Metrics | `getMetrics` (Prometheus text exposition) |
+
+The `pinToIPFS`, `getFromIPFS`, and `getMetrics` methods bypass the
+JSON envelope: `pinToIPFS` returns the CID directly, `getFromIPFS`
+returns raw `byte[]`, and `getMetrics` returns the raw Prometheus
+text body.
 
 ### `CanonicalBytes` — signable-bytes encoder
 
@@ -174,16 +184,17 @@ mvn package
 
 ## Verifying tests
 
-The SDK ships 20 unit tests covering keypair generation, signing,
+The SDK ships 35 unit tests covering keypair generation, signing,
 canonicalization, Merkle proof verification, HTTP envelope parsing,
-error taxonomy, and retry behavior:
+error taxonomy, retry behavior, and cross-SDK wire vectors:
 
 ```
-Tests run: 20, Failures: 0, Errors: 0, Skipped: 0
-  CanonicalBytesTest: 3/3
+Tests run: 35, Failures: 0, Errors: 0, Skipped: 0
+  CanonicalBytesTest: 6/6
   MerkleTest:         5/5
-  QuidnugClientTest:  7/7
   QuidTest:           5/5
+  QuidnugClientTest:  7/7
+  VectorsTest:        12/12
 ```
 
 The client tests use the built-in `jdk.httpserver` to stub responses

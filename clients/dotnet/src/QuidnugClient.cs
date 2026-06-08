@@ -9,8 +9,11 @@ namespace Quidnug.Client;
 /// <summary>
 /// Strongly-typed HTTP client for a Quidnug node.
 ///
-/// <para>Covers the full v2 protocol surface (QDPs 0001–0010). Thread-safe;
-/// one instance can be shared across requests.</para>
+/// <para>Covers the canonical OpenAPI 1.0 surface — identity, trust,
+/// titles, event streams, blocks, transactions, domains, IPFS, metrics,
+/// plus the QDP extensions (guardians, recovery, cross-domain gossip,
+/// bootstrap, fork-block). Thread-safe; one instance can be shared
+/// across requests.</para>
 ///
 /// <para><b>Retry policy.</b> GETs retry on 5xx/429 with exponential
 /// backoff + ±100ms jitter. POSTs are not retried — reconcile via a
@@ -426,6 +429,306 @@ public sealed class QuidnugClient : IDisposable
         => RequestAsync(HttpMethod.Get, "bootstrap/status", null, ct);
 
     // =====================================================================
+    // Blocks + transactions
+    // =====================================================================
+
+    /// <summary>GET /api/blocks/tentative/{domain} — blocks tentatively accepted but not yet fully trusted.</summary>
+    public Task<JsonNode?> GetTentativeBlocksAsync(string domain, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(domain))
+            throw new QuidnugValidationException("domain is required");
+        return RequestAsync(HttpMethod.Get,
+            $"blocks/tentative/{Uri.EscapeDataString(domain)}", null, ct);
+    }
+
+    /// <summary>GET /api/transactions — paginated list of pending (uncommitted) transactions.</summary>
+    public Task<JsonNode?> GetPendingTransactionsAsync(
+        int? limit = null, int? offset = null, CancellationToken ct = default)
+    {
+        string path = "transactions" + BuildQuery(("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // Identity (server-side keygen + registry queries)
+    // =====================================================================
+
+    /// <summary>
+    /// POST /api/quids — request server-side keypair generation. The node
+    /// generates and retains the private key; contrast with <see cref="Quid.Generate"/>,
+    /// which keeps the private key in-process and never transmits it.
+    /// </summary>
+    public Task<JsonNode?> CreateQuidAsync(
+        IDictionary<string, object>? metadata = null, CancellationToken ct = default)
+    {
+        var body = new Dictionary<string, object?>();
+        if (metadata is not null) body["metadata"] = metadata;
+        return RequestAsync(HttpMethod.Post, "quids", body, ct);
+    }
+
+    /// <summary>GET /api/registry/identity — paginated identity registry / single lookup.</summary>
+    public Task<JsonNode?> QueryIdentityRegistryAsync(
+        string? quidId = null, int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        string path = "registry/identity" + BuildQuery(
+            ("quid_id", quidId), ("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // Trust (structured queries + registry)
+    // =====================================================================
+
+    /// <summary>POST /api/trust/query — structured relational trust query.</summary>
+    public async Task<TrustResult> QueryRelationalTrustAsync(
+        string observer, string target,
+        string domain = "default", int maxDepth = 5,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(observer) || string.IsNullOrEmpty(target))
+            throw new QuidnugValidationException("observer and target are required");
+        var body = new Dictionary<string, object?>
+        {
+            ["observer"] = observer,
+            ["target"] = target,
+            ["domain"] = domain,
+            ["maxDepth"] = maxDepth,
+        };
+        var node = await RequestAsync(HttpMethod.Post, "trust/query", body, ct)
+                   ?? throw new QuidnugNodeException("empty response", 200, null);
+        return JsonSerializer.Deserialize<TrustResult>(node.ToJsonString())
+               ?? throw new QuidnugNodeException("decode trust result failed", 200, node.ToJsonString());
+    }
+
+    /// <summary>GET /api/registry/trust — paginated trust-edge listing or direct lookup.</summary>
+    public Task<JsonNode?> QueryTrustRegistryAsync(
+        string? truster = null, string? trustee = null,
+        int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        string path = "registry/trust" + BuildQuery(
+            ("truster", truster), ("trustee", trustee),
+            ("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // Title registry
+    // =====================================================================
+
+    /// <summary>GET /api/registry/title — paginated title registry or filtered lookup.</summary>
+    public Task<JsonNode?> QueryTitleRegistryAsync(
+        string? assetId = null, string? ownerId = null,
+        int? limit = null, int? offset = null,
+        CancellationToken ct = default)
+    {
+        string path = "registry/title" + BuildQuery(
+            ("asset_id", assetId), ("owner_id", ownerId),
+            ("limit", limit), ("offset", offset));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // Domains
+    // =====================================================================
+
+    /// <summary>GET /api/domains — list trust domains managed by this node.</summary>
+    public Task<JsonNode?> ListDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "domains", null, ct);
+
+    /// <summary>
+    /// POST /api/domains — register a new trust domain.
+    /// </summary>
+    /// <remarks>
+    /// Convenience overload for the common <c>name</c> + <c>trustThreshold</c> shape.
+    /// Use <see cref="RegisterDomainAsync(IDictionary{string, object}, CancellationToken)"/>
+    /// when you also need to set validator nodes, weighted validators, or
+    /// pre-shared validator public keys.
+    /// </remarks>
+    public Task<JsonNode?> RegisterDomainAsync(
+        string name, double trustThreshold,
+        IEnumerable<string>? validatorNodes = null,
+        IDictionary<string, double>? validators = null,
+        IDictionary<string, string>? validatorPublicKeys = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new QuidnugValidationException("name is required");
+        var body = new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["trustThreshold"] = trustThreshold,
+        };
+        if (validatorNodes is not null) body["validatorNodes"] = validatorNodes.ToList();
+        if (validators is not null) body["validators"] = validators;
+        if (validatorPublicKeys is not null) body["validatorPublicKeys"] = validatorPublicKeys;
+        return RequestAsync(HttpMethod.Post, "domains", body, ct);
+    }
+
+    /// <summary>
+    /// POST /api/domains — register a trust domain with arbitrary additional
+    /// fields. The dictionary is sent as the JSON body verbatim, so callers
+    /// can include forward-compatible fields not yet modeled by the typed
+    /// overload.
+    /// </summary>
+    public Task<JsonNode?> RegisterDomainAsync(
+        IDictionary<string, object> domainParams, CancellationToken ct = default)
+    {
+        if (domainParams is null || domainParams.Count == 0)
+            throw new QuidnugValidationException("domainParams is required");
+        if (!domainParams.ContainsKey("name"))
+            throw new QuidnugValidationException("domainParams must include 'name'");
+        return RequestAsync(HttpMethod.Post, "domains", domainParams, ct);
+    }
+
+    /// <summary>GET /api/domains/{name}/query — query trust/identity/title within a specific domain.</summary>
+    /// <param name="name">Trust domain (supports dot-notation hierarchy).</param>
+    /// <param name="type">One of <c>trust</c>, <c>identity</c>, or <c>title</c>.</param>
+    /// <param name="param">For trust queries, use <c>"observer:target"</c>; otherwise the quid or asset ID.</param>
+    public Task<JsonNode?> QueryDomainAsync(
+        string name, string type, string param, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new QuidnugValidationException("name is required");
+        if (type is not "trust" and not "identity" and not "title")
+            throw new QuidnugValidationException("type must be 'trust', 'identity', or 'title'");
+        if (string.IsNullOrEmpty(param))
+            throw new QuidnugValidationException("param is required");
+        string path = $"domains/{Uri.EscapeDataString(name)}/query"
+                    + BuildQuery(("type", type), ("param", param));
+        return RequestAsync(HttpMethod.Get, path, null, ct);
+    }
+
+    // =====================================================================
+    // Node-managed domains + gossip
+    // =====================================================================
+
+    /// <summary>GET /api/node/domains — domains this node currently supports.</summary>
+    public Task<JsonNode?> GetNodeDomainsAsync(CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get, "node/domains", null, ct);
+
+    /// <summary>POST /api/node/domains — replace the node's supported-domains list.</summary>
+    public Task<JsonNode?> UpdateNodeDomainsAsync(
+        IEnumerable<string> domains, CancellationToken ct = default)
+    {
+        if (domains is null)
+            throw new QuidnugValidationException("domains is required");
+        var body = new Dictionary<string, object?> { ["domains"] = domains.ToList() };
+        return RequestAsync(HttpMethod.Post, "node/domains", body, ct);
+    }
+
+    /// <summary>
+    /// POST /api/gossip/domains — accept a domain-gossip message from a peer.
+    /// Node-to-node endpoint; application code rarely needs this.
+    /// </summary>
+    public Task<JsonNode?> ReceiveDomainGossipAsync(
+        IDictionary<string, object> gossipMessage, CancellationToken ct = default)
+    {
+        if (gossipMessage is null)
+            throw new QuidnugValidationException("gossipMessage is required");
+        return RequestAsync(HttpMethod.Post, "gossip/domains", gossipMessage, ct);
+    }
+
+    // =====================================================================
+    // IPFS (binary body / binary response — bypasses the JSON envelope)
+    // =====================================================================
+
+    /// <summary>POST /api/ipfs/pin — pin raw bytes; returns the CID.</summary>
+    public async Task<string> PinToIpfsAsync(byte[] content, CancellationToken ct = default)
+    {
+        if (content is null)
+            throw new QuidnugValidationException("content is required");
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, _apiBase + "/ipfs/pin");
+        req.Headers.Accept.Clear();
+        req.Headers.Accept.ParseAdd("application/json");
+        req.Content = new ByteArrayContent(content);
+        req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new QuidnugNodeException($"network error on POST ipfs/pin: {e.Message}", e);
+        }
+
+        var data = await ParseEnvelopeAsync(resp, ct);
+        // Server may return {cid: "..."} or — when the envelope unwraps a scalar — {value: "..."}.
+        string? cid = data?["cid"]?.GetValue<string>() ?? data?["value"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(cid))
+            throw new QuidnugNodeException("IPFS pin response missing cid", 200, data?.ToJsonString());
+        return cid;
+    }
+
+    /// <summary>GET /api/ipfs/{cid} — fetch raw bytes by CID. Response is not enveloped.</summary>
+    public async Task<byte[]> GetFromIpfsAsync(string cid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(cid))
+            throw new QuidnugValidationException("cid is required");
+
+        using var req = new HttpRequestMessage(HttpMethod.Get,
+            _apiBase + "/ipfs/" + Uri.EscapeDataString(cid));
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new QuidnugNodeException($"network error on GET ipfs/{cid}: {e.Message}", e);
+        }
+
+        using (resp)
+        {
+            if ((int)resp.StatusCode >= 400)
+            {
+                string body = await resp.Content.ReadAsStringAsync(ct);
+                throw new QuidnugNodeException(
+                    $"IPFS fetch failed (HTTP {(int)resp.StatusCode})",
+                    (int)resp.StatusCode, body);
+            }
+            return await resp.Content.ReadAsByteArrayAsync(ct);
+        }
+    }
+
+    // =====================================================================
+    // Metrics (Prometheus text, not enveloped, not under /api)
+    // =====================================================================
+
+    /// <summary>GET /metrics — Prometheus-formatted metrics. Not under /api, no envelope.</summary>
+    public async Task<string> GetMetricsAsync(CancellationToken ct = default)
+    {
+        // /metrics is rooted at the node, not under /api — peel /api back off.
+        string root = _apiBase.EndsWith("/api", StringComparison.Ordinal)
+            ? _apiBase[..^4]
+            : _apiBase;
+        using var req = new HttpRequestMessage(HttpMethod.Get, root + "/metrics");
+        HttpResponseMessage resp;
+        try
+        {
+            resp = await _http.SendAsync(req, ct);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException)
+        {
+            throw new QuidnugNodeException($"network error on GET /metrics: {e.Message}", e);
+        }
+
+        using (resp)
+        {
+            string body = await resp.Content.ReadAsStringAsync(ct);
+            if ((int)resp.StatusCode >= 400)
+                throw new QuidnugNodeException(
+                    $"metrics fetch failed (HTTP {(int)resp.StatusCode})",
+                    (int)resp.StatusCode, body);
+            return body;
+        }
+    }
+
+    // =====================================================================
     // HTTP plumbing
     // =====================================================================
 
@@ -541,5 +844,17 @@ public sealed class QuidnugClient : IDisposable
     {
         if (signer is null || !signer.HasPrivateKey)
             throw new QuidnugValidationException("signer must have a private key");
+    }
+
+    private static string BuildQuery(params (string name, object? value)[] pairs)
+    {
+        var parts = new List<string>(pairs.Length);
+        foreach (var (name, value) in pairs)
+        {
+            if (value is null) continue;
+            if (value is string s && s.Length == 0) continue;
+            parts.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "")}");
+        }
+        return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
     }
 }

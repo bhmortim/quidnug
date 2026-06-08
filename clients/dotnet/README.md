@@ -2,8 +2,15 @@
 
 `Quidnug.Client` — the official .NET client for
 [Quidnug](https://github.com/bhmortim/quidnug), a decentralized
-protocol for relational, per-observer trust. Covers the **full v2
-protocol surface** (QDPs 0001–0010).
+protocol for relational, per-observer trust.
+
+Version 2.x of this SDK covers the canonical OpenAPI 1.0 surface:
+identity (including server-side keygen), trust (direct, relational,
+and registry queries), titles, event streams, blocks and pending
+transactions, trust-domain management and queries, node-managed
+domains and domain gossip, IPFS pin/get, Prometheus metrics — plus
+QDP extensions for guardian sets, guardian recovery, cross-domain
+fingerprints, anchor gossip, fork-block activation, and bootstrap.
 
 Targets .NET 8 (runs under .NET 8/9/10). Uses built-in
 `System.Security.Cryptography.ECDsa`, `System.Net.Http`, and
@@ -69,12 +76,16 @@ shared across request handlers.
 
 | Area | Methods |
 | --- | --- |
-| Health | `HealthAsync`, `InfoAsync`, `NodesAsync`, `BlocksAsync` |
-| Identity | `RegisterIdentityAsync`, `GetIdentityAsync` |
-| Trust | `GrantTrustAsync`, `GetTrustAsync`, `GetTrustEdgesAsync` |
-| Title | `RegisterTitleAsync`, `GetTitleAsync` |
+| Health / info | `HealthAsync`, `InfoAsync`, `NodesAsync` |
+| Blocks / transactions | `BlocksAsync`, `GetTentativeBlocksAsync`, `GetPendingTransactionsAsync` |
+| Identity | `CreateQuidAsync`, `RegisterIdentityAsync`, `GetIdentityAsync`, `QueryIdentityRegistryAsync` |
+| Trust | `GrantTrustAsync`, `GetTrustAsync`, `QueryRelationalTrustAsync`, `GetTrustEdgesAsync`, `QueryTrustRegistryAsync` |
+| Title | `RegisterTitleAsync`, `GetTitleAsync`, `QueryTitleRegistryAsync` |
 | Events | `EmitEventAsync`, `GetEventStreamAsync`, `GetStreamEventsAsync` |
-| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInit/Veto/CommitAsync`, `GetGuardianSetAsync` |
+| Domains | `ListDomainsAsync`, `RegisterDomainAsync`, `QueryDomainAsync`, `GetNodeDomainsAsync`, `UpdateNodeDomainsAsync`, `ReceiveDomainGossipAsync` |
+| Storage | `PinToIpfsAsync`, `GetFromIpfsAsync` |
+| Metrics | `GetMetricsAsync` |
+| Guardians (QDP-0002) | `SubmitGuardianSetUpdateAsync`, `SubmitRecoveryInitAsync`, `SubmitRecoveryVetoAsync`, `SubmitRecoveryCommitAsync`, `GetGuardianSetAsync` |
 | Gossip (QDP-0003/5) | `SubmitDomainFingerprintAsync`, `GetLatestDomainFingerprintAsync`, `SubmitAnchorGossipAsync` |
 | Bootstrap (QDP-0008) | `BootstrapStatusAsync` |
 | Fork-block (QDP-0009) | `SubmitForkBlockAsync`, `ForkBlockStatusAsync` |
@@ -119,6 +130,16 @@ catch (QuidnugValidationException ex)
 ```
 
 All inherit from `QuidnugException`. `catch (QuidnugException)` handles any.
+
+| Exception | When |
+| --- | --- |
+| `QuidnugValidationException` | Local precondition failed before any network call (missing required argument, owners not summing to 100, etc.) or a 4xx with no more specific code. |
+| `QuidnugConflictException` | HTTP 409 or a server-side code in the conflict taxonomy (`NONCE_REPLAY`, `GUARDIAN_SET_MISMATCH`, `QUORUM_NOT_MET`, `VETOED`, `INVALID_SIGNATURE`, `FORK_ALREADY_ACTIVE`, `DUPLICATE`, `ALREADY_EXISTS`, `INVALID_STATE_TRANSITION`). |
+| `QuidnugUnavailableException` | HTTP 503 or `FEATURE_NOT_ACTIVE` / `NOT_READY` / `BOOTSTRAPPING`. |
+| `QuidnugNodeException` | Transport failure, 5xx after retries, non-JSON response. Exposes `StatusCode` and `ResponseBody`. |
+| `QuidnugCryptoException` | Signature verify or key derivation failed. |
+
+All inherit from `QuidnugException`, the SDK's common base.
 
 ## Retry policy
 

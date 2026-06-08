@@ -59,6 +59,7 @@ public final class QuidnugClient {
     private static final Set<String> UNAVAILABLE_CODES = Set.of(
             "FEATURE_NOT_ACTIVE", "NOT_READY", "BOOTSTRAPPING");
 
+    private final String baseUrl;
     private final String apiBase;
     private final HttpClient http;
     private final Duration timeout;
@@ -68,7 +69,8 @@ public final class QuidnugClient {
     private final String userAgent;
 
     private QuidnugClient(Builder b) {
-        this.apiBase        = b.baseUrl.replaceAll("/+$", "") + "/api";
+        this.baseUrl        = b.baseUrl.replaceAll("/+$", "");
+        this.apiBase        = this.baseUrl + "/api";
         this.http           = b.http != null ? b.http : HttpClient.newBuilder()
                                    .connectTimeout(b.timeout)
                                    .build();
@@ -91,6 +93,29 @@ public final class QuidnugClient {
     public JsonNode blocks()       { return doGet("blocks"); }
     public JsonNode pendingTransactions() { return doGet("transactions"); }
     public JsonNode listDomains()  { return doGet("domains"); }
+
+    /** GET /api/blocks/tentative/{domain} — blocks accepted but not yet fully trusted. */
+    public JsonNode getTentativeBlocks(String domain) {
+        if (domain == null || domain.isEmpty())
+            throw new ValidationException("domain is required");
+        return doGet("blocks/tentative/" + urlencode(domain));
+    }
+
+    // =====================================================================
+    // Quids (server-side keypair generation)
+    // =====================================================================
+
+    /** POST /api/quids — node generates and returns a fresh ECDSA P-256 quid. */
+    public JsonNode createQuid() {
+        return createQuid(null);
+    }
+
+    /** POST /api/quids with optional metadata attached to the new quid. */
+    public JsonNode createQuid(Map<String, Object> metadata) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (metadata != null && !metadata.isEmpty()) body.put("metadata", metadata);
+        return doPost("quids", body);
+    }
 
     // =====================================================================
     // Identity
@@ -131,6 +156,15 @@ public final class QuidnugClient {
         } catch (Exception e) {
             throw new NodeException("decode identity: " + e.getMessage(), e);
         }
+    }
+
+    /** GET /api/registry/identity — paginated identity registry / single lookup. */
+    public JsonNode queryIdentityRegistry(String quidId, Integer limit, Integer offset) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "quid_id", quidId);
+        appendParam(qs, "limit",   limit);
+        appendParam(qs, "offset",  offset);
+        return doGet("registry/identity" + qs);
     }
 
     // =====================================================================
@@ -183,6 +217,57 @@ public final class QuidnugClient {
         }
     }
 
+    /** POST /api/trust/query — structured relational-trust computation. */
+    public Types.TrustResult queryRelationalTrust(
+            String observer, String target, String domain, int maxDepth) {
+        return queryRelationalTrust(observer, target, domain, maxDepth, null);
+    }
+
+    /** Overload with the {@code includeUnverified} flag from the v1.0 wire schema. */
+    public Types.TrustResult queryRelationalTrust(
+            String observer, String target, String domain, int maxDepth,
+            Boolean includeUnverified) {
+        if (observer == null || observer.isEmpty())
+            throw new ValidationException("observer is required");
+        if (target == null || target.isEmpty())
+            throw new ValidationException("target is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target",   target);
+        body.put("domain",   domain != null ? domain : "default");
+        body.put("maxDepth", maxDepth > 0 ? maxDepth : 5);
+        if (includeUnverified != null) body.put("includeUnverified", includeUnverified);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust query result: " + e.getMessage(), e);
+        }
+    }
+
+    /** GET /api/registry/trust in direct/list mode (truster/trustee/paginated). */
+    public JsonNode queryTrustRegistry(String truster, String trustee, Integer limit, Integer offset) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "truster", truster);
+        appendParam(qs, "trustee", trustee);
+        appendParam(qs, "limit",   limit);
+        appendParam(qs, "offset",  offset);
+        return doGet("registry/trust" + qs);
+    }
+
+    /** GET /api/registry/trust in relational mode (observer + target + maxDepth). */
+    public JsonNode queryTrustRegistryRelational(
+            String observer, String target, Integer maxDepth) {
+        if (observer == null || observer.isEmpty())
+            throw new ValidationException("observer is required");
+        if (target == null || target.isEmpty())
+            throw new ValidationException("target is required");
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "observer", observer);
+        appendParam(qs, "target",   target);
+        appendParam(qs, "maxDepth", maxDepth);
+        return doGet("registry/trust" + qs);
+    }
+
     // =====================================================================
     // Title
     // =====================================================================
@@ -224,6 +309,16 @@ public final class QuidnugClient {
         } catch (Exception e) {
             throw new NodeException("decode title: " + e.getMessage(), e);
         }
+    }
+
+    /** GET /api/registry/title — query by asset, owner, or paginate. */
+    public JsonNode queryTitleRegistry(String assetId, String ownerId, Integer limit, Integer offset) {
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "asset_id", assetId);
+        appendParam(qs, "owner_id", ownerId);
+        appendParam(qs, "limit",    limit);
+        appendParam(qs, "offset",   offset);
+        return doGet("registry/title" + qs);
     }
 
     // =====================================================================
@@ -400,6 +495,184 @@ public final class QuidnugClient {
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
 
     // =====================================================================
+    // Domains
+    // =====================================================================
+
+    /** POST /api/domains — register a trust domain with a builder for optional fields. */
+    public JsonNode registerDomain(DomainParams p) {
+        if (p == null || p.name == null || p.name.isEmpty())
+            throw new ValidationException("domain name is required");
+        if (p.trustThreshold < 0.0 || p.trustThreshold > 1.0)
+            throw new ValidationException("trustThreshold must be in [0, 1]");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("name", p.name);
+        body.put("trustThreshold", p.trustThreshold);
+        if (p.validatorNodes != null)       body.put("validatorNodes", p.validatorNodes);
+        if (p.validators != null)           body.put("validators", p.validators);
+        if (p.validatorPublicKeys != null)  body.put("validatorPublicKeys", p.validatorPublicKeys);
+        return doPost("domains", body);
+    }
+
+    /** POST /api/domains — convenience overload taking just the name + threshold. */
+    public JsonNode registerDomain(String name, double trustThreshold) {
+        return registerDomain(DomainParams.of(name, trustThreshold));
+    }
+
+    /** POST /api/domains — escape hatch passing an arbitrary body verbatim. */
+    public JsonNode registerDomain(Map<String, Object> body) {
+        if (body == null || !body.containsKey("name"))
+            throw new ValidationException("body must include 'name'");
+        return doPost("domains", body);
+    }
+
+    /**
+     * GET /api/domains/{name}/query — domain-scoped registry lookup.
+     *
+     * <p>{@code type} is one of {@code trust}, {@code identity}, {@code title}.
+     * For trust queries {@code param} uses the {@code observer:target} format.
+     */
+    public JsonNode queryDomain(String name, String type, String param) {
+        if (name == null || name.isEmpty())
+            throw new ValidationException("domain name is required");
+        if (type == null || type.isEmpty())
+            throw new ValidationException("type is required");
+        if (param == null || param.isEmpty())
+            throw new ValidationException("param is required");
+        StringBuilder qs = new StringBuilder();
+        appendParam(qs, "type",  type);
+        appendParam(qs, "param", param);
+        return doGet("domains/" + urlencode(name) + "/query" + qs);
+    }
+
+    // =====================================================================
+    // Node-managed domains + node-to-node gossip
+    // =====================================================================
+
+    /** GET /api/node/domains — domains this node currently serves. */
+    public JsonNode getNodeDomains() { return doGet("node/domains"); }
+
+    /** POST /api/node/domains — replace the set of domains the node serves. */
+    public JsonNode updateNodeDomains(List<String> domains) {
+        if (domains == null) throw new ValidationException("domains is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("domains", domains);
+        return doPost("node/domains", body);
+    }
+
+    /** POST /api/gossip/domains — accept a peer's domain-membership gossip. */
+    public JsonNode receiveDomainGossip(JsonNode gossipMessage) {
+        if (gossipMessage == null) throw new ValidationException("gossipMessage is required");
+        return doPost("gossip/domains", gossipMessage);
+    }
+
+    /** POST /api/gossip/domains — Map overload for callers that don't hold a JsonNode. */
+    public JsonNode receiveDomainGossip(Map<String, Object> gossipMessage) {
+        if (gossipMessage == null) throw new ValidationException("gossipMessage is required");
+        return doPost("gossip/domains", gossipMessage);
+    }
+
+    // =====================================================================
+    // IPFS / large-payload storage
+    // =====================================================================
+
+    /**
+     * POST /api/ipfs/pin — pin raw bytes and receive the CID.
+     *
+     * <p>Bypasses the {@code {success,data,error}} envelope: parses the
+     * server's {@code {cid: ...}} body directly.
+     */
+    public String pinToIPFS(byte[] content) {
+        if (content == null) throw new ValidationException("content is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<String> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new NodeException("POST ipfs/pin: " + e.getMessage(), e);
+        }
+        int sc = resp.statusCode();
+        if (sc >= 400)
+            throw new NodeException("ipfs pin HTTP " + sc, sc, resp.body());
+        try {
+            JsonNode body = MAPPER.readTree(resp.body());
+            JsonNode env = body.has("success") && body.has("data") ? body.get("data") : body;
+            String cid = env.path("cid").asText(null);
+            if (cid == null || cid.isEmpty()) cid = env.path("value").asText(null);
+            if (cid == null || cid.isEmpty())
+                throw new NodeException("ipfs pin response missing cid", sc, resp.body());
+            return cid;
+        } catch (NodeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new NodeException("decode ipfs pin: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * GET /api/ipfs/{cid} — fetch raw bytes by CID.
+     *
+     * <p>Bypasses the JSON envelope; the response body is binary.
+     */
+    public byte[] getFromIPFS(String cid) {
+        if (cid == null || cid.isEmpty())
+            throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<byte[]> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+        } catch (Exception e) {
+            throw new NodeException("GET ipfs/" + cid + ": " + e.getMessage(), e);
+        }
+        int sc = resp.statusCode();
+        if (sc == 503) throw new UnavailableException("IPFS unavailable",
+                Map.of("code", "NOT_READY"));
+        if (sc >= 400) throw new NodeException("ipfs get HTTP " + sc, sc,
+                new String(resp.body(), StandardCharsets.UTF_8));
+        return resp.body();
+    }
+
+    // =====================================================================
+    // Metrics
+    // =====================================================================
+
+    /**
+     * GET /metrics — Prometheus exposition format as a raw string.
+     *
+     * <p>Lives at the server root, not under {@code /api}, and is not
+     * wrapped in the JSON envelope.
+     */
+    public String getMetrics() {
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/metrics"))
+                .timeout(timeout)
+                .header("Accept", "text/plain")
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        HttpResponse<String> resp;
+        try {
+            resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new NodeException("GET /metrics: " + e.getMessage(), e);
+        }
+        int sc = resp.statusCode();
+        if (sc >= 400) throw new NodeException("metrics HTTP " + sc, sc, resp.body());
+        return resp.body();
+    }
+
+    // =====================================================================
     // Param objects (fluent builders)
     // =====================================================================
 
@@ -457,6 +730,25 @@ public final class QuidnugClient {
         }
         public TitleParams domain(String d) { this.domain = d; return this; }
         public TitleParams titleType(String t) { this.titleType = t; return this; }
+    }
+
+    /** Trust-domain registration params. */
+    public static final class DomainParams {
+        public String name;
+        public double trustThreshold;
+        public List<String> validatorNodes;
+        public Map<String, Double> validators;
+        public Map<String, String> validatorPublicKeys;
+
+        public static DomainParams of(String name, double trustThreshold) {
+            DomainParams p = new DomainParams();
+            p.name = name;
+            p.trustThreshold = trustThreshold;
+            return p;
+        }
+        public DomainParams validatorNodes(List<String> v)            { this.validatorNodes = v; return this; }
+        public DomainParams validators(Map<String, Double> v)         { this.validators = v; return this; }
+        public DomainParams validatorPublicKeys(Map<String, String> v){ this.validatorPublicKeys = v; return this; }
     }
 
     /** Event-emit params. */
@@ -618,5 +910,13 @@ public final class QuidnugClient {
 
     private static String urlencode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static void appendParam(StringBuilder qs, String key, Object value) {
+        if (value == null) return;
+        String s = value.toString();
+        if (s.isEmpty()) return;
+        qs.append(qs.length() == 0 ? '?' : '&')
+          .append(key).append('=').append(urlencode(s));
     }
 }
