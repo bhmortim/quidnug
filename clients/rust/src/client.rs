@@ -2,11 +2,15 @@
 
 use crate::crypto::Quid;
 use crate::error::{Error, Result};
-use crate::types::{IdentityRecord, Title, TrustEdge, TrustResult};
-use crate::wire::{IdentityTx, TrustTx};
+use crate::types::{
+    DomainFingerprint, Event, GuardianSet, IdentityRecord, OwnershipStake, Title, TrustEdge,
+    TrustResult,
+};
+use crate::wire::{EventTx, IdentityTx, OwnershipStakeWire, TitleTx, TrustTx};
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
 /// Async Quidnug HTTP client.
@@ -28,6 +32,38 @@ pub struct TrustParams<'a> {
     pub domain: &'a str,
     /// Monotonic nonce.
     pub nonce: i64,
+}
+
+/// Parameters for [`Client::register_title`].
+#[derive(Debug, Clone)]
+pub struct TitleParams<'a> {
+    /// Asset quid ID being titled.
+    pub asset_id: &'a str,
+    /// Ownership stakes; percentages must sum to 1.0.
+    pub owners: Vec<OwnershipStake>,
+    /// Trust domain.
+    pub domain: &'a str,
+    /// Optional title-type discriminator.
+    pub title_type: &'a str,
+}
+
+/// Parameters for [`Client::emit_event`].
+#[derive(Debug, Clone)]
+pub struct EventParams<'a> {
+    /// Subject quid or title ID the event is anchored to.
+    pub subject_id: &'a str,
+    /// `"QUID"` or `"TITLE"`.
+    pub subject_type: &'a str,
+    /// Event-type discriminator.
+    pub event_type: &'a str,
+    /// Trust domain.
+    pub domain: &'a str,
+    /// Inline payload (mutually exclusive with `payload_cid`).
+    pub payload: Option<serde_json::Value>,
+    /// IPFS CID of payload (mutually exclusive with `payload`).
+    pub payload_cid: &'a str,
+    /// Sequence number; pass `0` to auto-fetch from the stream.
+    pub sequence: i64,
 }
 
 impl Client {
@@ -53,6 +89,26 @@ impl Client {
     /// Info (GET /api/info).
     pub async fn info(&self) -> Result<Value> {
         self.get("info").await
+    }
+
+    /// List known peers (GET /api/nodes).
+    pub async fn nodes(&self, limit: u32, offset: u32) -> Result<Value> {
+        let mut qs: Vec<String> = Vec::new();
+        if limit > 0 { qs.push(format!("limit={limit}")); }
+        if offset > 0 { qs.push(format!("offset={offset}")); }
+        let path = if qs.is_empty() { "nodes".to_string() }
+                   else { format!("nodes?{}", qs.join("&")) };
+        self.get(&path).await
+    }
+
+    /// Paginated blocks (GET /api/blocks).
+    pub async fn blocks(&self, limit: u32, offset: u32) -> Result<Value> {
+        let mut qs: Vec<String> = Vec::new();
+        if limit > 0 { qs.push(format!("limit={limit}")); }
+        if offset > 0 { qs.push(format!("offset={offset}")); }
+        let path = if qs.is_empty() { "blocks".to_string() }
+                   else { format!("blocks?{}", qs.join("&")) };
+        self.get(&path).await
     }
 
     /// Register an identity for `signer`, optionally with `name` and `home_domain`.
@@ -314,6 +370,374 @@ impl Client {
             Ok(w.edges)
         } else {
             Ok(w.data)
+        }
+    }
+
+    /// Structured relational-trust query (POST /api/trust/query).
+    pub async fn query_relational_trust(
+        &self,
+        observer: &str,
+        target: &str,
+        domain: &str,
+        max_depth: u32,
+    ) -> Result<TrustResult> {
+        if observer.is_empty() || target.is_empty() {
+            return Err(Error::validation("observer and target are required"));
+        }
+        let mut body = serde_json::json!({
+            "observer": observer,
+            "target": target,
+            "domain": if domain.is_empty() { "default" } else { domain },
+        });
+        if max_depth > 0 {
+            body["maxDepth"] = serde_json::json!(max_depth);
+        }
+        let v = self.post("trust/query", &body).await?;
+        serde_json::from_value(v).map_err(Error::from)
+    }
+
+    /// Paginated trust registry (GET /api/registry/trust).
+    pub async fn query_trust_registry(
+        &self,
+        truster: &str,
+        trustee: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Value> {
+        let mut qs: Vec<String> = Vec::new();
+        if !truster.is_empty() { qs.push(format!("truster={}", urlencoding(truster))); }
+        if !trustee.is_empty() { qs.push(format!("trustee={}", urlencoding(trustee))); }
+        if limit > 0 { qs.push(format!("limit={limit}")); }
+        if offset > 0 { qs.push(format!("offset={offset}")); }
+        let path = if qs.is_empty() { "registry/trust".to_string() }
+                   else { format!("registry/trust?{}", qs.join("&")) };
+        self.get(&path).await
+    }
+
+    // -----------------------------------------------------------------
+    // Title
+    // -----------------------------------------------------------------
+
+    /// Submit a signed TITLE transaction (POST /api/transactions/title).
+    ///
+    /// `owners` percentages may be provided on either the 1.0 (fraction)
+    /// or 100.0 (percent) scale; values are normalized to fraction for
+    /// the wire (the server's invariant is sum == 1.0).
+    pub async fn register_title(&self, signer: &Quid, p: TitleParams<'_>) -> Result<Value> {
+        if !signer.has_private_key() {
+            return Err(Error::validation("signer must have a private key"));
+        }
+        if p.asset_id.is_empty() {
+            return Err(Error::validation("asset_id is required"));
+        }
+        if p.owners.is_empty() {
+            return Err(Error::validation("owners is required"));
+        }
+        let total: f64 = p.owners.iter().map(|o| o.percentage).sum();
+        let norm: f64 = if (total - 1.0).abs() < 0.001 {
+            1.0
+        } else if (total - 100.0).abs() < 0.001 {
+            0.01
+        } else {
+            return Err(Error::validation(format!(
+                "ownership percentages must sum to 1.0 (or 100.0 for percent); got {total}"
+            )));
+        };
+        let owners_wire: Vec<OwnershipStakeWire> = p
+            .owners
+            .iter()
+            .map(|o| OwnershipStakeWire {
+                owner_id: o.owner_id.as_str(),
+                percentage: o.percentage * norm,
+                stake_type: o.stake_type.as_deref().unwrap_or(""),
+            })
+            .collect();
+        let mut tx = TitleTx {
+            id: String::new(),
+            tx_type: "TITLE",
+            trust_domain: p.domain,
+            timestamp: now_secs(),
+            signature: String::new(),
+            public_key: signer.public_key_hex(),
+            asset_id: p.asset_id,
+            owners: owners_wire,
+            signatures: HashMap::new(),
+            title_type: p.title_type,
+        };
+        tx.id = tx.derive_id();
+        let signable = serde_json::to_vec(&tx)?;
+        tx.signature = signer.sign(&signable)?;
+        let body = serde_json::to_value(&tx)?;
+        self.post("transactions/title", &body).await
+    }
+
+    // -----------------------------------------------------------------
+    // Events
+    // -----------------------------------------------------------------
+
+    /// Submit a signed EVENT transaction (POST /api/events).
+    pub async fn emit_event(&self, signer: &Quid, p: EventParams<'_>) -> Result<Value> {
+        if !signer.has_private_key() {
+            return Err(Error::validation("signer must have a private key"));
+        }
+        if p.subject_type != "QUID" && p.subject_type != "TITLE" {
+            return Err(Error::validation("subject_type must be 'QUID' or 'TITLE'"));
+        }
+        if p.event_type.is_empty() {
+            return Err(Error::validation("event_type is required"));
+        }
+        let has_payload = p.payload.is_some();
+        let has_cid = !p.payload_cid.is_empty();
+        if has_payload == has_cid {
+            return Err(Error::validation(
+                "exactly one of payload or payload_cid is required",
+            ));
+        }
+
+        let mut sequence = p.sequence;
+        if sequence == 0 {
+            match self.get_event_stream(p.subject_id, p.domain).await {
+                Ok(Some(stream)) => {
+                    sequence = stream
+                        .get("latestSequence")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0)
+                        + 1;
+                }
+                _ => sequence = 1,
+            }
+        }
+
+        let mut tx = EventTx {
+            id: String::new(),
+            tx_type: "EVENT",
+            trust_domain: p.domain,
+            timestamp: now_secs(),
+            signature: String::new(),
+            public_key: signer.public_key_hex(),
+            subject_id: p.subject_id,
+            subject_type: p.subject_type,
+            sequence,
+            event_type: p.event_type,
+            payload: p.payload.clone(),
+            payload_cid: p.payload_cid,
+        };
+        tx.id = tx.derive_id();
+        let signable = serde_json::to_vec(&tx)?;
+        tx.signature = signer.sign(&signable)?;
+        let body = serde_json::to_value(&tx)?;
+        self.post("events", &body).await
+    }
+
+    /// Stream metadata for a subject (GET /api/streams/{subjectId}).
+    /// Returns `None` on 404.
+    pub async fn get_event_stream(
+        &self,
+        subject_id: &str,
+        domain: &str,
+    ) -> Result<Option<Value>> {
+        let mut path = format!("streams/{}", urlencoding(subject_id));
+        if !domain.is_empty() {
+            path.push_str(&format!("?domain={}", urlencoding(domain)));
+        }
+        match self.get(&path).await {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Paginated events on a subject's stream (GET /api/streams/{subjectId}/events).
+    pub async fn get_stream_events(
+        &self,
+        subject_id: &str,
+        domain: &str,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<Event>> {
+        let mut qs: Vec<String> = Vec::new();
+        if !domain.is_empty() { qs.push(format!("domain={}", urlencoding(domain))); }
+        if limit > 0 { qs.push(format!("limit={limit}")); }
+        if offset > 0 { qs.push(format!("offset={offset}")); }
+        let mut path = format!("streams/{}/events", urlencoding(subject_id));
+        if !qs.is_empty() {
+            path.push('?');
+            path.push_str(&qs.join("&"));
+        }
+        let v = self.get(&path).await?;
+        let arr = match &v {
+            Value::Array(_) => v.clone(),
+            Value::Object(map) => map
+                .get("data")
+                .or_else(|| map.get("events"))
+                .cloned()
+                .unwrap_or(Value::Array(Vec::new())),
+            _ => Value::Array(Vec::new()),
+        };
+        serde_json::from_value(arr).map_err(Error::from)
+    }
+
+    // -----------------------------------------------------------------
+    // Guardians (QDP-0002 / QDP-0006)
+    // -----------------------------------------------------------------
+
+    /// Install or rotate a guardian set (POST /api/guardian/set-update).
+    pub async fn submit_guardian_set_update(&self, update: &Value) -> Result<Value> {
+        self.post("guardian/set-update", update).await
+    }
+
+    /// Start delayed recovery (POST /api/guardian/recovery/init).
+    pub async fn submit_recovery_init(&self, init: &Value) -> Result<Value> {
+        self.post("guardian/recovery/init", init).await
+    }
+
+    /// Abort a pending recovery (POST /api/guardian/recovery/veto).
+    pub async fn submit_recovery_veto(&self, veto: &Value) -> Result<Value> {
+        self.post("guardian/recovery/veto", veto).await
+    }
+
+    /// Commit a recovery after delay (POST /api/guardian/recovery/commit).
+    pub async fn submit_recovery_commit(&self, commit: &Value) -> Result<Value> {
+        self.post("guardian/recovery/commit", commit).await
+    }
+
+    /// Guardian resignation (POST /api/guardian/resign).
+    pub async fn submit_guardian_resignation(&self, resignation: &Value) -> Result<Value> {
+        self.post("guardian/resign", resignation).await
+    }
+
+    /// Fetch current guardian set (GET /api/guardian/set/{quid}).
+    /// Returns `None` on 404.
+    pub async fn get_guardian_set(&self, quid_id: &str) -> Result<Option<GuardianSet>> {
+        match self.get_typed::<GuardianSet>(&format!("guardian/set/{}", urlencoding(quid_id))).await {
+            Ok(gs) => Ok(Some(gs)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // Cross-domain gossip (QDP-0003)
+    // -----------------------------------------------------------------
+
+    /// Publish a signed domain fingerprint (POST /api/domain-fingerprints).
+    pub async fn submit_domain_fingerprint(&self, fp: &Value) -> Result<Value> {
+        self.post("domain-fingerprints", fp).await
+    }
+
+    /// Latest fingerprint for a domain (GET /api/domain-fingerprints/{domain}/latest).
+    /// Returns `None` on 404.
+    pub async fn get_latest_domain_fingerprint(
+        &self,
+        domain: &str,
+    ) -> Result<Option<DomainFingerprint>> {
+        match self
+            .get_typed::<DomainFingerprint>(&format!(
+                "domain-fingerprints/{}/latest",
+                urlencoding(domain)
+            ))
+            .await
+        {
+            Ok(fp) => Ok(Some(fp)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Deliver cross-domain anchor gossip (POST /api/anchor-gossip).
+    pub async fn submit_anchor_gossip(&self, message: &Value) -> Result<Value> {
+        self.post("anchor-gossip", message).await
+    }
+
+    // -----------------------------------------------------------------
+    // K-of-K bootstrap (QDP-0008)
+    // -----------------------------------------------------------------
+
+    /// Publish a K-of-K bootstrap snapshot (POST /api/nonce-snapshots).
+    pub async fn submit_nonce_snapshot(&self, snapshot: &Value) -> Result<Value> {
+        self.post("nonce-snapshots", snapshot).await
+    }
+
+    /// Latest snapshot for a domain (GET /api/nonce-snapshots/{domain}/latest).
+    /// Returns `None` on 404.
+    pub async fn get_latest_nonce_snapshot(&self, domain: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("nonce-snapshots/{}/latest", urlencoding(domain)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Bootstrap status of this node (GET /api/bootstrap/status).
+    pub async fn bootstrap_status(&self) -> Result<Value> {
+        self.get("bootstrap/status").await
+    }
+
+    // -----------------------------------------------------------------
+    // Fork-block (QDP-0009)
+    // -----------------------------------------------------------------
+
+    /// Submit a signed fork-activation block (POST /api/fork-block).
+    pub async fn submit_fork_block(&self, fb: &Value) -> Result<Value> {
+        self.post("fork-block", fb).await
+    }
+
+    /// Fork-activation status across features (GET /api/fork-block/status).
+    pub async fn fork_block_status(&self) -> Result<Value> {
+        self.get("fork-block/status").await
+    }
+
+    // -----------------------------------------------------------------
+    // IPFS
+    // -----------------------------------------------------------------
+
+    /// Pin raw bytes to IPFS via the node (POST /api/ipfs/pin).
+    /// Returns the assigned content identifier (CID).
+    pub async fn ipfs_pin(&self, content: Vec<u8>) -> Result<String> {
+        let url = format!("{}/ipfs/pin", self.api_base);
+        let resp = self
+            .http
+            .post(&url)
+            .timeout(self.timeout)
+            .header("Content-Type", "application/octet-stream")
+            .body(content)
+            .send()
+            .await?;
+        let v = parse_envelope(resp).await?;
+        v.get("cid")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::Node {
+                status: 0,
+                message: "ipfs pin: missing cid in response".to_string(),
+            })
+    }
+
+    /// Fetch raw bytes from IPFS by CID (GET /api/ipfs/{cid}).
+    pub async fn ipfs_get(&self, cid: &str) -> Result<Vec<u8>> {
+        if cid.is_empty() {
+            return Err(Error::validation("cid is required"));
+        }
+        let url = format!("{}/ipfs/{}", self.api_base, urlencoding(cid));
+        let resp = self.http.get(&url).timeout(self.timeout).send().await?;
+        let status = resp.status();
+        let bytes = resp.bytes().await?;
+        if status.is_success() {
+            return Ok(bytes.to_vec());
+        }
+        let body = String::from_utf8_lossy(&bytes).to_string();
+        match status.as_u16() {
+            404 => Err(Error::Validation("NOT_FOUND: ipfs get: not found".into())),
+            s if (400..500).contains(&s) => {
+                Err(Error::Validation(format!("ipfs get HTTP {s}: {body}")))
+            }
+            s => Err(Error::Node {
+                status: s,
+                message: format!("ipfs get HTTP {s}: {body}"),
+            }),
         }
     }
 

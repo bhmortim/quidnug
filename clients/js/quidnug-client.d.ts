@@ -642,6 +642,28 @@ declare class QuidnugClient {
   ): TrustResult;
 
   /**
+   * Liveness check against the currently healthy node.
+   * Maps to GET /api/health.
+   * @returns Envelope with node status
+   */
+  getHealth(): Promise<APIResponse<unknown>>;
+
+  /**
+   * Node identity, version, and capability info.
+   * Maps to GET /api/info.
+   * @returns Envelope with node info
+   */
+  getInfo(): Promise<APIResponse<unknown>>;
+
+  /**
+   * Direct outbound trust edges for a quid.
+   * Maps to GET /api/trust/edges/{quidId}.
+   * @param quidId - Quid ID whose outbound edges to fetch
+   * @returns Envelope containing edge array
+   */
+  getTrustEdges(quidId: string): Promise<APIResponse<unknown>>;
+
+  /**
    * Get blocks from the blockchain with pagination.
    * @param options - Pagination options
    * @returns Paginated blocks response

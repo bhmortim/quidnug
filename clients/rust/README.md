@@ -64,7 +64,27 @@ Runnable examples live in `examples/`:
 | `quidnug::verify_inclusion_proof` | QDP-0010 Merkle proof verifier. |
 | `quidnug::MerkleProofFrame` | Proof frame (`hash`, `side`). |
 | `quidnug::{TrustResult, TrustEdge, Title, IdentityRecord, Event, ...}` | Wire types. |
+| `quidnug::{TrustParams, TitleParams, EventParams}` | Param structs for write calls. |
 | `quidnug::{Error, Result}` | Structured error taxonomy + result alias. |
+
+### Client method surface
+
+`Client` covers the full v2 protocol surface (matches Python / Go / Java
+/ .NET / Swift / JS SDKs byte-for-byte on canonical signing):
+
+| Area | Methods |
+| --- | --- |
+| Health | `health`, `info`, `nodes`, `blocks` |
+| Identity | `register_identity`, `get_identity`, `wait_for_identity`, `wait_for_identities` |
+| Trust | `grant_trust`, `get_trust`, `get_trust_edges`, `query_relational_trust`, `query_trust_registry` |
+| Title | `register_title`, `get_title`, `wait_for_title` |
+| Events | `emit_event`, `get_event_stream`, `get_stream_events` |
+| Guardians (QDP-0002/6) | `submit_guardian_set_update`, `submit_recovery_init`, `submit_recovery_veto`, `submit_recovery_commit`, `submit_guardian_resignation`, `get_guardian_set` |
+| Gossip (QDP-0003) | `submit_domain_fingerprint`, `get_latest_domain_fingerprint`, `submit_anchor_gossip` |
+| Bootstrap (QDP-0008) | `submit_nonce_snapshot`, `get_latest_nonce_snapshot`, `bootstrap_status` |
+| Fork-block (QDP-0009) | `submit_fork_block`, `fork_block_status` |
+| IPFS | `ipfs_pin`, `ipfs_get` |
+| Domain bootstrap | `register_domain`, `ensure_domain` |
 
 ## Error taxonomy
 
@@ -81,12 +101,9 @@ match err {
 
 ## Features
 
-| Feature | Purpose |
-| --- | --- |
-| `default = ["blocking"]` | Enable blocking HTTP (also requires `tokio`). Leave in if you don't know you don't need it. |
-| `rustls` | Swap native TLS for rustls (pure Rust, better for static binaries). |
-
-Enable with `cargo build --no-default-features --features rustls` etc.
+The crate is async-first (all `Client` methods are `pub async fn`) and
+ships with no Cargo features by default. TLS uses the platform default
+via `reqwest`.
 
 ## Canonicalization
 

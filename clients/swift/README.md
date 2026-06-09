@@ -75,13 +75,15 @@ method uses `async throws`.
 | --- | --- |
 | Health | `health`, `info`, `nodes` |
 | Identity | `registerIdentity`, `getIdentity` |
-| Trust | `grantTrust`, `getTrust`, `getTrustEdges` |
+| Trust | `grantTrust`, `getTrust`, `getTrustEdges`, `queryRelationalTrust`, `queryTrustRegistry` |
 | Title | `registerTitle`, `getTitle` |
 | Events | `emitEvent`, `getEventStream`, `getStreamEvents` |
-| Guardians (QDP-0002) | `submitGuardianSetUpdate`, `getGuardianSet` |
-| Gossip (QDP-0003) | `getLatestDomainFingerprint` |
-| Bootstrap (QDP-0008) | `bootstrapStatus` |
-| Fork-block (QDP-0009) | `forkBlockStatus` |
+| Guardians (QDP-0002/6) | `submitGuardianSetUpdate`, `submitRecoveryInit`, `submitRecoveryVeto`, `submitRecoveryCommit`, `submitGuardianResignation`, `getGuardianSet` |
+| Gossip (QDP-0003) | `submitDomainFingerprint`, `getLatestDomainFingerprint`, `submitAnchorGossip` |
+| Bootstrap (QDP-0008) | `submitNonceSnapshot`, `getLatestNonceSnapshot`, `bootstrapStatus` |
+| Fork-block (QDP-0009) | `submitForkBlock`, `forkBlockStatus` |
+| Registry | `blocks` |
+| IPFS | `ipfsPin`, `ipfsGet` |
 
 ### `CanonicalBytes` / `Merkle`
 

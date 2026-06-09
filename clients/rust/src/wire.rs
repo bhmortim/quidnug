@@ -148,6 +148,111 @@ impl<'a> IdentityTx<'a> {
     }
 }
 
+/// Per-owner stake on a title transaction.
+#[derive(Debug, Clone, Serialize)]
+pub struct OwnershipStakeWire<'a> {
+    #[serde(rename = "ownerId")]
+    pub owner_id: &'a str,
+    #[serde(serialize_with = "serialize_go_compat_f64")]
+    pub percentage: f64,
+    #[serde(rename = "stakeType", skip_serializing_if = "str::is_empty")]
+    pub stake_type: &'a str,
+}
+
+/// Mirror of `core.TitleTransaction`.
+#[derive(Debug, Serialize)]
+pub struct TitleTx<'a> {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub tx_type: &'a str,
+    #[serde(rename = "trustDomain")]
+    pub trust_domain: &'a str,
+    pub timestamp: i64,
+    pub signature: String,
+    #[serde(rename = "publicKey")]
+    pub public_key: &'a str,
+    #[serde(rename = "assetId")]
+    pub asset_id: &'a str,
+    pub owners: Vec<OwnershipStakeWire<'a>>,
+    pub signatures: std::collections::HashMap<String, String>,
+    #[serde(rename = "titleType", skip_serializing_if = "str::is_empty")]
+    pub title_type: &'a str,
+}
+
+impl<'a> TitleTx<'a> {
+    /// Derive the transaction ID per `AddTitleTransaction` in
+    /// `internal/core/transactions.go`. Payload:
+    /// `(AssetID, Owners, TrustDomain, Timestamp)`.
+    pub fn derive_id(&self) -> String {
+        #[derive(Serialize)]
+        #[allow(non_snake_case)]
+        struct Seed<'b> {
+            AssetID: &'b str,
+            Owners: &'b [OwnershipStakeWire<'b>],
+            TrustDomain: &'b str,
+            Timestamp: i64,
+        }
+        let seed = Seed {
+            AssetID: self.asset_id,
+            Owners: &self.owners,
+            TrustDomain: self.trust_domain,
+            Timestamp: self.timestamp,
+        };
+        let bytes = serde_json::to_vec(&seed).expect("seed serialize");
+        hex::encode(Sha256::digest(&bytes))
+    }
+}
+
+/// Mirror of `core.EventTransaction`.
+#[derive(Debug, Serialize)]
+pub struct EventTx<'a> {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub tx_type: &'a str,
+    #[serde(rename = "trustDomain")]
+    pub trust_domain: &'a str,
+    pub timestamp: i64,
+    pub signature: String,
+    #[serde(rename = "publicKey")]
+    pub public_key: &'a str,
+    #[serde(rename = "subjectId")]
+    pub subject_id: &'a str,
+    #[serde(rename = "subjectType")]
+    pub subject_type: &'a str,
+    pub sequence: i64,
+    #[serde(rename = "eventType")]
+    pub event_type: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<serde_json::Value>,
+    #[serde(rename = "payloadCid", skip_serializing_if = "str::is_empty")]
+    pub payload_cid: &'a str,
+}
+
+impl<'a> EventTx<'a> {
+    /// Derive the transaction ID per `AddEventTransaction`. Payload:
+    /// `(SubjectID, EventType, Sequence, TrustDomain, Timestamp)`.
+    pub fn derive_id(&self) -> String {
+        #[derive(Serialize)]
+        #[allow(non_snake_case)]
+        struct Seed<'b> {
+            SubjectID: &'b str,
+            EventType: &'b str,
+            Sequence: i64,
+            TrustDomain: &'b str,
+            Timestamp: i64,
+        }
+        let seed = Seed {
+            SubjectID: self.subject_id,
+            EventType: self.event_type,
+            Sequence: self.sequence,
+            TrustDomain: self.trust_domain,
+            Timestamp: self.timestamp,
+        };
+        let bytes = serde_json::to_vec(&seed).expect("seed serialize");
+        hex::encode(Sha256::digest(&bytes))
+    }
+}
+
 // ---------------------------------------------------------------
 // serde helpers
 // ---------------------------------------------------------------
