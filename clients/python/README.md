@@ -66,6 +66,29 @@ corresponding typed method.
 | Blocks | `get_blocks`, `get_tentative_blocks`, `get_pending_transactions` |
 | Domains | `list_domains`, `register_domain`, `get_node_domains`, `update_node_domains` |
 
+### `AsyncQuidnugClient` — asyncio variant
+
+`AsyncQuidnugClient` mirrors the sync `QuidnugClient` method-for-method
+on top of `httpx.AsyncClient`. Same arguments, same return types, same
+error taxonomy — just `await` the calls.
+
+```python
+from quidnug import Quid
+from quidnug.async_client import AsyncQuidnugClient
+
+async def main():
+    async with AsyncQuidnugClient("http://localhost:8080") as client:
+        alice = Quid.generate()
+        bob = Quid.generate()
+        await client.register_identity(alice, name="Alice")
+        await client.register_identity(bob, name="Bob")
+        await client.grant_trust(alice, trustee=bob.id, level=0.9)
+        tr = await client.get_trust(alice.id, bob.id)
+        print(tr.trust_level)
+```
+
+Install with `pip install 'quidnug[async]'` (or pull `httpx` yourself).
+
 ### `Quid` — cryptographic identity
 
 ```python

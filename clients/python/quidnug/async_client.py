@@ -356,6 +356,44 @@ class AsyncQuidnugClient:
             return []
         return [_trust_edge_from_wire(e) for e in raw]
 
+    async def query_relational_trust(
+        self,
+        *,
+        observer: str,
+        target: str,
+        domain: str = "default",
+        max_depth: int = 5,
+    ) -> TrustResult:
+        """POST /api/trust/query — structured relational trust query."""
+        body = {"observer": observer, "target": target, "domain": domain, "maxDepth": max_depth}
+        data = await self._request("POST", "trust/query", body=body)
+        return _trust_result_from_wire(observer, target, domain, data)
+
+    async def query_trust_registry(
+        self,
+        *,
+        truster: Optional[str] = None,
+        trustee: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/registry/trust — paginated trust-edge listing."""
+        params = _strip_none(
+            {"truster": truster, "trustee": trustee, "limit": limit, "offset": offset}
+        )
+        return await self._request("GET", "registry/trust", params=params)
+
+    async def query_identity_registry(
+        self,
+        *,
+        quid_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/registry/identity — paginated identity listing."""
+        params = _strip_none({"quid_id": quid_id, "limit": limit, "offset": offset})
+        return await self._request("GET", "registry/identity", params=params)
+
     # --- Title -----------------------------------------------------------
 
     async def register_title(
@@ -417,6 +455,20 @@ class AsyncQuidnugClient:
                 return None
             raise
         return _title_from_wire(data)
+
+    async def query_title_registry(
+        self,
+        *,
+        asset_id: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """GET /api/registry/title — paginated title listing."""
+        params = _strip_none(
+            {"asset_id": asset_id, "owner_id": owner_id, "limit": limit, "offset": offset}
+        )
+        return await self._request("GET", "registry/title", params=params)
 
     # --- Events ----------------------------------------------------------
 
@@ -501,6 +553,22 @@ class AsyncQuidnugClient:
     async def submit_guardian_set_update(self, update: GuardianSetUpdate) -> Dict[str, Any]:
         return await self._request("POST", "guardian/set-update", body=_dc(update))
 
+    async def submit_recovery_init(self, init: GuardianRecoveryInit) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/init — start the M-of-N recovery delay."""
+        return await self._request("POST", "guardian/recovery/init", body=_dc(init))
+
+    async def submit_recovery_veto(self, veto: GuardianRecoveryVeto) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/veto — owner or guardian aborts recovery."""
+        return await self._request("POST", "guardian/recovery/veto", body=_dc(veto))
+
+    async def submit_recovery_commit(self, commit: GuardianRecoveryCommit) -> Dict[str, Any]:
+        """POST /api/guardian/recovery/commit — finalize the delayed recovery."""
+        return await self._request("POST", "guardian/recovery/commit", body=_dc(commit))
+
+    async def submit_guardian_resignation(self, resignation: GuardianResignation) -> Dict[str, Any]:
+        """POST /api/guardian/resign — guardian leaves the set."""
+        return await self._request("POST", "guardian/resign", body=_dc(resignation))
+
     async def get_guardian_set(self, quid: str) -> Optional[GuardianSet]:
         try:
             data = await self._request("GET", f"guardian/set/{quote(quid, safe='')}")
@@ -510,8 +578,20 @@ class AsyncQuidnugClient:
             raise
         return _guardian_set_from_wire(data)
 
+    async def submit_domain_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        """POST /api/domain-fingerprints — publish a signed fingerprint."""
+        return await self._request("POST", "domain-fingerprints", body=_dc(fp))
+
     async def submit_anchor_gossip(self, message: AnchorGossipMessage) -> Dict[str, Any]:
         return await self._request("POST", "anchor-gossip", body=_dc(message))
+
+    async def push_anchor(self, message: AnchorGossipMessage) -> Dict[str, Any]:
+        """POST /api/gossip/push-anchor — push gossip variant (QDP-0005)."""
+        return await self._request("POST", "gossip/push-anchor", body=_dc(message))
+
+    async def push_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
+        """POST /api/gossip/push-fingerprint — push gossip variant (QDP-0005)."""
+        return await self._request("POST", "gossip/push-fingerprint", body=_dc(fp))
 
     async def get_latest_domain_fingerprint(self, domain: str) -> Optional[DomainFingerprint]:
         try:
@@ -522,6 +602,22 @@ class AsyncQuidnugClient:
             raise
         return _domain_fingerprint_from_wire(data)
 
+    async def submit_nonce_snapshot(self, snapshot: NonceSnapshot) -> Dict[str, Any]:
+        """POST /api/nonce-snapshots — publish a K-of-K bootstrap snapshot."""
+        return await self._request("POST", "nonce-snapshots", body=_dc(snapshot))
+
+    async def get_latest_nonce_snapshot(self, domain: str) -> Optional[NonceSnapshot]:
+        """GET /api/nonce-snapshots/{domain}/latest."""
+        try:
+            data = await self._request(
+                "GET", f"nonce-snapshots/{quote(domain, safe='')}/latest"
+            )
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+        return _nonce_snapshot_from_wire(data)
+
     async def submit_fork_block(self, fb: ForkBlock) -> Dict[str, Any]:
         return await self._request("POST", "fork-block", body=_dc(fb))
 
@@ -530,6 +626,70 @@ class AsyncQuidnugClient:
 
     async def bootstrap_status(self) -> Dict[str, Any]:
         return await self._request("GET", "bootstrap/status")
+
+    # --- Blocks ----------------------------------------------------------
+
+    async def get_blocks(
+        self, *, limit: Optional[int] = None, offset: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """GET /api/blocks — paginated block listing."""
+        return await self._request(
+            "GET", "blocks", params=_strip_none({"limit": limit, "offset": offset})
+        )
+
+    # --- IPFS ------------------------------------------------------------
+
+    async def ipfs_pin(self, content) -> str:
+        """POST /api/ipfs/pin — pin raw bytes and return the assigned CID."""
+        from typing import Union as _U  # local alias, type-checker only
+        if isinstance(content, str):
+            body = content.encode("utf-8")
+        elif isinstance(content, (bytes, bytearray)):
+            body = bytes(content)
+        else:
+            raise ValidationError("content must be str or bytes")
+        assert self._client is not None, "use 'async with AsyncQuidnugClient(...)'"
+        headers = {"Content-Type": "application/octet-stream"}
+        if self._auth_header:
+            headers["Authorization"] = self._auth_header
+        resp = await self._client.post(
+            urljoin(self.api_base + "/", "ipfs/pin"),
+            content=body,
+            headers=headers,
+            timeout=self.timeout,
+        )
+        env = resp.json()
+        if not env.get("success"):
+            err = env.get("error") or {}
+            raise NodeError(
+                err.get("message") or f"ipfs pin HTTP {resp.status_code}",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        data = env.get("data") or {}
+        cid = data.get("cid") or data.get("value")
+        if not cid:
+            raise NodeError("IPFS pin response missing cid")
+        return cid
+
+    async def ipfs_get(self, cid: str) -> bytes:
+        """GET /api/ipfs/{cid} — fetch raw bytes."""
+        assert self._client is not None, "use 'async with AsyncQuidnugClient(...)'"
+        headers = {}
+        if self._auth_header:
+            headers["Authorization"] = self._auth_header
+        resp = await self._client.get(
+            urljoin(self.api_base + "/", f"ipfs/{quote(cid, safe='')}"),
+            headers=headers,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise NodeError(
+                f"IPFS fetch failed (HTTP {resp.status_code})",
+                status_code=resp.status_code,
+                response_body=resp.text,
+            )
+        return resp.content
 
 
 def _json_fallback(obj: Any) -> Any:
