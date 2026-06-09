@@ -343,6 +343,29 @@ public actor QuidnugClient {
         }
     }
 
+    /// Fetch pending recovery (if any) for a subject quid. Returns nil on 404.
+    public func getPendingRecovery(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(
+                method: "GET",
+                path: "guardian/pending-recovery/\(urlEscape(quidId))",
+                body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// List guardian resignations for a subject quid (QDP-0006).
+    public func getGuardianResignations(quidId: String) async throws -> [[String: Any]] {
+        let raw = try await requestJSON(
+            method: "GET",
+            path: "guardian/resignations/\(urlEscape(quidId))",
+            body: nil)
+        return (raw["data"] as? [[String: Any]])
+            ?? (raw["resignations"] as? [[String: Any]])
+            ?? []
+    }
+
     /// Publish a signed domain fingerprint (QDP-0003). Maps to POST /api/domain-fingerprints.
     public func submitDomainFingerprint(_ fingerprint: [String: Any]) async throws -> [String: Any] {
         try await requestJSON(method: "POST", path: "domain-fingerprints", body: fingerprint)
@@ -363,6 +386,16 @@ public actor QuidnugClient {
     /// Deliver cross-domain anchor gossip. Maps to POST /api/anchor-gossip.
     public func submitAnchorGossip(_ message: [String: Any]) async throws -> [String: Any] {
         try await requestJSON(method: "POST", path: "anchor-gossip", body: message)
+    }
+
+    /// Push-gossip anchor variant (QDP-0005). Maps to POST /api/gossip/push-anchor.
+    public func pushAnchor(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-anchor", body: message)
+    }
+
+    /// Push-gossip fingerprint variant (QDP-0005). Maps to POST /api/gossip/push-fingerprint.
+    public func pushFingerprint(_ fingerprint: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-fingerprint", body: fingerprint)
     }
 
     /// Publish a K-of-K bootstrap snapshot (QDP-0008). Maps to POST /api/nonce-snapshots.

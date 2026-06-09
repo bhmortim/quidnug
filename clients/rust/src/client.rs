@@ -616,6 +616,26 @@ impl Client {
         }
     }
 
+    /// Fetch pending recovery (if any) for a subject quid
+    /// (GET /api/guardian/pending-recovery/{quid}). Returns `None` on 404.
+    pub async fn get_pending_recovery(&self, quid_id: &str) -> Result<Option<Value>> {
+        match self
+            .get(&format!("guardian/pending-recovery/{}", urlencoding(quid_id)))
+            .await
+        {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Validation(m)) if m.contains("NOT_FOUND") => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// List guardian resignations for a subject quid
+    /// (GET /api/guardian/resignations/{quid}).
+    pub async fn get_guardian_resignations(&self, quid_id: &str) -> Result<Value> {
+        self.get(&format!("guardian/resignations/{}", urlencoding(quid_id)))
+            .await
+    }
+
     // -----------------------------------------------------------------
     // Cross-domain gossip (QDP-0003)
     // -----------------------------------------------------------------
@@ -647,6 +667,16 @@ impl Client {
     /// Deliver cross-domain anchor gossip (POST /api/anchor-gossip).
     pub async fn submit_anchor_gossip(&self, message: &Value) -> Result<Value> {
         self.post("anchor-gossip", message).await
+    }
+
+    /// Push-gossip anchor variant (POST /api/gossip/push-anchor, QDP-0005).
+    pub async fn push_anchor(&self, message: &Value) -> Result<Value> {
+        self.post("gossip/push-anchor", message).await
+    }
+
+    /// Push-gossip fingerprint variant (POST /api/gossip/push-fingerprint, QDP-0005).
+    pub async fn push_fingerprint(&self, fingerprint: &Value) -> Result<Value> {
+        self.post("gossip/push-fingerprint", fingerprint).await
     }
 
     // -----------------------------------------------------------------

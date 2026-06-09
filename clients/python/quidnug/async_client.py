@@ -578,6 +578,25 @@ class AsyncQuidnugClient:
             raise
         return _guardian_set_from_wire(data)
 
+    async def get_pending_recovery(self, quid: str) -> Optional[Dict[str, Any]]:
+        """GET /api/guardian/pending-recovery/{quid}."""
+        try:
+            return await self._request(
+                "GET", f"guardian/pending-recovery/{quote(quid, safe='')}"
+            )
+        except ValidationError as exc:
+            if (exc.details or {}).get("code") == "NOT_FOUND":
+                return None
+            raise
+
+    async def get_guardian_resignations(self, quid: str) -> List[Dict[str, Any]]:
+        """GET /api/guardian/resignations/{quid}."""
+        data = await self._request(
+            "GET", f"guardian/resignations/{quote(quid, safe='')}"
+        )
+        raw = data.get("data") or data.get("resignations") or []
+        return raw if isinstance(raw, list) else []
+
     async def submit_domain_fingerprint(self, fp: DomainFingerprint) -> Dict[str, Any]:
         """POST /api/domain-fingerprints — publish a signed fingerprint."""
         return await self._request("POST", "domain-fingerprints", body=_dc(fp))

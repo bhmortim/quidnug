@@ -435,6 +435,32 @@ public sealed class QuidnugClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Fetch pending recovery (if any) for a subject quid.
+    /// Maps to GET /api/guardian/pending-recovery/{quid}. Returns null on 404.
+    /// </summary>
+    public async Task<JsonNode?> GetPendingRecoveryAsync(string quidId, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RequestAsync(HttpMethod.Get,
+                $"guardian/pending-recovery/{Uri.EscapeDataString(quidId)}", null, ct);
+        }
+        catch (QuidnugValidationException ex) when (ex.Details.TryGetValue("code", out var c)
+                                                    && (c as string) == "NOT_FOUND")
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// List guardian resignations for a subject quid (QDP-0006).
+    /// Maps to GET /api/guardian/resignations/{quid}.
+    /// </summary>
+    public Task<JsonNode?> GetGuardianResignationsAsync(string quidId, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Get,
+            $"guardian/resignations/{Uri.EscapeDataString(quidId)}", null, ct);
+
     // =====================================================================
     // Gossip / bootstrap / fork-block
     // =====================================================================
@@ -459,6 +485,14 @@ public sealed class QuidnugClient : IDisposable
 
     public Task<JsonNode?> SubmitAnchorGossipAsync(object msg, CancellationToken ct = default)
         => RequestAsync(HttpMethod.Post, "anchor-gossip", msg, ct);
+
+    /// <summary>Push-gossip anchor variant (QDP-0005). Maps to POST /api/gossip/push-anchor.</summary>
+    public Task<JsonNode?> PushAnchorAsync(object msg, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-anchor", msg, ct);
+
+    /// <summary>Push-gossip fingerprint variant (QDP-0005). Maps to POST /api/gossip/push-fingerprint.</summary>
+    public Task<JsonNode?> PushFingerprintAsync(object fp, CancellationToken ct = default)
+        => RequestAsync(HttpMethod.Post, "gossip/push-fingerprint", fp, ct);
 
     /// <summary>K-of-K bootstrap snapshot publication (QDP-0008). Maps to POST /api/nonce-snapshots.</summary>
     public Task<JsonNode?> SubmitNonceSnapshotAsync(object snapshot, CancellationToken ct = default)

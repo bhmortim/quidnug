@@ -389,6 +389,14 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * List guardian resignations for a subject quid (QDP-0006).
+     * Maps to GET /api/guardian/resignations/{quid}.
+     */
+    public JsonNode getGuardianResignations(String quidId) {
+        return doGet("guardian/resignations/" + urlencode(quidId));
+    }
+
     // =====================================================================
     // Gossip + bootstrap + fork-block
     // =====================================================================
