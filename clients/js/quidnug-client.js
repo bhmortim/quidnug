@@ -964,6 +964,59 @@ class QuidnugClient {
   }
   
   /**
+   * Liveness check against the currently healthy node.
+   * Maps to GET /api/health.
+   * @returns {Promise<Object>} Envelope with node status
+   */
+  async getHealth() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/health`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Health check failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Node identity, version, and capability info.
+   * Maps to GET /api/info.
+   * @returns {Promise<Object>} Envelope with node info
+   */
+  async getInfo() {
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const response = await this._fetchWithRetry(`${nodeUrl}/api/info`);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Info query failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Direct outbound trust edges for a quid.
+   * Maps to GET /api/trust/edges/{quidId}.
+   * @param {string} quidId - Quid ID whose outbound edges to fetch
+   * @returns {Promise<Object>} Envelope containing edge array
+   */
+  async getTrustEdges(quidId) {
+    if (!quidId) {
+      throw new Error('Missing required parameter: quidId');
+    }
+    try {
+      const nodeUrl = this._getHealthyNode();
+      const url = `${nodeUrl}/api/trust/edges/${encodeURIComponent(quidId)}`;
+      const response = await this._fetchWithRetry(url);
+      return await this._parseResponse(response);
+    } catch (error) {
+      if (error.code) throw error;
+      throw new Error(`Trust edges query failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Get blocks from the blockchain with pagination
    * @param {Object} [options] - Query options
    * @param {number} [options.limit=50] - Maximum number of items to return

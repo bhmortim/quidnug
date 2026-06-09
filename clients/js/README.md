@@ -15,8 +15,8 @@ npm install @quidnug/client
 ## v1 surface
 
 The default import provides the v1 surface — identities, trust,
-titles, event streams, IPFS, and the client-side relational trust BFS.
-These are covered by the existing test suite
+titles, event streams, IPFS, registry queries, and the client-side
+relational trust BFS. These are covered by the existing test suite
 (`quidnug-client.test.js`, `quidnug-client.retry.test.js`).
 
 ```js
@@ -39,6 +39,19 @@ await client.submitTransaction(tx);
 const result = await client.getTrustLevel(alice.id, bob.id, "contractors.home");
 console.log(result.trustLevel, result.trustPath);
 ```
+
+### v1 method list
+
+| Area | Methods |
+| --- | --- |
+| Health | `getHealth`, `getInfo`, `getNodes` |
+| Identity | `createIdentityTransaction`, `getIdentity`, `queryIdentityRegistry` |
+| Trust | `createTrustTransaction`, `getTrustLevel`, `queryRelationalTrust`, `getTrustEdges`, `queryTrustRegistry`, `computeTransitiveTrust`, `findTrustPath` |
+| Title | `createTitleTransaction`, `getAssetOwnership`, `queryTitleRegistry` |
+| Events | `createEventTransaction`, `getEventStream`, `getStreamEvents` |
+| Registry | `getBlocks`, `getPendingTransactions` |
+| IPFS | `pinToIPFS`, `getFromIPFS` |
+| Quids | `generateQuid`, `importQuid`, `submitTransaction` |
 
 ## v2 extensions (QDPs 0002–0010)
 

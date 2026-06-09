@@ -154,6 +154,36 @@ public actor QuidnugClient {
         return try JSONDecoder().decode([TrustEdge].self, from: data)
     }
 
+    /// Structured relational-trust query. Maps to POST /api/trust/query.
+    public func queryRelationalTrust(
+        observer: String, target: String, domain: String = "default", maxDepth: Int = 5
+    ) async throws -> TrustResult {
+        guard !observer.isEmpty, !target.isEmpty else {
+            throw QuidnugError.validation("observer and target are required")
+        }
+        var body: [String: Any] = [
+            "observer": observer,
+            "target": target,
+            "domain": domain.isEmpty ? "default" : domain,
+        ]
+        if maxDepth > 0 { body["maxDepth"] = maxDepth }
+        let raw = try await requestJSON(method: "POST", path: "trust/query", body: body)
+        return try decode(TrustResult.self, from: raw)
+    }
+
+    /// Paginated trust registry. Maps to GET /api/registry/trust.
+    public func queryTrustRegistry(
+        truster: String? = nil, trustee: String? = nil, limit: Int = 0, offset: Int = 0
+    ) async throws -> [String: Any] {
+        var qs: [String] = []
+        if let t = truster, !t.isEmpty { qs.append("truster=\(urlEscape(t))") }
+        if let t = trustee, !t.isEmpty { qs.append("trustee=\(urlEscape(t))") }
+        if limit > 0  { qs.append("limit=\(limit)") }
+        if offset > 0 { qs.append("offset=\(offset)") }
+        let path = "registry/trust" + (qs.isEmpty ? "" : "?" + qs.joined(separator: "&"))
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
     // =========================================================================
     // Title
     // =========================================================================
@@ -282,6 +312,26 @@ public actor QuidnugClient {
         try await requestJSON(method: "POST", path: "guardian/set-update", body: update)
     }
 
+    /// Start delayed recovery (QDP-0002). Maps to POST /api/guardian/recovery/init.
+    public func submitRecoveryInit(_ init_: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/init", body: init_)
+    }
+
+    /// Abort a pending recovery. Maps to POST /api/guardian/recovery/veto.
+    public func submitRecoveryVeto(_ veto: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/veto", body: veto)
+    }
+
+    /// Commit a recovery after delay. Maps to POST /api/guardian/recovery/commit.
+    public func submitRecoveryCommit(_ commit: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/recovery/commit", body: commit)
+    }
+
+    /// Guardian resignation (QDP-0006). Maps to POST /api/guardian/resign.
+    public func submitGuardianResignation(_ resignation: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "guardian/resign", body: resignation)
+    }
+
     public func getGuardianSet(quidId: String) async throws -> GuardianSet? {
         do {
             return try decode(GuardianSet.self,
@@ -291,6 +341,34 @@ public actor QuidnugClient {
         } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
             return nil
         }
+    }
+
+    /// Fetch pending recovery (if any) for a subject quid. Returns nil on 404.
+    public func getPendingRecovery(quidId: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(
+                method: "GET",
+                path: "guardian/pending-recovery/\(urlEscape(quidId))",
+                body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
+    /// List guardian resignations for a subject quid (QDP-0006).
+    public func getGuardianResignations(quidId: String) async throws -> [[String: Any]] {
+        let raw = try await requestJSON(
+            method: "GET",
+            path: "guardian/resignations/\(urlEscape(quidId))",
+            body: nil)
+        return (raw["data"] as? [[String: Any]])
+            ?? (raw["resignations"] as? [[String: Any]])
+            ?? []
+    }
+
+    /// Publish a signed domain fingerprint (QDP-0003). Maps to POST /api/domain-fingerprints.
+    public func submitDomainFingerprint(_ fingerprint: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "domain-fingerprints", body: fingerprint)
     }
 
     public func getLatestDomainFingerprint(domain: String) async throws -> DomainFingerprint? {
@@ -305,12 +383,115 @@ public actor QuidnugClient {
         }
     }
 
+    /// Deliver cross-domain anchor gossip. Maps to POST /api/anchor-gossip.
+    public func submitAnchorGossip(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "anchor-gossip", body: message)
+    }
+
+    /// Push-gossip anchor variant (QDP-0005). Maps to POST /api/gossip/push-anchor.
+    public func pushAnchor(_ message: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-anchor", body: message)
+    }
+
+    /// Push-gossip fingerprint variant (QDP-0005). Maps to POST /api/gossip/push-fingerprint.
+    public func pushFingerprint(_ fingerprint: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "gossip/push-fingerprint", body: fingerprint)
+    }
+
+    /// Publish a K-of-K bootstrap snapshot (QDP-0008). Maps to POST /api/nonce-snapshots.
+    public func submitNonceSnapshot(_ snapshot: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "nonce-snapshots", body: snapshot)
+    }
+
+    /// Latest snapshot for a domain. Maps to GET /api/nonce-snapshots/{domain}/latest.
+    public func getLatestNonceSnapshot(domain: String) async throws -> [String: Any]? {
+        do {
+            return try await requestJSON(
+                method: "GET",
+                path: "nonce-snapshots/\(urlEscape(domain))/latest",
+                body: nil)
+        } catch QuidnugError.validation(let m) where m.contains("NOT_FOUND") {
+            return nil
+        }
+    }
+
     public func bootstrapStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "bootstrap/status", body: nil)
     }
 
+    /// Submit a signed fork-activation block (QDP-0009). Maps to POST /api/fork-block.
+    public func submitForkBlock(_ forkBlock: [String: Any]) async throws -> [String: Any] {
+        try await requestJSON(method: "POST", path: "fork-block", body: forkBlock)
+    }
+
     public func forkBlockStatus() async throws -> [String: Any] {
         try await requestJSON(method: "GET", path: "fork-block/status", body: nil)
+    }
+
+    // =========================================================================
+    // Registry
+    // =========================================================================
+
+    /// Paginated blocks. Maps to GET /api/blocks.
+    public func blocks(limit: Int = 0, offset: Int = 0) async throws -> [String: Any] {
+        var qs: [String] = []
+        if limit > 0  { qs.append("limit=\(limit)") }
+        if offset > 0 { qs.append("offset=\(offset)") }
+        let path = "blocks" + (qs.isEmpty ? "" : "?" + qs.joined(separator: "&"))
+        return try await requestJSON(method: "GET", path: path, body: nil)
+    }
+
+    // =========================================================================
+    // IPFS
+    // =========================================================================
+
+    /// Pin raw bytes to IPFS via the node. Maps to POST /api/ipfs/pin.
+    /// - Returns: the assigned content identifier (CID).
+    public func ipfsPin(_ content: Data) async throws -> String {
+        let url = apiBase.appendingPathComponent("ipfs/pin")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.httpBody = content
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        let env = try parseEnvelope(data: data, statusCode: http.statusCode)
+        if let cid = env["cid"] as? String { return cid }
+        throw QuidnugError.node(status: http.statusCode, message: "ipfs pin: missing cid in response")
+    }
+
+    /// Fetch raw bytes from IPFS by CID. Maps to GET /api/ipfs/{cid}.
+    public func ipfsGet(cid: String) async throws -> Data {
+        guard !cid.isEmpty else { throw QuidnugError.validation("cid is required") }
+        let url = apiBase.appendingPathComponent("ipfs/\(urlEscape(cid))")
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = "GET"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw QuidnugError.node(status: 0, message: "non-HTTP response")
+        }
+        let sc = http.statusCode
+        if (200..<300).contains(sc) { return data }
+        if sc == 404 {
+            throw QuidnugError.validation("NOT_FOUND: ipfs get: not found")
+        }
+        let body = String(data: data, encoding: .utf8) ?? ""
+        if (400..<500).contains(sc) {
+            throw QuidnugError.validation("ipfs get HTTP \(sc): \(body)")
+        }
+        throw QuidnugError.node(status: sc, message: "ipfs get HTTP \(sc): \(body)")
     }
 
     // =========================================================================

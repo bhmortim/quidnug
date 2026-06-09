@@ -183,6 +183,50 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * Structured relational-trust query. Maps to POST /api/trust/query.
+     *
+     * @param observer observer quid id
+     * @param target   target quid id
+     * @param domain   trust domain (defaults to "default" if null/blank)
+     * @param maxDepth maximum search depth (use 0 to omit; server default is 5)
+     */
+    public Types.TrustResult queryRelationalTrust(String observer, String target, String domain, int maxDepth) {
+        if (observer == null || observer.isEmpty())
+            throw new ValidationException("observer is required");
+        if (target == null || target.isEmpty())
+            throw new ValidationException("target is required");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("observer", observer);
+        body.put("target", target);
+        body.put("domain", (domain == null || domain.isEmpty()) ? "default" : domain);
+        if (maxDepth > 0) body.put("maxDepth", maxDepth);
+        try {
+            return MAPPER.treeToValue(doPost("trust/query", body), Types.TrustResult.class);
+        } catch (Exception e) {
+            throw new NodeException("decode trust query: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Paginated trust registry. Maps to GET /api/registry/trust.
+     *
+     * @param truster optional filter by truster quid id
+     * @param trustee optional filter by trustee quid id
+     * @param limit   page size (use 0 to omit)
+     * @param offset  page offset (use 0 to omit)
+     */
+    public JsonNode queryTrustRegistry(String truster, String trustee, int limit, int offset) {
+        StringBuilder path = new StringBuilder("registry/trust");
+        List<String> q = new ArrayList<>();
+        if (truster != null && !truster.isEmpty()) q.add("truster=" + urlencode(truster));
+        if (trustee != null && !trustee.isEmpty()) q.add("trustee=" + urlencode(trustee));
+        if (limit > 0)  q.add("limit=" + limit);
+        if (offset > 0) q.add("offset=" + offset);
+        if (!q.isEmpty()) path.append("?").append(String.join("&", q));
+        return doGet(path.toString());
+    }
+
     // =====================================================================
     // Title
     // =====================================================================
@@ -345,6 +389,14 @@ public final class QuidnugClient {
         }
     }
 
+    /**
+     * List guardian resignations for a subject quid (QDP-0006).
+     * Maps to GET /api/guardian/resignations/{quid}.
+     */
+    public JsonNode getGuardianResignations(String quidId) {
+        return doGet("guardian/resignations/" + urlencode(quidId));
+    }
+
     // =====================================================================
     // Gossip + bootstrap + fork-block
     // =====================================================================
@@ -398,6 +450,76 @@ public final class QuidnugClient {
     }
 
     public JsonNode forkBlockStatus() { return doGet("fork-block/status"); }
+
+    // =====================================================================
+    // IPFS
+    // =====================================================================
+
+    /**
+     * Pin raw bytes to IPFS via the node. Maps to POST /api/ipfs/pin.
+     *
+     * @param content raw bytes to pin
+     * @return the assigned content identifier (CID)
+     */
+    public String ipfsPin(byte[] content) {
+        if (content == null) throw new ValidationException("content is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/pin"))
+                .timeout(timeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(content));
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        try {
+            HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+            JsonNode data = parseEnvelope(resp);
+            if (data == null || !data.has("cid"))
+                throw new NodeException("ipfs pin: missing cid in response", resp.statusCode(), resp.body());
+            return data.get("cid").asText();
+        } catch (QuidnugException qe) {
+            throw qe;
+        } catch (Exception e) {
+            throw new NodeException("ipfs pin: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Fetch raw bytes from IPFS by CID. Maps to GET /api/ipfs/{cid}.
+     *
+     * @param cid content identifier
+     * @return raw bytes for the pinned content
+     */
+    public byte[] ipfsGet(String cid) {
+        if (cid == null || cid.isEmpty()) throw new ValidationException("cid is required");
+        HttpRequest.Builder rb = HttpRequest.newBuilder()
+                .uri(URI.create(apiBase + "/ipfs/" + urlencode(cid)))
+                .timeout(timeout)
+                .header("Accept", "application/octet-stream")
+                .header("User-Agent", userAgent)
+                .GET();
+        if (authToken != null) rb.header("Authorization", "Bearer " + authToken);
+        try {
+            HttpResponse<byte[]> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+            int sc = resp.statusCode();
+            if (sc >= 200 && sc < 300) return resp.body();
+            String body = new String(resp.body(), StandardCharsets.UTF_8);
+            Map<String, Object> details = new HashMap<>();
+            if (sc == 404) {
+                details.put("code", "NOT_FOUND");
+                throw new ValidationException("ipfs get: not found", details);
+            }
+            if (sc >= 400 && sc < 500) {
+                details.put("code", "VALIDATION_ERROR");
+                throw new ValidationException("ipfs get HTTP " + sc + ": " + body, details);
+            }
+            throw new NodeException("ipfs get HTTP " + sc, sc, body);
+        } catch (QuidnugException qe) {
+            throw qe;
+        } catch (Exception e) {
+            throw new NodeException("ipfs get: " + e.getMessage(), e);
+        }
+    }
 
     // =====================================================================
     // Param objects (fluent builders)

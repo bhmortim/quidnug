@@ -367,6 +367,36 @@ paths:
         "200":
           $ref: "#/components/responses/GenericSuccess"
 
+  /api/guardian/pending-recovery/{quid}:
+    get:
+      tags: [Guardians]
+      summary: Fetch pending recovery (if any) for a subject quid
+      parameters:
+        - name: quid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/guardian/resignations/{quid}:
+    get:
+      tags: [Guardians]
+      summary: List guardian resignations for a subject quid (QDP-0006)
+      parameters:
+        - name: quid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
   /api/domain-fingerprints:
     post:
       tags: [Gossip]
@@ -407,6 +437,34 @@ paths:
           application/json:
             schema:
               type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/gossip/push-anchor:
+    post:
+      tags: [Gossip]
+      summary: Push-gossip variant for anchors (QDP-0005)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/gossip/push-fingerprint:
+    post:
+      tags: [Gossip]
+      summary: Push-gossip variant for fingerprints (QDP-0005)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainFingerprint"
       responses:
         "200":
           $ref: "#/components/responses/GenericSuccess"
@@ -490,6 +548,40 @@ paths:
           schema:
             type: string
         - name: trustee
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/registry/identity:
+    get:
+      tags: [Registry]
+      summary: Paginated identity registry
+      parameters:
+        - name: quid_id
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenericSuccess"
+
+  /api/registry/title:
+    get:
+      tags: [Registry]
+      summary: Paginated title registry
+      parameters:
+        - name: asset_id
+          in: query
+          schema:
+            type: string
+        - name: owner_id
           in: query
           schema:
             type: string
