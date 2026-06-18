@@ -1,6 +1,6 @@
 module github.com/quidnug/quidnug
 
-go 1.25.9 // SEC-1: bump to fix CVE-2026-33810 (x509 wildcard SAN constraint bypass)
+go 1.25.11 // SEC-80: bump to fix CVE-2026-42507 (net/textproto error message injection)
 
 require (
 	github.com/google/uuid v1.6.0
