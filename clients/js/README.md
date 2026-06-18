@@ -101,6 +101,22 @@ npm test           # runs v1 + retry + v2 suites
 npm run test:v2    # v2 only
 ```
 
+## Security Notice
+
+<!-- SEC-77: CVE-2026-48934 — Node.js TLS session reuse host verification bypass -->
+
+Node.js versions 22.0.0–22.23.0, 24.0.0–24.17.0, and 26.0.0–26.3.1
+contain a TLS session reuse flaw ([CVE-2026-48934][cve-2026-48934])
+that can bypass host identity verification. Because the Quidnug SDK
+connects to multiple node endpoints in a single process, this
+vulnerability could allow a compromised endpoint to impersonate a
+different Quidnug service.
+
+**Minimum safe Node.js versions:** 22.23.1, 24.17.1, or 26.3.2.
+Node.js 18.x and 20.x are not affected.
+
+[cve-2026-48934]: https://nvd.nist.gov/vuln/detail/CVE-2026-48934
+
 ## License
 
 Apache-2.0.
