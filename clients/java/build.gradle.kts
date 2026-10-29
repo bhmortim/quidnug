@@ -20,7 +20,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.1")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.18.12") // SEC-93: bump for CVE-2026-110879
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
     // JDK 11+ has java.net.http.HttpClient built in.
 
