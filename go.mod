@@ -1,6 +1,6 @@
 module github.com/quidnug/quidnug
 
-go 1.25.9 // SEC-1: bump to fix CVE-2026-33810 (x509 wildcard SAN constraint bypass)
+go 1.26.9 // SEC-95: bump to fix CVE-2026-97032 (HTTP/2 HPACK encoder race)
 
 require (
 	github.com/google/uuid v1.6.0
@@ -20,17 +20,17 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.10.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.0
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/grandcat/zeroconf v1.0.0 // indirect
+	github.com/grandcat/zeroconf v1.0.0
 	github.com/miekg/dns v1.1.27 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	golang.org/x/crypto v0.18.0 // indirect
-	golang.org/x/net v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect // SEC-95: CVE-2026-97032
+	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
